@@ -687,7 +687,7 @@ def _draw_welt(
         # 加深主色约 30%
         welt_rgb = main_rgb * 0.7
 
-    welt_a = top.opacity if top.opacity is not None else 0.95
+    welt_a = top.opacity if top.opacity is not None else 1.0
 
     dip2 = dip if dip is not None else np.zeros((H, W))
     ys = np.arange(H, dtype=np.float64)[:, np.newaxis]

@@ -162,7 +162,7 @@ class Welt:
     """松紧袜口：袜口处加厚的条带，颜色略深于袜身。
 
     color 为 None 时取袜身主色加深一档。
-    opacity 为 None 时按双层织物从袜身 opacity 推导。
+    opacity 为 None 时视为不透明（1.0，双层织物）。
     pinch 是袜口上方皮肤被勒出的浅阴影线强度（0 关闭）。
     """
 
@@ -188,13 +188,14 @@ class Lace:
 
     scallop 是波浪周期（像素）。
     color 为 None 时取袜身主色。
-    holes 为 True 时在蕾丝带上叠加半透明镂空圆点。
+    蕾丝带本体默认不透明，镂空感由 holes 的孔点图案表达。
+    holes 为 True 时在蕾丝带上叠加孔点。
     """
 
     height: float = 28.0
     scallop: float = 28.0
     color: Color | None = None
-    opacity: float = 0.85
+    opacity: float = 1.0
     holes: bool = True
 
     def __post_init__(self) -> None:

@@ -149,8 +149,8 @@ type TopEdge = Bare | Welt | Lace | Fade
 | 类 | 含义 | 字段（默认值） |
 | --- | --- | --- |
 | `Bare` | 平口，只有一条细边线 | 无 |
-| `Welt` | 松紧袜口：一圈加厚条带 | `height`(20)；`color`(None：取袜身主色加深一档)；`opacity`(None：按双层织物由袜身不透明度推导)；`pinch`(0.4) 袜口上方皮肤被勒出的浅阴影，0 关闭 |
-| `Lace` | 蕾丝边 | `height`(28)；`scallop`(16) 波浪周期；`color`(None：取袜身主色)；`opacity`(0.85)；`holes`(True) 镂空小孔 |
+| `Welt` | 松紧袜口：一圈加厚条带 | `height`(20)；`color`(None：取袜身主色加深一档)；`opacity`(None：双层织物视为不透明)；`pinch`(0.4) 袜口上方皮肤被勒出的浅阴影，0 关闭 |
+| `Lace` | 蕾丝边 | `height`(28)；`scallop`(28) 波浪周期；`color`(None：取袜身主色)；`opacity`(1.0，带本体不透明)；`holes`(True) 孔点图案 |
 | `Fade` | 连裤袜式渐隐，无明显边 | `length`(60) 渐变区长度 |
 
 **数据高度的定义**：腿中线处袜口顶端到脚端的距离；`Lace` 按波浪平均位置；
