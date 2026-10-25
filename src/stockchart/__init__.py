@@ -6,6 +6,7 @@ from stockchart.canvas import Canvas
 from stockchart.color import Color
 from stockchart.legs import Leg
 from stockchart.library import LegLibrary, load_leg
+from stockchart.plot import BarPlot, Scale
 from stockchart.sketch import sketch_axis, sketch_line
 from stockchart.stocking import (
     STYLES,
@@ -29,11 +30,10 @@ from stockchart.text import FontSpec, TextAnchor, draw_text, measure_text
 
 __all__ = [
     "STYLES",
+    "BarPlot",
     "Bare",
-    # 基础对象
     "Canvas",
     "Color",
-    # L0
     "Dotted",
     "Fade",
     "Fishnet",
@@ -43,6 +43,7 @@ __all__ = [
     "LegLibrary",
     "Plain",
     "Ribbed",
+    "Scale",
     "Shading",
     "StockingStyle",
     "Stripe",
@@ -51,7 +52,6 @@ __all__ = [
     "StyleSeq",
     "TextAnchor",
     "Welt",
-    # L1 渲染原语
     "draw_text",
     "load_leg",
     "measure_text",

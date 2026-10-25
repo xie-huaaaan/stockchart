@@ -76,6 +76,15 @@ DEFAULT_BAR_GAP = 28
 DEFAULT_GROUP_GAP = 96
 """相邻组边缘之间的空隙。"""
 
+DEFAULT_PLOT_LEFT_PAD = 28
+"""绘图区左缘与 y 轴 / 刻度数字之间的间距。"""
+
+DEFAULT_PLOT_RIGHT_PAD = 36
+"""绘图区右缘与画布右缘的间距。"""
+
+DEFAULT_BOTTOM_PAD = 20
+"""最下方内容（x 标签等）与画布底缘的间距。"""
+
 DEFAULT_X_LABEL_GAP = 24
 """x 标签与上方内容（腿尖 / 轴末端）的间距。"""
 
