@@ -195,7 +195,16 @@ STYLES: Mapping[str, StockingStyle]
 | `polka_black` | 黑丝波点 | `fishnet_over_sheer` | 网袜叠黑丝 |
 | `heart_white` | 白丝爱心 | | |
 
-各层接口的 `style` 参数接受 `StockingStyle` 实例或上表键名，默认 `DEFAULT_STOCKING_STYLE = "black_sheer"`。
+```python
+type StyleLike = StockingStyle | str
+"""单个样式：StockingStyle 实例或 STYLES 键名。"""
+
+type StyleSeq = StyleLike | Sequence[StyleLike]
+"""样式参数：单个样式，或按位置循环的样式列表（循环语义见 L3/L4）。"""
+```
+
+L2 的 `add_bar` 只接受单个 `StyleLike`；L3/L4 的批量方法接受 `StyleSeq`，
+默认 `DEFAULT_STOCKING_STYLE = "black_sheer"`。
 
 ```python
 def render_stocking(
@@ -260,13 +269,22 @@ def sketch_line(
 def sketch_axis(
     canvas: Canvas,
     *,
-    direction: Literal["up", "right"],
-    ticks: Sequence[tuple[float, str]],
-    **geometry: float,
+    direction: Literal["up", "down", "right"],
+    x: float,
+    y: float,
+    length: float,
+    ticks: Sequence[tuple[float, str]] = (),
+    arrow: bool = True,
+    color: Color = DEFAULT_INK_COLOR,
+    width_px: float = DEFAULT_STROKE_WIDTH,
+    wobble: float = DEFAULT_WOBBLE,
+    seed: int | None = None,
 ) -> None:
     """手绘风坐标轴：抖动轴干线、箭头、刻度线与刻度数字。
 
-    ticks 为 (数据值, 标签文字) 列表；几何参数（起点、长度、翻转等）随实现细化。
+    (x, y) 为轴起点，干线向 direction 延伸 length 像素，箭头（可选）在远端；
+    ticks 为 (距起点的像素偏移, 标签文字)：刻度线垂直于干线，数字画在
+    干线左侧（垂直轴）或下侧（水平轴）。
     """
 ```
 
@@ -335,8 +353,14 @@ class BarPlot:
         *,
         ticks: Sequence[float] | None = None,
         label: str | None = None,
+        grid: bool = False,
     ) -> BarPlot:
-        """添加 y 轴（手绘风，含刻度数字）。ticks 缺省由 scale.domain 均匀取值生成。"""
+        """添加 y 轴（手绘风，含刻度数字）。ticks 缺省由 scale.domain 均匀取值生成。
+
+        刻度按 scale 映射到基线上下两侧：domain 含负值时干线向下延伸、
+        下方刻度照常绘制，箭头仍在最上端。grid=True 时沿各刻度画横向
+        手绘虚线（浅色，压在腿与袜之下）。
+        """
 
     def add_x_labels(
         self,
@@ -344,10 +368,28 @@ class BarPlot:
         *,
         xs: Sequence[float] | None = None,
     ) -> BarPlot:
-        """添加 x 轴下方的标签。xs 缺省沿宽度均分；与 add_bars 系列方法配合时自动对齐。"""
+        """添加 x 轴标签：画在全部内容最低点之下（含朝下腿与 y 轴向下延伸的
+        部分），与基线解耦——没有下方内容时自然贴着基线下方。
+
+        xs 缺省沿宽度均分；与 add_bars 系列方法配合时自动对齐组中心。
+        """
 
     def add_title(self, text: str) -> BarPlot:
         """添加左上角标题。"""
+
+    def add_legend(
+        self,
+        items: Sequence[tuple[str, StyleLike]],
+        *,
+        ncol: int | None = None,
+        loc: Literal["top", "bottom"] = "top",
+    ) -> BarPlot:
+        """添加图例：每项为织物纹理色块 + 文字，色块取该样式袜身中部的织物。
+
+        loc="top"（默认）画在标题下方、绘图区上方，"bottom" 画在最底部；
+        ncol 为一行几项，缺省自动：单行放得下就单行，否则均匀换行。
+        图例占据的高度自动计入布局。
+        """
 
     def render(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Canvas:
         """渲染。scale 为输出放大倍数（抗锯齿），不影响素材像素坐标。"""
@@ -369,13 +411,14 @@ def add_bars(
     heights_px: Sequence[float],
     *,
     bar_gap: float = DEFAULT_BAR_GAP,
-    style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
+    style: StyleSeq = DEFAULT_STOCKING_STYLE,
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
     """单序列：统一间距从左到右排开，自动按左、右、左、右……交替选腿。
 
-    legs 可显式指定每根柱子的素材（长度须与 heights_px 一致）。
+    legs 可显式指定每根柱子的素材（长度须与 heights_px 一致，不参与循环）。
+    style 为列表时按柱序循环取用。
     """
 
 
@@ -385,12 +428,15 @@ def add_grouped_bars(
     *,
     bar_gap: float = DEFAULT_BAR_GAP,
     group_gap: float = DEFAULT_GROUP_GAP,
-    style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
+    style: StyleSeq = DEFAULT_STOCKING_STYLE,
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
     """(组数, 系列数) 的像素高度：组内用 bar_gap、组间用 group_gap，
     跨列按左、右、左、右……交替选腿。
+
+    style 为列表时按组内位置循环：组内第 i 根用 styles[i % len]。
+    列表长度等于系列数时即"每系列一个样式"，同一系列全图样式一致。
     """
 
 
@@ -399,13 +445,14 @@ def add_paired_bars(
     heights_px: Sequence[tuple[float, float]],
     *,
     group_gap: float = DEFAULT_GROUP_GAP,
-    style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
+    style: StyleSeq = DEFAULT_STOCKING_STYLE,
     pairs: Sequence[tuple[Leg, Leg]] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
     """每组恰好 2 个值：同组使用同一对素材，系列 0 左腿、系列 1 右腿。
 
-    pairs 缺省时自动选取不重复的素材对。
+    style 为列表时按组内位置循环（系列 0 取 styles[0]、系列 1 取
+    styles[1 % len]）。pairs 缺省时自动选取不重复的素材对。
     """
 ```
 
@@ -419,9 +466,11 @@ def bar(
     data: Sequence[float] | Sequence[Sequence[float]],
     *,
     labels: Sequence[str] | None = None,
+    series_labels: Sequence[str] | None = None,
     title: str | None = None,
-    style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
+    style: StyleSeq = DEFAULT_STOCKING_STYLE,
     paired: bool = True,
+    value_labels: bool = False,
     max_fill: float = 0.8,
     min_fill: float = 0.1,
     y_extent: int = DEFAULT_Y_EXTENT,
@@ -434,12 +483,17 @@ def bar(
     Args:
         data: 一维为单序列；二维为 (组数, 系列数) 的分组数据。
         labels: 每组（无分组时每根柱）一个标签。
+        series_labels: 每系列一个名字，传入即自动生成图例（marker 为各系列
+            样式的织物色块）。仅二维数据可用，一维数据传入抛 ValueError。
+        style: 单个样式，或样式列表——一维按柱序循环；二维按组内位置循环
+            （列表长度等于系列数时即"每系列一个样式"）。
         paired: 仅当数据恰好 2 系列时生效（默认 True）：每组使用同一对素材，
             系列 0 左腿、系列 1 右腿；其余系列数时忽略此参数。
+        value_labels: True 时在袜口上方手写数值。
         max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
         y_extent: 基线上方预留的像素高度。
-        width_px: 画布宽；缺省按腿数与间距自适应。
+        width_px: 画布宽；缺省按腿数、间距、标签与图例自适应。
 
     数据 → 丝袜高度（基线对应的数据值默认 0）:
         - 全部数据为 0: 全部裸腿。
@@ -455,9 +509,11 @@ def mirror_bar(
     *,
     mode: Literal["single", "both"] = "single",
     labels: Sequence[str] | None = None,
+    series_labels: Sequence[str] | None = None,
     title: str | None = None,
-    style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
+    style: StyleSeq = DEFAULT_STOCKING_STYLE,
     paired: bool = True,
+    value_labels: bool = False,
     max_abs_fill: float = 0.8,
     y_extent: int = DEFAULT_Y_EXTENT,
     width_px: int | None = None,
@@ -468,7 +524,11 @@ def mirror_bar(
     Args:
         mode: "single" 只画数据侧的腿；"both" 上下都画，数据侧穿丝袜、
             另一侧裸腿。
+        labels: 每组（无分组时每根柱）一个标签，画在全部内容最低点之下。
+        series_labels: 语义同 bar()。
+        style: 语义同 bar()。
         paired: 语义同 bar()。
+        value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
         max_abs_fill: 最大绝对值映射到 y_extent 的比例（默认 0.8）。
 
     规则:
@@ -482,7 +542,8 @@ def mirror_bar(
 
 所有 `DEFAULT_*` 常量集中放在 `src/stockchart/defaults.py`：`DEFAULT_Y_EXTENT`（760）、
 `DEFAULT_BAR_GAP`、`DEFAULT_GROUP_GAP`、`DEFAULT_OUTPUT_SCALE`、背景色、墨色、文字色、
-抖动幅度等。绘制代码里不自带魔法数字，调参改一处。
+抖动幅度、字号（刻度 / x 标签 / 标题 / 图例 / 数值标签）、图例色块尺寸与间距、
+网格线颜色等。绘制代码里不自带魔法数字，调参改一处。
 
 ## 与丝袜渲染算法实现的协作边界
 
