@@ -1,0 +1,50 @@
+[project]
+name = "stockchart"
+version = "0.1.0.dev0"
+description = "A creative plotting toolkit that draws data as stockings pulled up over a pair of legs."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "skia-python>=144.1",
+    "numpy>=2.5",
+    "pillow>=13.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1",
+    "ruff>=0.17",
+    "pyright>=1.1.414",
+    # 仅 tools/ 下的素材切分脚本使用（连通域标记），不进入运行时依赖
+    "scipy>=1.18",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stockchart"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "D"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+"tools/**" = ["D103"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.pyright]
+include = ["src", "tests", "tools"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

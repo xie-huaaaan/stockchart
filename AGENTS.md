@@ -1,0 +1,56 @@
+# AGENTS.md
+
+stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大小。效果参考 `assets/sample.jpg`。
+设计细节见 [docs/design.md](docs/design.md)，本文件只写约定。
+
+## 环境与命令
+
+- Python 3.12，`uv` 管理依赖。依赖写进 `pyproject.toml`，不手改 `uv.lock`。
+- `uv sync`：安装依赖
+- `uv run pytest`：测试
+- `uv run ruff check . && uv run ruff format .`：lint 与格式化
+- `uv run pyright`：类型检查（strict）
+
+## 目录
+
+- `src/stockchart/`：库源码。`src/stockchart/assets/` 只放打包进库的必要资源（切好的腿图 + 元数据）。
+- `assets/`：开发期原始素材与参考图，不打包，不在运行时引用。
+- `tools/`：开发脚本（如素材切分），不属于库的公开 API，可依赖 scipy 等 dev 依赖。
+- `tests/`、`docs/`
+
+## 依赖
+
+- 运行时只允许：`skia-python`（渲染、文字）、`numpy`、`pillow`。新增运行时依赖前先和用户确认。
+- 不使用 matplotlib。不依赖系统是否装有某个具体字体。
+- 开发依赖（pytest、ruff、pyright、scipy）放在 `[dependency-groups].dev`。
+
+## 代码约定
+
+- 使用现代语法：`def f[T](x: list[T]) -> T`、`type Alias = ...`、`X | None`、`match`、`dataclass(slots=True, frozen=True)`。
+- 全部代码带类型标注，公开 API 不用 `Any`。
+- 内部实现代码：模块、类、函数写简短文档注释（一两句话说明功能，不复述参数名）。
+- 公开 API（[docs/api.md](docs/api.md) 收录的接口）：docstring 完整——功能、参数、返回值、语义与默认行为（边界值、0 值处理等），与 api.md 保持一致。
+- 行内注释主要写“为什么”（取舍、约束、坑）；只有作用无法一眼看出时才写“做了什么”。不写来历、不写“修复了 xxx”。
+- 公共 API 分五层：L0 素材（`Leg`/`LegLibrary`/`load_leg`）→ L1 渲染原语（`render_stocking`、文字与手绘线）→ L2 自由柱状图（`BarPlot`/`Scale`/`Canvas`）→ L3 布局封装（`add_bars` 等便捷方法）→ L4 一行出图（`bar`/`mirror_bar`）。上层只通过下层的公开接口工作；签名以 docs/api.md 为准，改动先改文档再改代码。
+- 默认行为要合理，所有魔法数字（80%、y 轴极大值、颜色、间距等）都暴露为可调参数，并有集中的默认值定义，不散落在绘制代码里。
+- 渲染结果应可复现：任何随机行为都由 `seed` 控制。
+- 性能热点优先用 numpy 向量化；只有 profile 证明不够再考虑 C/C++ 扩展，且需先与用户确认。
+
+## 素材约定
+
+- 切分脚本为 `tools/split_legs.py`，输出到 `src/stockchart/assets/`：每条腿一个带 alpha 的 PNG，外加一份元数据 `legs.json`。
+- 腿编号全局唯一、一经发布不得变动：`leg_01`…`leg_26`，按 row1→row3、从左到右；配对编号 `pair_01`…`pair_13`。
+- 元数据至少含：腿编号、所属配对编号、左/右、来源行与序号、像素尺寸、足底中心 x、足底宽度。
+- 切分时丢弃像素面积过小的杂点（用户手工制作时的瑕疵），阈值写在脚本常量里。
+- 修改素材后必须重新生成预览图（带编号）并让用户核对配对与左右。
+
+## 渲染约定
+
+- 坐标单位是“素材像素”；输出缩放用单独的 `scale` 参数。
+- 文字走 skia，字体选择见 docs/design.md“字体”一节：逐字符回退，保证中文可显示；找不到字形时用“豆腐块”而不是抛异常。
+- 输出格式：PNG 文件，以及内存中的 numpy 数组 / PIL Image。暂不做 SVG/PDF。
+
+## 协作
+
+- 需求不明确时先问用户，不要硬猜；无法访问外网站点时提醒用户开启 VPN。
+- 用中文与用户交流、写文档；代码标识符用英文，注释与文档字符串用中文。
