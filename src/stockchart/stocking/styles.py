@@ -188,14 +188,15 @@ class Lace:
 
     scallop 是波浪周期（像素）。
     color 为 None 时取袜身主色。
-    蕾丝带本体默认不透明，镂空感由 holes 的孔点图案表达。
+    蕾丝是镂空织物，带子默认半透明（0.85），透出其下遮盖的皮肤；
+    镂空感同时由 holes 的孔点图案表达。
     holes 为 True 时在蕾丝带上叠加孔点。
     """
 
     height: float = 28.0
     scallop: float = 28.0
     color: Color | None = None
-    opacity: float = 1.0
+    opacity: float = 0.85
     holes: bool = True
 
     def __post_init__(self) -> None:

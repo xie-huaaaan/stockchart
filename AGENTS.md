@@ -50,6 +50,15 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 - 文字走 skia，字体选择见 docs/design.md“字体”一节：逐字符回退，保证中文可显示；找不到字形时用“豆腐块”而不是抛异常。
 - 输出格式：PNG 文件，以及内存中的 numpy 数组 / PIL Image。暂不做 SVG/PDF。
 
+## 版本管理（Git）
+
+- 仓库根目录即项目根目录，`main` 为开发主线。
+- 每完成一个可运行的功能点或修复就 commit，消息用中文一句话概述改动要点；
+  不确定是否保留的实验性改动先开 `experiment/*` 分支，常规迭代直接提交 `main`。
+- 提交前跑 `uv run python -m pytest`（本机 `uv run pytest` 有脚本路径问题）。
+- `out/` 为评审产物目录，不入库（已 gitignore），评审前用 `tools/render_*_review.py` 重新生成。
+- 新会话接手时先 `git log --oneline` 了解进度，再读本文件与 docs/。
+
 ## 协作
 
 - 需求不明确时先问用户，不要硬猜；无法访问外网站点时提醒用户开启 VPN。

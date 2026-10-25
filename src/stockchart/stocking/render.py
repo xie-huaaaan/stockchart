@@ -82,9 +82,12 @@ def render_stocking(
     # 环形线条（横纹、袜口、蕾丝）的透视下弯量：中线最大、两侧缘为 0
     dip = _curve_dip(col_profile, alpha_mask, style.shading.curve)
 
+    # 上沿条带静区高度：袜身图案从条带下沿起算
+    band_h = _band_extent(style.top)
+
     # 生成袜子 RGBA 纹理 (H, W, 4)，y_start 以上行全透明
     fabric_layer = _render_fabric(
-        style.fabric, src, alpha_mask, col_profile, y_start, H, W, rng, dip
+        style.fabric, src, alpha_mask, col_profile, y_start, H, W, rng, dip, band_h
     )
 
     # 袜子顶边沿弧线裁剪：使织物边界与袜口/蕾丝/边线的弧形上沿处处重合
@@ -286,6 +289,20 @@ def _curve_dip(
     return curve * half_w * (1.0 - u * u)
 
 
+def _band_extent(top: "Bare | Welt | Lace | Fade") -> float:
+    """上沿条带静区的高度：袜身图案须让位到条带下沿之下。
+
+    Welt 取条带高度；Lace 取条带高度加波浪谷底振幅（与 _draw_lace 公式一致）；
+    Bare / Fade 无条带。
+    """
+    if isinstance(top, Welt):
+        return top.height
+    if isinstance(top, Lace):
+        scallop = max(top.scallop, 20.0)
+        return top.height + min(scallop * 0.15, top.height * 0.25)
+    return 0.0
+
+
 # ---------------------------------------------------------------------------
 # 袜身纹理生成
 # ---------------------------------------------------------------------------
@@ -301,23 +318,26 @@ def _render_fabric(
     W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
+    band_h: float = 0.0,
 ) -> NDArray[np.float64]:
     """生成 (H, W, 4) float64 的袜身 RGBA 层，y_start 以上行全透明。
 
     dip 为环形图案（横纹、网格横线、印花行）的透视下弯量 (H, W)。
+    band_h 为上沿条带的"静区"高度：袜身图案从条带下沿起算，
+    静区内以主色纯织物填充（对齐真实袜口的素色针织带）。
     """
     layer = np.zeros((H, W, 4), dtype=np.float64)
 
     if isinstance(fabric, Plain):
         layer = _fabric_plain(fabric, src, alpha, u, y_start, H, W)
     elif isinstance(fabric, Striped):
-        layer = _fabric_striped(fabric, src, alpha, u, y_start, H, W, dip)
+        layer = _fabric_striped(fabric, src, alpha, u, y_start, H, W, dip, band_h)
     elif isinstance(fabric, Ribbed):
-        layer = _fabric_ribbed(fabric, src, alpha, u, y_start, H, W)
+        layer = _fabric_ribbed(fabric, src, alpha, u, y_start, H, W, dip, band_h)
     elif isinstance(fabric, Fishnet):
-        layer = _fabric_fishnet(fabric, src, alpha, u, y_start, H, W, rng, dip)
+        layer = _fabric_fishnet(fabric, src, alpha, u, y_start, H, W, rng, dip, band_h)
     elif isinstance(fabric, Dotted):
-        layer = _fabric_dotted(fabric, src, alpha, u, y_start, H, W, rng, dip)
+        layer = _fabric_dotted(fabric, src, alpha, u, y_start, H, W, rng, dip, band_h)
 
     # 渲染区外清零
     layer[:y_start] = 0.0
@@ -399,15 +419,28 @@ def _fabric_striped(
     u: NDArray[np.float64],
     y0: int, H: int, W: int,
     dip: NDArray[np.float64] | None = None,
+    band_h: float = 0.0,
 ) -> NDArray[np.float64]:
-    """横条纹袜：从袜口（y0）往下排列条纹周期，条纹沿弧线下弯。"""
+    """横条纹袜：条纹从袜口静区下沿起算，静区内为主色纯织物。"""
     layer = np.zeros((H, W, 4), dtype=np.float64)
-    ys = np.arange(H, dtype=np.float64).reshape(H, 1) - y0  # 从袜口算起
-    if dip is not None:
-        ys = ys - dip  # 弧线下弯：中线处的条纹位置下移
-    rgb_map, opa_map = _stripe_opacity_at_y(f, ys)
+    ys = np.arange(H, dtype=np.float64).reshape(H, 1)
+    dip2 = dip if dip is not None else 0.0
+
+    # 条纹：相位从静区下沿起算；静区之上清除
+    ys_pat = ys - y0 - band_h - dip2
+    rgb_map, opa_map = _stripe_opacity_at_y(f, ys_pat)
     layer[..., :3] = rgb_map
     layer[..., 3] = opa_map
+    origin = y0 + band_h + dip2  # (H, W)
+    layer[ys < origin] = 0.0
+
+    # 静区：第一条带的颜色与不透明度作为主色纯织物填充
+    if band_h > 0:
+        first = f.stripes[0]
+        in_band = (ys >= y0 + dip2) & (ys < origin) & (alpha > 0.05)
+        layer[in_band, :3] = color_rgb(first.color)
+        layer[in_band, 3] = first.opacity * color_alpha(first.color)
+
     layer[:y0] = 0.0
     return layer
 
@@ -418,8 +451,10 @@ def _fabric_ribbed(
     alpha: NDArray[np.float64],
     u: NDArray[np.float64],
     y0: int, H: int, W: int,
+    dip: NDArray[np.float64] | None = None,
+    band_h: float = 0.0,
 ) -> NDArray[np.float64]:
-    """竖罗纹：用 cos 函数在 u 方向产生明暗交替的条纹。"""
+    """竖罗纹：用 cos 函数在 u 方向产生明暗交替的条纹；静区内为纯色。"""
     layer = np.zeros((H, W, 4), dtype=np.float64)
     rgb = color_rgb(f.color)
 
@@ -436,6 +471,18 @@ def _fabric_ribbed(
 
     layer[..., :3] = rgb * brightness[..., np.newaxis]
     layer[..., 3] = f.opacity * color_alpha(f.color)
+
+    # 静区与弧线之上清除罗纹（按弧线逐像素），随后回填纯色静区
+    ys = np.arange(H, dtype=np.float64).reshape(H, 1)
+    dip2 = dip if dip is not None else 0.0
+    origin = y0 + band_h + dip2
+    layer[ys < origin] = 0.0
+
+    if band_h > 0:
+        in_band = (ys >= y0 + dip2) & (ys < origin) & (alpha > 0.05)
+        layer[in_band, :3] = rgb
+        layer[in_band, 3] = f.opacity * color_alpha(f.color)
+
     layer[:y0] = 0.0
     return layer
 
@@ -473,8 +520,12 @@ def _fabric_fishnet(
     y0: int, H: int, W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
+    band_h: float = 0.0,
 ) -> NDArray[np.float64]:
-    """网袜：网线不透明、网孔透明（可叠底袜），横向网线沿弧线下弯。"""
+    """网袜：网线不透明、网孔透明（可叠底袜），横向网线沿弧线下弯。
+
+    静区内无网线（底袜若有则照常填充）。
+    """
     layer = np.zeros((H, W, 4), dtype=np.float64)
 
     row_half_w = np.where(alpha > 0.05, 1, 0).sum(axis=1) / 2.0
@@ -488,6 +539,10 @@ def _fabric_fishnet(
     rgb = color_rgb(f.color)
     layer[..., :3] = rgb
     layer[..., 3] = net * color_alpha(f.color)
+
+    # 静区与弧线之上清除网线
+    origin = y0 + band_h + (dip if dip is not None else 0.0)
+    layer[np.arange(H, dtype=np.float64).reshape(H, 1) < origin] = 0.0
 
     # 底袜
     if f.underlay is not None:
@@ -564,13 +619,14 @@ def _fabric_dotted(
     y0: int, H: int, W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
+    band_h: float = 0.0,
 ) -> NDArray[np.float64]:
-    """印花袜：底袜 + 图案叠加，图案行沿弧线下弯。"""
+    """印花袜：底袜 + 图案叠加；图案行沿弧线下弯，从静区下沿起算。"""
     base = _fabric_plain(f.base, src, alpha, u, y0, H, W)
 
     row_half_w = np.where(alpha > 0.05, 1, 0).sum(axis=1) / 2.0
     abs_x = u * row_half_w[:, np.newaxis]
-    ys = (np.arange(H, dtype=np.float64) - y0).reshape(H, 1) * np.ones((1, W))
+    ys = (np.arange(H, dtype=np.float64) - y0 - band_h).reshape(H, 1) * np.ones((1, W))
     if dip is not None:
         ys = ys - dip
 
@@ -579,6 +635,10 @@ def _fabric_dotted(
     dot_layer = np.zeros((H, W, 4), dtype=np.float64)
     dot_layer[..., :3] = color_rgb(f.color)
     dot_layer[..., 3] = dot * f.opacity * color_alpha(f.color)
+
+    # 静区与弧线之上无图案
+    origin = y0 + band_h + (dip if dip is not None else 0.0)
+    dot_layer[np.arange(H, dtype=np.float64).reshape(H, 1) < origin] = 0.0
     dot_layer[:y0] = 0.0
 
     return _alpha_over(base, dot_layer)
