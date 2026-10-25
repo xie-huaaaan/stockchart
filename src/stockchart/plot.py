@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -17,10 +17,12 @@ from stockchart.canvas import Canvas, skia_color
 from stockchart.color import Color
 from stockchart.defaults import (
     DEFAULT_BACKGROUND,
+    DEFAULT_BAR_GAP,
     DEFAULT_BOTTOM_PAD,
     DEFAULT_GRID_COLOR,
     DEFAULT_GRID_DASH,
     DEFAULT_GRID_WIDTH,
+    DEFAULT_GROUP_GAP,
     DEFAULT_INK_COLOR,
     DEFAULT_LABEL_LINE_FACTOR,
     DEFAULT_LEGEND_ITEM_GAP,
@@ -53,7 +55,13 @@ from stockchart.defaults import (
 from stockchart.legs import Leg
 from stockchart.library import LegLibrary
 from stockchart.sketch import sketch_axis, sketch_line
-from stockchart.stocking import STYLES, StockingStyle, StyleLike, render_stocking
+from stockchart.stocking import (
+    STYLES,
+    StockingStyle,
+    StyleLike,
+    StyleSeq,
+    render_stocking,
+)
 from stockchart.text import TextAnchor, draw_text, measure_text
 
 type BarSide = Literal["up", "down"]
@@ -258,6 +266,7 @@ class BarPlot:
         self._rng = random.Random(DEFAULT_SEED if seed is None else seed)
         self._bars: list[_BarRecord] = []
         self._group_centers: list[float] = []
+        self._l3_cursor = 0.0  # L3 方法的续排光标（最后一条腿的右缘）
         self._y_axis: _YAxisRecord | None = None
         self._x_labels: _XLabelsRecord | None = None
         self._title: str | None = None
@@ -380,6 +389,171 @@ class BarPlot:
             seed=self._rng.getrandbits(32),
         )
         return self
+
+    # ------------------------------------------------------------------
+    # L3 布局封装：间距 + 选腿
+    # ------------------------------------------------------------------
+
+    def _style_list(self, style: StyleSeq) -> list[StockingStyle]:
+        """把样式参数归一为实例列表；空列表视为错误。"""
+        styles = [style] if isinstance(style, (str, StockingStyle)) else list(style)
+        if not styles:
+            raise ValueError("style 列表不能为空")
+        return [_resolve_style(s) for s in styles]
+
+    def _place_group(
+        self,
+        heights: Sequence[float],
+        *,
+        bar_gap: float,
+        style_for: Callable[[int], StockingStyle],
+        legs: Sequence[Leg],
+        side_for: Callable[[int], BarSide] | None = None,
+    ) -> float:
+        """从光标处向右排一组腿（按边缘空隙 bar_gap），返回组中心。
+
+        光标推进到本组末尾右缘；同时把组中心记录进 _group_centers。
+        """
+        if not heights:
+            raise ValueError("heights 为空")
+        if len(legs) != len(heights):
+            raise ValueError(f"legs 与 heights 长度不一致：{len(legs)} != {len(heights)}")
+        cursor = self._l3_cursor
+        first_left = cursor
+        for i, (h, leg) in enumerate(zip(heights, legs, strict=True)):
+            side: BarSide = side_for(i) if side_for is not None else "up"
+            self.add_bar(
+                cursor + leg.foot_center_x,
+                h,
+                leg,
+                style=style_for(i),
+                side=side,
+            )
+            cursor += leg.width + bar_gap
+        center = (first_left + (cursor - bar_gap)) / 2
+        self._group_centers.append(center)
+        self._l3_cursor = cursor - bar_gap
+        return center
+
+    def add_bars(
+        self,
+        heights_px: Sequence[float],
+        *,
+        bar_gap: float = DEFAULT_BAR_GAP,
+        style: StyleSeq = DEFAULT_STOCKING_STYLE,
+        legs: Sequence[Leg] | None = None,
+        seed: int | None = None,
+    ) -> BarPlot:
+        """单序列：统一间距从左到右排开，自动按左、右、左、右……交替选腿。
+
+        legs 可显式指定每根柱子的素材（长度须与 heights_px 一致，不参与
+        循环）。style 为列表时按柱序循环取用。多次调用 L3 方法时从上一次
+        内容的右缘续排。
+        """
+        heights = list(heights_px)
+        if not heights:
+            raise ValueError("heights_px 为空")
+        if legs is None:
+            legs = self._auto_legs(len(heights), seed=seed)
+        elif len(legs) != len(heights):
+            raise ValueError(f"legs 与 heights_px 长度不一致：{len(legs)} != {len(heights)}")
+        self._advance_cursor(DEFAULT_GROUP_GAP)
+        styles = self._style_list(style)
+        self._place_group(
+            heights,
+            bar_gap=bar_gap,
+            style_for=lambda i: styles[i % len(styles)],
+            legs=legs,
+        )
+        return self
+
+    def add_grouped_bars(
+        self,
+        heights_px: Sequence[Sequence[float]],
+        *,
+        bar_gap: float = DEFAULT_BAR_GAP,
+        group_gap: float = DEFAULT_GROUP_GAP,
+        style: StyleSeq = DEFAULT_STOCKING_STYLE,
+        legs: Sequence[Leg] | None = None,
+        seed: int | None = None,
+    ) -> BarPlot:
+        """(组数, 系列数) 的像素高度。
+
+        组内用 bar_gap、组间用 group_gap，跨列按左、右、左、右……交替选腿。
+
+        style 为列表时按组内位置循环：组内第 i 根用 styles[i % len]。
+        列表长度等于系列数时即"每系列一个样式"，同一系列全图样式一致。
+        legs 显式时按行优先展平，长度须等于总柱数。
+        """
+        groups = [list(g) for g in heights_px]
+        if not groups:
+            raise ValueError("heights_px 为空")
+        total = sum(len(g) for g in groups)
+        if legs is None:
+            legs = self._auto_legs(total, seed=seed)
+        elif len(legs) != total:
+            raise ValueError(f"legs 与总柱数不一致：{len(legs)} != {total}")
+        self._advance_cursor(group_gap)
+        styles = self._style_list(style)
+        cursor = 0
+        for group in groups:
+            group_legs = legs[cursor : cursor + len(group)]
+            self._place_group(
+                group,
+                bar_gap=bar_gap,
+                style_for=lambda i: styles[i % len(styles)],
+                legs=group_legs,
+            )
+            cursor += len(group)
+            self._l3_cursor += group_gap
+        return self
+
+    def add_paired_bars(
+        self,
+        heights_px: Sequence[tuple[float, float]],
+        *,
+        group_gap: float = DEFAULT_GROUP_GAP,
+        style: StyleSeq = DEFAULT_STOCKING_STYLE,
+        pairs: Sequence[tuple[Leg, Leg]] | None = None,
+        seed: int | None = None,
+    ) -> BarPlot:
+        """每组恰好 2 个值：同组使用同一对素材，系列 0 左腿、系列 1 右腿。
+
+        style 为列表时按组内位置循环（系列 0 取 styles[0]、系列 1 取
+        styles[1 % len]）。pairs 缺省时自动选取不重复的素材对；
+        显式时长度须与组数一致。组内间距用 DEFAULT_BAR_GAP。
+        """
+        groups = [tuple(g) for g in heights_px]
+        if not groups:
+            raise ValueError("heights_px 为空")
+        if pairs is None:
+            lib = LegLibrary(seed=self._rng.getrandbits(32) if seed is None else seed)
+            pair_list = lib.sample_pairs(len(groups))
+        else:
+            if len(pairs) != len(groups):
+                raise ValueError(f"pairs 与组数不一致：{len(pairs)} != {len(groups)}")
+            pair_list = [tuple(p) for p in pairs]
+        self._advance_cursor(group_gap)
+        styles = self._style_list(style)
+        for group, pair in zip(groups, pair_list, strict=True):
+            self._place_group(
+                group,
+                bar_gap=DEFAULT_BAR_GAP,
+                style_for=lambda i: styles[i % len(styles)],
+                legs=list(pair),
+            )
+            self._l3_cursor += group_gap
+        return self
+
+    def _auto_legs(self, n: int, *, seed: int | None) -> list[Leg]:
+        """自动选腿：左、右、左、右……交替，素材对按 seed 伪随机。"""
+        lib = LegLibrary(seed=self._rng.getrandbits(32) if seed is None else seed)
+        return lib.alternate(n)
+
+    def _advance_cursor(self, gap: float) -> None:
+        """续排时光标与已有内容保持 group_gap 的边缘间距。"""
+        if self._group_centers:
+            self._l3_cursor += gap
 
     def render(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Canvas:
         """渲染。scale 为输出放大倍数（抗锯齿），不影响素材像素坐标。"""
