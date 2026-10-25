@@ -119,10 +119,128 @@ def render_stocking(
         alpha_mask, col_profile, y_start, H, W, rng, dip
     )
 
+    # 膝盖褶皱等素材内部墨线增强：以"织物压痕"的方式补画到袜子上
+    result = _boost_ink_lines(
+        result, src, alpha_mask, col_profile, style.fabric,
+        style.shading, fabric_layer, ys_grid, top_arc, y_start,
+    )
+
     out = (np.clip(result, 0.0, 1.0) * 255.0).astype(np.uint8)
 
     from dataclasses import replace
     return replace(leg, image=out)
+
+
+# ---------------------------------------------------------------------------
+# 素材墨线（膝盖褶皱等）增强
+# ---------------------------------------------------------------------------
+
+_LUM_WEIGHTS = np.array([0.299, 0.587, 0.114])
+
+
+def _luminance(rgb: NDArray[np.float64]) -> NDArray[np.float64]:
+    """RGB (..., 3) → 亮度 (...)。"""
+    return rgb @ _LUM_WEIGHTS
+
+
+def _ink_mask(
+    src: NDArray[np.float64],
+    alpha: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """检测素材内部的手绘线条（膝盖褶皱等），返回 [0,1] 软掩码。
+
+    以肤色亮度的 90 分位为基准，亮度低于基准 0.05 开始、0.18 达到全强度；
+    排除 alpha 边缘约 3px 环带（轮廓线不参与，避免与侧缘阴影叠加），
+    并做轻微模糊保持手绘感。
+    """
+    from PIL import Image, ImageFilter
+
+    lum = _luminance(src[..., :3])
+    covered = alpha > 0.5
+    if not covered.any():
+        return np.zeros_like(lum)
+    skin_lum = float(np.percentile(lum[covered], 90))
+    t_start, t_full = skin_lum - 0.05, skin_lum - 0.18
+    if t_full >= t_start:
+        return np.zeros_like(lum)
+
+    ink = np.clip((t_start - lum) / (t_start - t_full), 0.0, 1.0)
+
+    # 排除轮廓：对腿 mask 做约 3px 腐蚀
+    leg_u8 = (alpha > 0.05).astype(np.uint8) * 255
+    interior = np.asarray(
+        Image.fromarray(leg_u8).filter(ImageFilter.MinFilter(7))
+    ).astype(np.float64) / 255.0
+    ink *= interior
+
+    # 轻微模糊
+    ink_img = Image.fromarray((ink * 255).astype(np.uint8))
+    ink = np.asarray(ink_img.filter(ImageFilter.GaussianBlur(0.8))).astype(
+        np.float64
+    ) / 255.0
+    return ink
+
+
+def _boost_ink_lines(
+    img: NDArray[np.float64],
+    src: NDArray[np.float64],
+    alpha: NDArray[np.float64],
+    u: NDArray[np.float64],
+    fabric: Fabric,
+    sh: Shading,
+    fabric_layer: NDArray[np.float64],
+    ys_grid: NDArray[np.float64],
+    top_arc: NDArray[np.float64],
+    y0: int,
+) -> NDArray[np.float64]:
+    """把素材自带的内部墨线以织物褶痕的形式补画到袜子上。
+
+    线条颜色跟随袜色：深色织物上用 screen 提亮为冷灰线（动漫黑丝的画法），
+    浅色织物上按原线条深度比 multiply 压暗。强度由 Shading.ink 控制，
+    并按局部织物不透明度加权——裸腿处不增强（皮肤本来的线已在）。
+    """
+    if sh.ink <= 0:
+        return img
+
+    ink = _ink_mask(src, alpha)
+    if not (ink > 0.01).any():
+        return img
+
+    H, W = alpha.shape
+    # 增强只发生在袜子区域内，且按织物覆盖率加权
+    coverage = fabric_layer[..., 3]
+    if isinstance(fabric, Fishnet):
+        # 网孔直接透出皮肤线，只对底袜部分增强，避免碎线
+        if fabric.underlay is not None:
+            coverage = _fabric_plain(
+                fabric.underlay, src, alpha, u, y0, H, W
+            )[..., 3]
+        else:
+            return img
+
+    w = ink * sh.ink * coverage
+    w *= (ys_grid >= top_arc).astype(np.float64)  # 弧线之上不增强
+    if not (w > 0.01).any():
+        return img
+    w = np.clip(w, 0.0, 0.85)[..., np.newaxis]
+
+    # 原线条的深度比（相对肤色），用于浅色织物的压暗
+    lum = _luminance(src[..., :3])
+    covered = alpha > 0.5
+    skin_lum = float(np.percentile(lum[covered], 90))
+    f_local = np.clip(lum / max(skin_lum, 1e-6), 0.3, 1.0)[..., np.newaxis]
+
+    current = img[..., :3]
+    fab_lum = _luminance(fabric_layer[..., :3])
+    darkness = np.clip(1.0 - fab_lum * 2.0, 0.0, 1.0)[..., np.newaxis]
+
+    shadow_rgb = color_rgb(sh.shadow_color)
+    screen_c = 1.0 - (1.0 - current) * (1.0 - shadow_rgb)   # 深色织物：提亮为冷灰线
+    mult_c = current * f_local                               # 浅色织物：压暗
+
+    boosted = screen_c * darkness + mult_c * (1.0 - darkness)
+    img[..., :3] = current * (1.0 - w) + boosted * w
+    return img
 
 
 # ---------------------------------------------------------------------------
