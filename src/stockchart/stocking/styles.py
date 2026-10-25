@@ -13,7 +13,6 @@ from typing import Literal
 
 from stockchart.color import Color, check_color
 
-
 # ---------------------------------------------------------------------------
 # Fabric 种类
 # ---------------------------------------------------------------------------
@@ -299,6 +298,7 @@ class StockingStyle:
 # STYLES 预设注册表
 # ---------------------------------------------------------------------------
 
+
 def _make_styles() -> dict[str, StockingStyle]:
     """构造内置预设字典，内部调用一次后包装为只读映射。"""
     # 常用颜色常量
@@ -347,42 +347,52 @@ def _make_styles() -> dict[str, StockingStyle]:
 
     # ---- 条纹 ----
     s["stripe_blue_white"] = StockingStyle(
-        fabric=Striped(stripes=(
-            Stripe(color=(255, 255, 255), width=8),
-            Stripe(color=(70, 110, 200), width=8),
-        )),
+        fabric=Striped(
+            stripes=(
+                Stripe(color=(255, 255, 255), width=8),
+                Stripe(color=(70, 110, 200), width=8),
+            )
+        ),
         top=Welt(color=(70, 110, 200)),
     )
     s["stripe_pink_white"] = StockingStyle(
-        fabric=Striped(stripes=(
-            Stripe(color=(255, 255, 255), width=8),
-            Stripe(color=(240, 150, 180), width=8),
-        )),
+        fabric=Striped(
+            stripes=(
+                Stripe(color=(255, 255, 255), width=8),
+                Stripe(color=(240, 150, 180), width=8),
+            )
+        ),
         top=Welt(color=(240, 150, 180)),
     )
     s["stripe_black_white"] = StockingStyle(
-        fabric=Striped(stripes=(
-            Stripe(color=(255, 255, 255), width=12),
-            Stripe(color=(30, 28, 32), width=12),
-        )),
+        fabric=Striped(
+            stripes=(
+                Stripe(color=(255, 255, 255), width=12),
+                Stripe(color=(30, 28, 32), width=12),
+            )
+        ),
         top=Welt(color=(30, 28, 32)),
     )
     s["stripe_rainbow"] = StockingStyle(
-        fabric=Striped(stripes=(
-            Stripe(color=(230, 60, 60), width=7),
-            Stripe(color=(230, 130, 40), width=7),
-            Stripe(color=(220, 200, 40), width=7),
-            Stripe(color=(60, 180, 80), width=7),
-            Stripe(color=(60, 120, 220), width=7),
-            Stripe(color=(150, 70, 200), width=7),
-        )),
+        fabric=Striped(
+            stripes=(
+                Stripe(color=(230, 60, 60), width=7),
+                Stripe(color=(230, 130, 40), width=7),
+                Stripe(color=(220, 200, 40), width=7),
+                Stripe(color=(60, 180, 80), width=7),
+                Stripe(color=(60, 120, 220), width=7),
+                Stripe(color=(150, 70, 200), width=7),
+            )
+        ),
         top=Bare(),
     )
     s["stripe_sheer_black"] = StockingStyle(
-        fabric=Striped(stripes=(
-            Stripe(color=_BLACK, width=6, opacity=0.5),
-            Stripe(color=_BLACK, width=6, opacity=0.9),
-        )),
+        fabric=Striped(
+            stripes=(
+                Stripe(color=_BLACK, width=6, opacity=0.5),
+                Stripe(color=_BLACK, width=6, opacity=0.9),
+            )
+        ),
         top=Welt(color=_BLACK),
     )
 

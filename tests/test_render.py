@@ -1,6 +1,6 @@
 """基础集成测试：覆盖 L0 素材层与 L1 渲染原语。"""
 
-import io
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -8,24 +8,21 @@ from PIL import Image
 
 import stockchart
 from stockchart import (
+    STYLES,
+    Fishnet,
     LegLibrary,
     Plain,
-    Ribbed,
-    Fishnet,
-    Striped,
-    Stripe,
-    Dotted,
     StockingStyle,
-    STYLES,
-    render_stocking,
+    Striped,
     load_leg,
+    render_stocking,
 )
-from stockchart.stocking.styles import Welt, Lace, Fade, Bare, Shading
-
+from stockchart.stocking.styles import Fade, Lace, Shading, Welt
 
 # ---------------------------------------------------------------------------
 # 辅助：合成一条简单的腿素材
 # ---------------------------------------------------------------------------
+
 
 def make_synthetic_leg(height: int = 200, width: int = 80) -> "stockchart.Leg":
     """构造一条椭圆截面腿素材，用于测试渲染。"""
@@ -57,7 +54,11 @@ def make_synthetic_leg(height: int = 200, width: int = 80) -> "stockchart.Leg":
 class TestLegLibrary:
     def test_all_pairs_loaded(self) -> None:
         lib = LegLibrary(seed=0)
-        assert len(lib._pair_map) == 13
+        for i in range(1, 14):
+            left, _right = lib.pair(f"pair_{i:02d}")
+            assert left.pair_id == f"pair_{i:02d}"
+        with pytest.raises(KeyError):
+            lib.pair("pair_14")
 
     def test_get_by_id(self) -> None:
         lib = LegLibrary()
@@ -109,8 +110,8 @@ class TestLegLibrary:
         """同 seed 的 alternate 结果相同。"""
         lib1 = LegLibrary(seed=7)
         lib2 = LegLibrary(seed=7)
-        ids1 = [l.leg_id for l in lib1.alternate(8)]
-        ids2 = [l.leg_id for l in lib2.alternate(8)]
+        ids1 = [leg.leg_id for leg in lib1.alternate(8)]
+        ids2 = [leg.leg_id for leg in lib2.alternate(8)]
         assert ids1 == ids2
 
     def test_cache_returns_same_object(self) -> None:
@@ -126,7 +127,7 @@ class TestLegLibrary:
 
 
 class TestLoadLeg:
-    def test_from_png_returns_leg(self, tmp_path: "pytest.TempPathFactory") -> None:
+    def test_from_png_returns_leg(self, tmp_path: Path) -> None:
         leg = make_synthetic_leg(300, 100)
         png_path = tmp_path / "test_leg.png"
         Image.fromarray(leg.image).save(png_path)
@@ -137,7 +138,7 @@ class TestLoadLeg:
         assert loaded.leg_id is None
         assert loaded.side is None
 
-    def test_explicit_foot_params(self, tmp_path: "pytest.TempPathFactory") -> None:
+    def test_explicit_foot_params(self, tmp_path: Path) -> None:
         leg = make_synthetic_leg(200, 80)
         png_path = tmp_path / "test_leg2.png"
         Image.fromarray(leg.image).save(png_path)
@@ -194,14 +195,25 @@ class TestStockingStyleValidation:
 class TestStyles:
     def test_all_preset_keys_present(self) -> None:
         expected = {
-            "black_sheer", "black_sheer_lace", "black_pantyhose",
-            "gray_sheer", "nude_sheer", "white_sheer",
-            "black_tights", "white_tights",
-            "stripe_blue_white", "stripe_pink_white", "stripe_black_white",
-            "stripe_rainbow", "stripe_sheer_black",
-            "knit_cream", "knit_gray",
-            "fishnet_black", "fishnet_over_sheer",
-            "polka_black", "heart_white",
+            "black_sheer",
+            "black_sheer_lace",
+            "black_pantyhose",
+            "gray_sheer",
+            "nude_sheer",
+            "white_sheer",
+            "black_tights",
+            "white_tights",
+            "stripe_blue_white",
+            "stripe_pink_white",
+            "stripe_black_white",
+            "stripe_rainbow",
+            "stripe_sheer_black",
+            "knit_cream",
+            "knit_gray",
+            "fishnet_black",
+            "fishnet_over_sheer",
+            "polka_black",
+            "heart_white",
         }
         assert expected <= set(STYLES.keys())
 
@@ -254,21 +266,26 @@ class TestRenderStocking:
         """袜子区域的像素值应与原腿不同。"""
         height_px = 100
         result = render_stocking(leg, STYLES["black_tights"], height_px, seed=0)
-        y0 = leg.height - height_px
         # 腿中心列，袜子区域与原图应有差异
         cx = leg.foot_center_x
         orig_mid = leg.image[leg.height - 10, cx, :3].astype(int)
         result_mid = result.image[leg.height - 10, cx, :3].astype(int)
         assert not np.array_equal(orig_mid, result_mid)
 
-    @pytest.mark.parametrize("style_key", [
-        "black_sheer", "black_sheer_lace", "black_pantyhose",
-        "stripe_blue_white", "knit_cream", "fishnet_black",
-        "polka_black", "heart_white",
-    ])
-    def test_all_fabric_types_run(
-        self, leg: "stockchart.Leg", style_key: str
-    ) -> None:
+    @pytest.mark.parametrize(
+        "style_key",
+        [
+            "black_sheer",
+            "black_sheer_lace",
+            "black_pantyhose",
+            "stripe_blue_white",
+            "knit_cream",
+            "fishnet_black",
+            "polka_black",
+            "heart_white",
+        ],
+    )
+    def test_all_fabric_types_run(self, leg: "stockchart.Leg", style_key: str) -> None:
         """所有 Fabric 种类都能跑完不崩溃，输出尺寸正确。"""
         result = render_stocking(leg, STYLES[style_key], 150, seed=42)
         assert result.image.shape == (leg.height, leg.width, 4)

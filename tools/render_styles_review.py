@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 from PIL import Image, ImageDraw
 
 from stockchart import STYLES, Leg, LegLibrary, render_stocking

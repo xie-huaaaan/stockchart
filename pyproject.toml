@@ -32,7 +32,10 @@ src = ["src", "tests", "tools"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "D"]
-ignore = ["D203", "D213"]
+# 中文注释/文档约定与部分规则的冲突：
+# RUF001/002/003 把中文全角标点判为歧义 Unicode；D400/D415 不认中文句号；
+# D105 魔法方法（如 __post_init__）不强制文档。
+ignore = ["D203", "D213", "RUF001", "RUF002", "RUF003", "D400", "D415", "D105"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]
@@ -42,7 +45,8 @@ ignore = ["D203", "D213"]
 convention = "pep257"
 
 [tool.pyright]
-include = ["src", "tests", "tools"]
+# tools/ 不做类型检查：开发脚本依赖无 stub 的 scipy，且非公开 API（ruff 仍检查风格）
+include = ["src", "tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 

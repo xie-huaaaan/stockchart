@@ -13,7 +13,6 @@ from PIL import Image
 
 from stockchart.legs import Leg
 
-
 # ---------------------------------------------------------------------------
 # load_leg：从外部 PNG 加载自定义腿素材
 # ---------------------------------------------------------------------------
@@ -38,28 +37,28 @@ def load_leg(
     img = np.asarray(Image.open(png).convert("RGBA"))
     H, W = img.shape[:2]
 
-    if foot_center_x is None or foot_width is None:
-        foot_rows = min(20, H)
-        bot = img[H - foot_rows :, :, 3].astype(float)
-        col_sum = bot.sum(0)
-        total = col_sum.sum()
-        if total < 1:
-            foot_center_x = foot_center_x if foot_center_x is not None else W // 2
-            foot_width = foot_width if foot_width is not None else W // 3
-        else:
-            xs = np.arange(W, dtype=float)
-            if foot_center_x is None:
-                foot_center_x = int((col_sum * xs).sum() / total)
-            if foot_width is None:
-                foot_width = int((bot > 0).sum(1).mean())
-
+    est_cx, est_fw = _estimate_foot(img)
     return Leg(
         image=img,
         width=W,
         height=H,
-        foot_center_x=foot_center_x,
-        foot_width=foot_width,
+        foot_center_x=foot_center_x if foot_center_x is not None else est_cx,
+        foot_width=foot_width if foot_width is not None else est_fw,
     )
+
+
+def _estimate_foot(img: NDArray[np.uint8]) -> tuple[int, int]:
+    """按底部若干行的 alpha 估计足底中心 x 与足底宽度。"""
+    H, W = img.shape[:2]
+    foot_rows = min(20, H)
+    bot = img[H - foot_rows :, :, 3].astype(float)
+    col_sum = bot.sum(0)
+    if col_sum.sum() < 1:
+        return W // 2, W // 3
+    xs = np.arange(W, dtype=float)
+    center = int((col_sum * xs).sum() / col_sum.sum())
+    width = int((bot > 0).sum(1).mean())
+    return center, width
 
 
 # ---------------------------------------------------------------------------
@@ -74,9 +73,9 @@ class LegLibrary:
     """
 
     def __init__(self, *, seed: int | None = None) -> None:
-        """seed 同时作为后续自动选腿的默认随机源。"""
+        """Seed 同时作为后续自动选腿的默认随机源。"""
         self._rng = random.Random(seed)
-        self._meta: list[dict[str, object]] = []  # type: ignore[type-arg]
+        self._meta: list[dict[str, str | int]] = []
         self._cache: dict[str, Leg] = {}
         self._pair_map: dict[str, list[str]] = {}  # pair_id → [left_id, right_id]
         self._load_metadata()
@@ -86,7 +85,7 @@ class LegLibrary:
     # ------------------------------------------------------------------
 
     def get(self, leg_id: str) -> Leg:
-        """按编号取一条腿，如 get("leg_03")。
+        """按编号取一条腿（如 leg_03）。
 
         Args:
             leg_id: 内置腿编号，格式为 "leg_NN"（01–26）。
@@ -157,7 +156,8 @@ class LegLibrary:
         """读取 legs.json，构建 pair_map。"""
         pkg = files("stockchart.assets")
         json_bytes = (pkg / "legs.json").read_bytes()
-        self._meta = json.loads(json_bytes)
+        loaded: list[dict[str, str | int]] = json.loads(json_bytes)
+        self._meta = loaded
         for entry in self._meta:
             pid = str(entry["pair_id"])
             lid = str(entry["leg_id"])
@@ -179,6 +179,7 @@ class LegLibrary:
         png_bytes = (pkg / f"{leg_id}.png").read_bytes()
 
         import io
+
         img = np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGBA"))
 
         leg = Leg(

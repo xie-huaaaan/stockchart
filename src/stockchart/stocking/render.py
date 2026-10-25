@@ -26,8 +26,8 @@ from stockchart.stocking.styles import (
     Plain,
     Ribbed,
     Shading,
-    Striped,
     StockingStyle,
+    Striped,
     Welt,
 )
 
@@ -41,12 +41,12 @@ if TYPE_CHECKING:
 
 
 def render_stocking(
-    leg: "Leg",
+    leg: Leg,
     style: StockingStyle,
     height_px: int,
     *,
     seed: int | None = None,
-) -> "Leg":
+) -> Leg:
     """给腿穿丝袜：从脚端向上覆盖 height_px 像素。
 
     Args:
@@ -59,8 +59,6 @@ def render_stocking(
     Returns:
         新的 Leg：像素已替换，元数据与原素材一致。
     """
-    from stockchart.legs import Leg as LegClass
-
     if height_px <= 0:
         return leg
 
@@ -83,14 +81,13 @@ def render_stocking(
     dip = _curve_dip(col_profile, alpha_mask, style.shading.curve)
 
     # Lace 波形只计算一次，供图案裁剪与上沿绘制共用（保证相位一致）
-    wave = _lace_wave(style.top, y_start, dip, W, H, rng) \
-        if isinstance(style.top, Lace) else None
+    wave = _lace_wave(style.top, y_start, dip, W, H, rng) if isinstance(style.top, Lace) else None
 
     # 上沿条带下沿（每列）：袜身图案从这条线起算，条带直接覆盖在皮肤上。
     # Welt 为条带底沿弧线；Lace 为波浪边缘；Bare / Fade 为袜口弧线本身。
     if isinstance(style.top, Welt):
         row = min(y_start + int(style.top.height), H - 1)
-        origin_col = y_start + style.top.height + dip[row]          # (W,)
+        origin_col = y_start + style.top.height + dip[row]  # (W,)
         pattern_offset = style.top.height
     elif isinstance(style.top, Lace):
         assert wave is not None
@@ -102,27 +99,31 @@ def render_stocking(
 
     # 生成袜子 RGBA 纹理 (H, W, 4)，y_start 以上行全透明
     fabric_layer = _render_fabric(
-        style.fabric, src, alpha_mask, col_profile, y_start, H, W,
-        rng, dip, pattern_offset,
+        style.fabric,
+        src,
+        alpha_mask,
+        col_profile,
+        y_start,
+        H,
+        W,
+        rng,
+        dip,
+        pattern_offset,
     )
 
     # 织物沿条带下沿逐列裁剪：图案与上沿边缘处处贴合（Lace 沿波浪无缺口）
-    ys_grid = np.arange(H, dtype=np.float64)[:, np.newaxis]      # (H, 1)
+    ys_grid = np.arange(H, dtype=np.float64)[:, np.newaxis]  # (H, 1)
     fabric_layer[ys_grid < origin_col[np.newaxis, :]] = 0.0
-    top_arc = y_start + dip                                      # (H, W) 袜口弧线
+    top_arc = y_start + dip  # (H, W) 袜口弧线
 
     # Fade：渐隐沿弧线自袜口顶端向下 length 像素内完成（顶端透明，底端全显）
     fade_ramp: NDArray[np.float64] | None = None
     if isinstance(style.top, Fade):
-        fade_ramp = np.clip(
-            (ys_grid - top_arc) / max(style.top.length, 1.0), 0.0, 1.0
-        )
+        fade_ramp = np.clip((ys_grid - top_arc) / max(style.top.length, 1.0), 0.0, 1.0)
         fabric_layer[..., 3] *= fade_ramp
 
     # 叠加光影（同样沿弧线裁剪，避免袜口弧线之上出现裸腿阴影）
-    shading_layer = _render_shading(
-        style.shading, src, alpha_mask, col_profile, y_start, H, W
-    )
+    shading_layer = _render_shading(style.shading, src, alpha_mask, col_profile, y_start, H, W)
     shading_layer[ys_grid < top_arc] = 0.0
     if fade_ramp is not None:
         # 渐隐区中阴影与高光同步变淡，避免"袜子已消失、阴影仍在"的灰雾
@@ -134,8 +135,18 @@ def render_stocking(
 
     # 绘制上沿
     result = _render_top_edge(
-        result, style.top, style.fabric, style.shading,
-        alpha_mask, col_profile, y_start, H, W, rng, dip, wave
+        result,
+        style.top,
+        style.fabric,
+        style.shading,
+        alpha_mask,
+        col_profile,
+        y_start,
+        H,
+        W,
+        rng,
+        dip,
+        wave,
     )
 
     # 应用光影：在条带绘制之后，袜口/蕾丝与袜身统一受光
@@ -143,13 +154,22 @@ def render_stocking(
 
     # 膝盖褶皱等素材内部墨线增强：以"织物压痕"的方式补画到袜子上
     result = _boost_ink_lines(
-        result, src, alpha_mask, col_profile, style.fabric,
-        style.shading, fabric_layer, ys_grid, top_arc, y_start,
+        result,
+        src,
+        alpha_mask,
+        col_profile,
+        style.fabric,
+        style.shading,
+        fabric_layer,
+        ys_grid,
+        top_arc,
+        y_start,
     )
 
     out = (np.clip(result, 0.0, 1.0) * 255.0).astype(np.uint8)
 
     from dataclasses import replace
+
     return replace(leg, image=out)
 
 
@@ -190,16 +210,15 @@ def _ink_mask(
 
     # 排除轮廓：对腿 mask 做约 3px 腐蚀
     leg_u8 = (alpha > 0.05).astype(np.uint8) * 255
-    interior = np.asarray(
-        Image.fromarray(leg_u8).filter(ImageFilter.MinFilter(7))
-    ).astype(np.float64) / 255.0
+    interior = (
+        np.asarray(Image.fromarray(leg_u8).filter(ImageFilter.MinFilter(7))).astype(np.float64)
+        / 255.0
+    )
     ink *= interior
 
     # 轻微模糊
     ink_img = Image.fromarray((ink * 255).astype(np.uint8))
-    ink = np.asarray(ink_img.filter(ImageFilter.GaussianBlur(0.8))).astype(
-        np.float64
-    ) / 255.0
+    ink = np.asarray(ink_img.filter(ImageFilter.GaussianBlur(0.8))).astype(np.float64) / 255.0
     return ink
 
 
@@ -234,9 +253,7 @@ def _boost_ink_lines(
     if isinstance(fabric, Fishnet):
         # 网孔直接透出皮肤线，只对底袜部分增强，避免碎线
         if fabric.underlay is not None:
-            coverage = _fabric_plain(
-                fabric.underlay, src, alpha, u, y0, H, W
-            )[..., 3]
+            coverage = _fabric_plain(fabric.underlay, src, alpha, u, y0, H, W)[..., 3]
         else:
             return img
 
@@ -257,8 +274,8 @@ def _boost_ink_lines(
     darkness = np.clip(1.0 - fab_lum * 2.0, 0.0, 1.0)[..., np.newaxis]
 
     shadow_rgb = color_rgb(sh.shadow_color)
-    screen_c = 1.0 - (1.0 - current) * (1.0 - shadow_rgb)   # 深色织物：提亮为冷灰线
-    mult_c = current * f_local                               # 浅色织物：压暗
+    screen_c = 1.0 - (1.0 - current) * (1.0 - shadow_rgb)  # 深色织物：提亮为冷灰线
+    mult_c = current * f_local  # 浅色织物：压暗
 
     boosted = screen_c * darkness + mult_c * (1.0 - darkness)
     img[..., :3] = current * (1.0 - w) + boosted * w
@@ -325,8 +342,10 @@ def _lace_wave(
     amplitude = min(scallop * 0.15, top.height * 0.25)
     phase = rng.uniform(0, scallop)
     dip_bot = dip[min(y0 + int(top.height), H - 1)] if dip is not None else np.zeros(W)
-    wave_bot = (y0 + top.height) + dip_bot + amplitude * np.sin(
-        2 * math.pi * (np.arange(W, dtype=np.float64) + phase) / scallop
+    wave_bot = (
+        (y0 + top.height)
+        + dip_bot
+        + amplitude * np.sin(2 * math.pi * (np.arange(W, dtype=np.float64) + phase) / scallop)
     )
     wave_bot = np.clip(wave_bot, float(y0), float(H - 1))
     return wave_bot, scallop, amplitude, phase
@@ -365,7 +384,7 @@ def _render_fabric(
         layer = _fabric_ribbed(fabric, src, alpha, u, y_start, H, W)
     elif isinstance(fabric, Fishnet):
         layer = _fabric_fishnet(fabric, src, alpha, u, y_start, H, W, rng, dip)
-    elif isinstance(fabric, Dotted):
+    else:
         layer = _fabric_dotted(fabric, src, alpha, u, y_start, H, W, rng, dip, pattern_offset)
 
     # 渲染区外清零
@@ -380,7 +399,9 @@ def _fabric_plain(
     src: NDArray[np.float64],
     alpha: NDArray[np.float64],
     u: NDArray[np.float64],
-    y0: int, H: int, W: int,
+    y0: int,
+    H: int,
+    W: int,
 ) -> NDArray[np.float64]:
     """纯色袜：opacity 随圆柱曲率和腿截面宽度变化。"""
     layer = np.zeros((H, W, 4), dtype=np.float64)
@@ -391,7 +412,7 @@ def _fabric_plain(
     cos_u = np.sqrt(np.maximum(1.0 - u**2, 0.0))  # (H, W)
 
     # rim：侧缘不透明度提升
-    rim_boost = 1.0 - cos_u                         # 0 中线，1 极侧缘
+    rim_boost = 1.0 - cos_u  # 0 中线，1 极侧缘
     a_map = base_a + (1.0 - base_a) * rim_boost * f.rim
     a_map = np.clip(a_map, 0.0, 1.0)
 
@@ -446,7 +467,9 @@ def _fabric_striped(
     src: NDArray[np.float64],
     alpha: NDArray[np.float64],
     u: NDArray[np.float64],
-    y0: int, H: int, W: int,
+    y0: int,
+    H: int,
+    W: int,
     dip: NDArray[np.float64] | None = None,
     pattern_offset: float = 0.0,
 ) -> NDArray[np.float64]:
@@ -470,7 +493,9 @@ def _fabric_ribbed(
     src: NDArray[np.float64],
     alpha: NDArray[np.float64],
     u: NDArray[np.float64],
-    y0: int, H: int, W: int,
+    y0: int,
+    H: int,
+    W: int,
 ) -> NDArray[np.float64]:
     """竖罗纹：用 cos 函数在 u 方向产生明暗交替的条纹。"""
     layer = np.zeros((H, W, 4), dtype=np.float64)
@@ -523,7 +548,9 @@ def _fabric_fishnet(
     src: NDArray[np.float64],
     alpha: NDArray[np.float64],
     u: NDArray[np.float64],
-    y0: int, H: int, W: int,
+    y0: int,
+    H: int,
+    W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
@@ -570,7 +597,6 @@ def _dot_mask(
     if layout == "grid":
         # 错位网格：偶数行偏移半个间距
         row_idx = np.floor(ys / spacing).astype(int)
-        col_base = np.floor(abs_x / spacing).astype(int)
         offset = (row_idx % 2) * (spacing / 2)
         cx = (np.floor((abs_x - offset) / spacing) + 0.5) * spacing + offset
         cy = (row_idx + 0.5) * spacing
@@ -581,10 +607,14 @@ def _dot_mask(
         gi = np.floor(abs_x / cell).astype(int)
         gj = np.floor(ys / cell).astype(int)
         seed_arr = ((gi * 1000003 + gj * 7919) & 0xFFFFFF).astype(np.uint32)
-        rand_x = ((seed_arr * np.uint32(0x5DEECE6D) + np.uint32(11)) & np.uint32(0xFFFFFF)).astype(np.float64) / float(0xFFFFFF) - 0.5
-        rand_y = ((seed_arr * np.uint32(0xDEADBEEF) + np.uint32(0x12345)) & np.uint32(0xFFFFFF)).astype(np.float64) / float(0xFFFFFF) - 0.5
-        cx = (gi + 0.5 + rand_x * 0.6) * cell
-        cy = (gj + 0.5 + rand_y * 0.6) * cell
+        mask32 = np.uint32(0xFFFFFF)
+        # 每格 0~1 的伪随机偏移（确定性，不依赖 rng）
+        raw_x = (seed_arr * np.uint32(0x5DEECE6D) + np.uint32(11)) & mask32
+        raw_y = (seed_arr * np.uint32(0xDEADBEEF) + np.uint32(0x12345)) & mask32
+        raw_x = raw_x.astype(np.float64)
+        raw_y = raw_y.astype(np.float64)
+        cx = (gi + 0.5) * cell + (raw_x / float(0xFFFFFF) - 0.5) * 0.6 * cell
+        cy = (gj + 0.5) * cell + (raw_y / float(0xFFFFFF) - 0.5) * 0.6 * cell
         dx = abs_x - cx
         dy = ys - cy
 
@@ -597,7 +627,7 @@ def _dot_mask(
         s = size * 1.2
         nx, ny = dx / s, -dy / s  # y 轴翻转使心形尖朝下
         # 心形判别式：(x^2+y^2-1)^3 - x^2*y^3 < 0
-        val = (nx**2 + ny**2 - 1.0)**3 - nx**2 * ny**3
+        val = (nx**2 + ny**2 - 1.0) ** 3 - nx**2 * ny**3
         mask = (val < 0).astype(np.float64)
     elif shape == "star":
         # 五角星（极坐标近似）
@@ -617,7 +647,9 @@ def _fabric_dotted(
     src: NDArray[np.float64],
     alpha: NDArray[np.float64],
     u: NDArray[np.float64],
-    y0: int, H: int, W: int,
+    y0: int,
+    H: int,
+    W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
     pattern_offset: float = 0.0,
@@ -651,7 +683,9 @@ def _render_shading(
     src: NDArray[np.float64],
     alpha: NDArray[np.float64],
     u: NDArray[np.float64],
-    y0: int, H: int, W: int,
+    y0: int,
+    H: int,
+    W: int,
 ) -> NDArray[np.float64]:
     """生成 (H, W, 4) 光影覆盖层。
 
@@ -701,9 +735,7 @@ def _render_shading(
 # ---------------------------------------------------------------------------
 
 
-def _alpha_over(
-    dst: NDArray[np.float64], src_: NDArray[np.float64]
-) -> NDArray[np.float64]:
+def _alpha_over(dst: NDArray[np.float64], src_: NDArray[np.float64]) -> NDArray[np.float64]:
     """Porter-Duff 'A over B'（src_ 在上）。"""
     a_src = src_[..., 3:4]
     a_dst = dst[..., 3:4]
@@ -728,7 +760,7 @@ def _composite(
     """将腿皮肤与袜子纹理合成为 RGBA（光影由 _apply_shading 后置应用）。"""
     result = src_leg.copy()
 
-    fa = fabric[..., 3:4]   # 袜子 alpha (H,W,1)
+    fa = fabric[..., 3:4]  # 袜子 alpha (H,W,1)
     frgb = fabric[..., :3]  # 袜子 RGB
 
     leg_rgb = src_leg[..., :3]
@@ -772,13 +804,14 @@ def _apply_shading(
 
 def _render_top_edge(
     img: NDArray[np.float64],
-    top: "Bare | Welt | Lace | Fade",
+    top: Bare | Welt | Lace | Fade,
     fabric: Fabric,
     sh: Shading,
     alpha: NDArray[np.float64],
     u: NDArray[np.float64],
     y0: int,
-    H: int, W: int,
+    H: int,
+    W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
     wave: tuple[NDArray[np.float64], float, float, float] | None = None,
@@ -790,8 +823,7 @@ def _render_top_edge(
     wave 为 Lace 的 (wave_bot, scallop, amplitude, phase)，由 render_stocking 预计算。
     """
     if isinstance(top, Bare):
-        img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng,
-                              color=(0.1, 0.1, 0.1))
+        img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng, color=(0.1, 0.1, 0.1))
     elif isinstance(top, Welt):
         img = _draw_welt(img, fabric, alpha, y0, H, W, top, sh, rng, dip)
     elif isinstance(top, Lace):
@@ -801,7 +833,9 @@ def _render_top_edge(
 
 
 def _edge_base(
-    y0: int, W: int, dip: NDArray[np.float64] | None,
+    y0: int,
+    W: int,
+    dip: NDArray[np.float64] | None,
 ) -> NDArray[np.float64]:
     """上沿边线各列的基准 y：y0 加上该行的下弯量。"""
     if dip is None:
@@ -836,13 +870,11 @@ def _draw_edge_line(
     """沿基准曲线 y_base 画一条手绘边线（逐列 ±wobble 抖动，约 2px 粗）。"""
     H, W = img.shape[0], img.shape[1]
     color_arr = np.array(color, dtype=np.float64)
-    wobble = np.round(
-        rng.normal(0, max(sh.wobble, 0.01), size=W)
-    ).astype(int)
+    wobble = rng.normal(0, max(sh.wobble, 0.01), size=W).round().astype(np.int_)
     for x in range(W):
-        yb = int(round(y_base[x]))
+        yb = round(y_base[x])
         for dy in range(-1, 2):
-            yy = yb + wobble[x] + dy
+            yy = yb + int(wobble[x]) + dy
             if 0 <= yy < H and alpha[yy, x] > 0.05:
                 t = 0.65 if dy == 0 else 0.25
                 img[yy, x, :3] = (1.0 - t) * img[yy, x, :3] + t * color_arr
@@ -853,30 +885,30 @@ def _draw_welt(
     img: NDArray[np.float64],
     fabric: Fabric,
     alpha: NDArray[np.float64],
-    y0: int, H: int, W: int,
+    y0: int,
+    H: int,
+    W: int,
     top: Welt,
     sh: Shading,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
-    """松紧袜口：袜口顶端对齐 y0，加厚条带从 y0 向下延伸 height 像素，
-    上下边沿跟随弧线下弯。"""
+    """松紧袜口：袜口顶端对齐 y0，条带从 y0 向下延伸 height 像素，随弧线下弯。
+
+    条带颜色取 Welt.color 或主色加深一档。
+    """
     h = int(top.height)
 
     main_rgb = _fabric_main_color(fabric)
-    if top.color is not None:
-        welt_rgb = color_rgb(top.color)
-    else:
-        # 加深主色约 30%
-        welt_rgb = main_rgb * 0.7
+    welt_rgb = color_rgb(top.color) if top.color is not None else main_rgb * 0.7
 
     welt_a = top.opacity if top.opacity is not None else 1.0
 
     dip2 = dip if dip is not None else np.zeros((H, W))
     ys = np.arange(H, dtype=np.float64)[:, np.newaxis]
 
-    top_arc = y0 + dip2          # 条带上沿（弧线）
-    bot_arc = y0 + h + dip2      # 条带下沿（弧线）
+    top_arc = y0 + dip2  # 条带上沿（弧线）
+    bot_arc = y0 + h + dip2  # 条带下沿（弧线）
 
     band = (ys >= top_arc) & (ys < bot_arc) & (alpha > 0.05)
     img[band, :3] = img[band, :3] * (1.0 - welt_a) + welt_rgb * welt_a
@@ -887,8 +919,7 @@ def _draw_welt(
         pinch = (ys == pinch_y) & (alpha > 0.05)
         img[pinch, :3] *= 1.0 - top.pinch * 0.3
 
-    img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng,
-                          color=tuple(welt_rgb))  # type: ignore[arg-type]
+    img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng, color=tuple(welt_rgb))  # type: ignore[arg-type]
     return img
 
 
@@ -896,25 +927,23 @@ def _draw_lace(
     img: NDArray[np.float64],
     fabric: Fabric,
     alpha: NDArray[np.float64],
-    y0: int, H: int, W: int,
+    y0: int,
+    H: int,
+    W: int,
     top: Lace,
     sh: Shading,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None,
     wave: tuple[NDArray[np.float64], float, float, float],
 ) -> NDArray[np.float64]:
-    """蕾丝边：半透明带直接覆盖在皮肤上，孔点透出其下的皮肤，
-    沿波浪下沿画细边线勾勒扇贝轮廓。
+    """蕾丝边：半透明带直接覆盖在皮肤上，孔点加深，沿波浪画边线勾轮廓。
 
     wave 为 render_stocking 预计算的 (wave_bot, scallop, amplitude, phase)，
     与织物图案的逐列裁剪共用同一波形。
     """
-    if top.color is not None:
-        lace_rgb = color_rgb(top.color)
-    else:
-        lace_rgb = _fabric_main_color(fabric)
+    lace_rgb = color_rgb(top.color) if top.color is not None else _fabric_main_color(fabric)
 
-    wave_bot, scallop, amplitude, phase = wave
+    wave_bot, scallop, _amplitude, phase = wave
 
     t = top.opacity
     y_mat = np.arange(H, dtype=np.float64)[:, np.newaxis]  # (H, 1)
@@ -945,24 +974,18 @@ def _draw_lace(
                 gy, gx = np.mgrid[y0w:y1w, x0w:x1w]
                 dist = np.sqrt((gy - cy) ** 2 + (gx - xp) ** 2)
                 disc = np.clip(1.0 - dist / dot_r, 0.0, 1.0)
-                np.maximum(hole_map[y0w:y1w, x0w:x1w], disc,
-                           out=hole_map[y0w:y1w, x0w:x1w])
+                np.maximum(hole_map[y0w:y1w, x0w:x1w], disc, out=hole_map[y0w:y1w, x0w:x1w])
             k += 1
 
     eff_t = weight * in_zone * t
-    img[..., :3] = (
-        img[..., :3] * (1.0 - eff_t[..., np.newaxis])
-        + lace_rgb * eff_t[..., np.newaxis]
-    )
+    img[..., :3] = img[..., :3] * (1.0 - eff_t[..., np.newaxis]) + lace_rgb * eff_t[..., np.newaxis]
 
     # 孔点加深（镂空阴影感），软边圆盘
     img[..., :3] *= (1.0 - hole_map * 0.5)[..., np.newaxis]
 
     # 波浪下沿细边线：勾勒扇贝轮廓（蕾丝色加深）
-    img = _draw_edge_line(img, alpha, wave_bot, sh, rng,
-                          color=tuple(lace_rgb * 0.55))  # type: ignore[arg-type]
+    img = _draw_edge_line(img, alpha, wave_bot, sh, rng, color=tuple(lace_rgb * 0.55))  # type: ignore[arg-type]
 
     # 袜口顶端画一条手绘边线
-    img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng,
-                          color=tuple(lace_rgb * 0.8))  # type: ignore[arg-type]
+    img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng, color=tuple(lace_rgb * 0.8))  # type: ignore[arg-type]
     return img

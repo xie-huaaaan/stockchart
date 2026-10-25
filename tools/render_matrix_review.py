@@ -22,10 +22,9 @@ from stockchart import (
     LegLibrary,
     Plain,
     Ribbed,
-    Shading,
     StockingStyle,
-    Striped,
     Stripe,
+    Striped,
     Welt,
     render_stocking,
 )
@@ -40,10 +39,12 @@ LEG_ID = "leg_03"  # 全表用同一条腿，突出样式本身的差异
 # 每种 Fabric 一个代表参数化
 FABRICS: dict[str, object] = {
     "plain_black": Plain(color=(28, 26, 30), opacity=0.55),
-    "stripe_blue": Striped(stripes=(
-        Stripe(color=(255, 255, 255), width=8),
-        Stripe(color=(70, 110, 200), width=8),
-    )),
+    "stripe_blue": Striped(
+        stripes=(
+            Stripe(color=(255, 255, 255), width=8),
+            Stripe(color=(70, 110, 200), width=8),
+        )
+    ),
     "ribbed_cream": Ribbed(color=(240, 232, 215)),
     "fishnet": Fishnet(color=(20, 18, 22)),
     "dotted_polka": Dotted(

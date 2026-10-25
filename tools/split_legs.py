@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from scipy import ndimage
 
 # ---------------------------------------------------------------------------
@@ -57,11 +57,10 @@ def extract_legs(png_path: Path, row: int) -> list[dict]:  # type: ignore[type-a
     areas = ndimage.sum(np.ones_like(labeled), labeled, range(1, n + 1))
 
     legs: list[dict] = []  # type: ignore[type-arg]
-    for i, (sl, area) in enumerate(zip(objects, areas)):
+    for sl, area in zip(objects, areas, strict=True):
         if area < MIN_AREA:
             continue
-        y_sl, x_sl = sl
-        x0, x1 = x_sl.start, x_sl.stop
+        x0, x1 = sl[1].start, sl[1].stop
         # 裁出这条腿（全高，仅裁 x 方向）
         crop = img[:, x0:x1, :].copy()
         H, W = crop.shape[:2]
@@ -130,7 +129,6 @@ def main() -> None:
     # 按 row 顺序、row 内 x 顺序排列
     all_legs.sort(key=lambda d: (d["src_row"], d["src_x0"]))
 
-    global_pair = 1
     metadata: list[dict] = []  # type: ignore[type-arg]
     for global_idx, leg in enumerate(all_legs):
         leg_id = f"leg_{global_idx + 1:02d}"
@@ -174,7 +172,7 @@ def main() -> None:
     print(f"\nMetadata written → {json_path}  ({len(metadata)} legs)")
 
     # 预览图
-    _make_preview(all_legs, metadata, ASSETS_DST / "preview.png")
+    _make_preview(all_legs, metadata, ROOT / "out" / "preview.png")
 
 
 def _make_preview(
@@ -214,7 +212,7 @@ def _make_preview(
         (170, 130, 210),
     ]
 
-    for i, (leg, meta) in enumerate(zip(all_legs, metadata)):
+    for i, (leg, meta) in enumerate(zip(all_legs, metadata, strict=True)):
         col = i % cols
         ry = i // cols
         x0 = pad + col * (thumb_w + pad)

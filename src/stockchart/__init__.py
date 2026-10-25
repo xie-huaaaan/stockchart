@@ -15,33 +15,32 @@ from stockchart.stocking import (
     Plain,
     Ribbed,
     Shading,
-    Striped,
-    Stripe,
     StockingStyle,
+    Stripe,
+    Striped,
     Welt,
     render_stocking,
 )
 
 __all__ = [
-    "Color",
-    "Leg",
-    # L0
-    "LegLibrary",
-    "load_leg",
-    # L1 styles
-    "StockingStyle",
-    "Plain",
-    "Striped",
-    "Stripe",
-    "Ribbed",
-    "Fishnet",
-    "Dotted",
-    "Bare",
-    "Welt",
-    "Lace",
-    "Fade",
-    "Shading",
+    # L1 渲染原语
     "STYLES",
-    # L1 render
+    "Bare",
+    # L0
+    "Color",
+    "Dotted",
+    "Fade",
+    "Fishnet",
+    "Lace",
+    "Leg",
+    "LegLibrary",
+    "Plain",
+    "Ribbed",
+    "Shading",
+    "StockingStyle",
+    "Stripe",
+    "Striped",
+    "Welt",
+    "load_leg",
     "render_stocking",
 ]

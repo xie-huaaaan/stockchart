@@ -11,9 +11,9 @@ from stockchart.stocking.styles import (
     Plain,
     Ribbed,
     Shading,
-    Striped,
-    Stripe,
     StockingStyle,
+    Stripe,
+    Striped,
     Welt,
 )
 
@@ -27,9 +27,9 @@ __all__ = [
     "Plain",
     "Ribbed",
     "Shading",
-    "Striped",
-    "Stripe",
     "StockingStyle",
+    "Stripe",
+    "Striped",
     "Welt",
     "render_stocking",
 ]

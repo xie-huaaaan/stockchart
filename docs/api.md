@@ -364,47 +364,49 @@ class BarPlot:
 以下均为 `BarPlot` 的便捷方法：只解决"间距 + 选腿"，丝袜高度仍由调用者给像素。
 
 ```python
-    def add_bars(
-        self,
-        heights_px: Sequence[float],
-        *,
-        bar_gap: float = DEFAULT_BAR_GAP,
-        style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
-        legs: Sequence[Leg] | None = None,
-        seed: int | None = None,
-    ) -> BarPlot:
-        """单序列：统一间距从左到右排开，自动按左、右、左、右……交替选腿。
+def add_bars(
+    self,
+    heights_px: Sequence[float],
+    *,
+    bar_gap: float = DEFAULT_BAR_GAP,
+    style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
+    legs: Sequence[Leg] | None = None,
+    seed: int | None = None,
+) -> BarPlot:
+    """单序列：统一间距从左到右排开，自动按左、右、左、右……交替选腿。
 
-        legs 可显式指定每根柱子的素材（长度须与 heights_px 一致）。
-        """
+    legs 可显式指定每根柱子的素材（长度须与 heights_px 一致）。
+    """
 
-    def add_grouped_bars(
-        self,
-        heights_px: Sequence[Sequence[float]],
-        *,
-        bar_gap: float = DEFAULT_BAR_GAP,
-        group_gap: float = DEFAULT_GROUP_GAP,
-        style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
-        legs: Sequence[Leg] | None = None,
-        seed: int | None = None,
-    ) -> BarPlot:
-        """(组数, 系列数) 的像素高度：组内用 bar_gap、组间用 group_gap，
-        跨列按左、右、左、右……交替选腿。
-        """
 
-    def add_paired_bars(
-        self,
-        heights_px: Sequence[tuple[float, float]],
-        *,
-        group_gap: float = DEFAULT_GROUP_GAP,
-        style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
-        pairs: Sequence[tuple[Leg, Leg]] | None = None,
-        seed: int | None = None,
-    ) -> BarPlot:
-        """每组恰好 2 个值：同组使用同一对素材，系列 0 左腿、系列 1 右腿。
+def add_grouped_bars(
+    self,
+    heights_px: Sequence[Sequence[float]],
+    *,
+    bar_gap: float = DEFAULT_BAR_GAP,
+    group_gap: float = DEFAULT_GROUP_GAP,
+    style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
+    legs: Sequence[Leg] | None = None,
+    seed: int | None = None,
+) -> BarPlot:
+    """(组数, 系列数) 的像素高度：组内用 bar_gap、组间用 group_gap，
+    跨列按左、右、左、右……交替选腿。
+    """
 
-        pairs 缺省时自动选取不重复的素材对。
-        """
+
+def add_paired_bars(
+    self,
+    heights_px: Sequence[tuple[float, float]],
+    *,
+    group_gap: float = DEFAULT_GROUP_GAP,
+    style: StockingStyle | str = DEFAULT_STOCKING_STYLE,
+    pairs: Sequence[tuple[Leg, Leg]] | None = None,
+    seed: int | None = None,
+) -> BarPlot:
+    """每组恰好 2 个值：同组使用同一对素材，系列 0 左腿、系列 1 右腿。
+
+    pairs 缺省时自动选取不重复的素材对。
+    """
 ```
 
 **间距语义**：`bar_gap` / `group_gap` 均指相邻腿**边缘之间**的空隙（腿宽 144–181 不等，

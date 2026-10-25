@@ -3,6 +3,15 @@
 stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大小。效果参考 `assets/sample.jpg`。
 设计细节见 [docs/design.md](docs/design.md)，本文件只写约定。
 
+## 当前进度
+
+- ✅ L0 素材层（`legs.py`/`library.py`，`src/stockchart/assets/`）与 L1 渲染原语
+  （`stocking/`：`render_stocking`、`StockingStyle` 及 19 个 `STYLES` 预设）已完成并经用户评审；
+- ⬜ 待做：L1 的 `draw_text` / `sketch_line` / `sketch_axis`，L2 `Scale`/`BarPlot`/`Canvas`，
+  L3 布局封装，L4 `bar`/`mirror_bar`——签名以 docs/api.md 为准；
+- 评审产物在 `out/`（gitignore），`tools/render_styles_review.py` 与
+  `tools/render_matrix_review.py` 可随时重新生成全部对比图。
+
 ## 环境与命令
 
 - Python 3.12，`uv` 管理依赖。依赖写进 `pyproject.toml`，不手改 `uv.lock`。
