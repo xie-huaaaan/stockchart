@@ -1,6 +1,7 @@
 # 设计文档
 
-状态：L0（素材）与 L1（丝袜渲染原语）已完成并经用户评审；L2–L4 签名与设计已定稿，开发进行中。
+状态：L0–L4 已全部实现。L0（素材）与 L1 丝袜渲染原语已通过用户评审；
+L1 文字/线条原语与 L2–L4 的默认观感待评审（评审图脚本 `tools/render_plot_review.py`）。
 丝袜样式的完整参数与预设见 [api.md](api.md) "丝袜样式"一节，本文件记录设计取舍与渲染算法思路。
 
 ## 目标效果
@@ -166,8 +167,9 @@
 2. ✅ `LegLibrary` + `load_leg` + 测试；
 3. ✅ `render_stocking`：5 种 Fabric × 4 种 TopEdge × Shading，19 个预设，用户评审通过
    （评审图脚本 `tools/render_*_review.py`，产物在 `out/`，不入库）；
-4. ⬜ L2 数据映射、布局、坐标轴、文字（`Scale`/`BarPlot`/`Canvas`/`draw_text`/`sketch_*`）；
-5. ⬜ L3 布局封装、L4 一行出图、示例、文档。
+4. ✅ L1 文字与线条（`Canvas`/`draw_text`/`measure_text`/`sketch_line`/`sketch_axis`）；
+5. ✅ L2–L4（`Scale`/`BarPlot`/`add_bars` 系列/`bar`/`mirror_bar`），
+   评审图 `tools/render_plot_review.py`；默认值（间距、字号、图例尺寸等）待评审微调。
 
 ## 已定事项
 

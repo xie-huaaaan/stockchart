@@ -5,12 +5,13 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 
 ## 当前进度
 
-- ✅ L0 素材层（`legs.py`/`library.py`，`src/stockchart/assets/`）与 L1 渲染原语
+- ✅ L0 素材层（`legs.py`/`library.py`，`src/stockchart/assets/`）与 L1 丝袜渲染原语
   （`stocking/`：`render_stocking`、`StockingStyle` 及 19 个 `STYLES` 预设）已完成并经用户评审；
-- ⬜ 待做：L1 的 `draw_text` / `sketch_line` / `sketch_axis`，L2 `Scale`/`BarPlot`/`Canvas`，
-  L3 布局封装，L4 `bar`/`mirror_bar`——签名以 docs/api.md 为准；
-- 评审产物在 `out/`（gitignore），`tools/render_styles_review.py` 与
-  `tools/render_matrix_review.py` 可随时重新生成全部对比图。
+- ✅ L1 文字与线条（`canvas.py`/`text.py`/`sketch.py`）、L2 `Scale`/`BarPlot`（`plot.py`）、
+  L3 `add_bars` 系列与 L4 `bar`/`mirror_bar`（`topline.py`）已实现，单测 118 项；
+- ⬜ 待做：评审 L1 文字/线条与 L2–L4 的默认观感（`tools/render_plot_review.py` 重新生成
+  `out/plots/`），按反馈微调 `defaults.py`；
+- 评审产物在 `out/`（gitignore），`tools/render_*_review.py` 可随时重新生成全部对比图。
 
 ## 环境与命令
 
