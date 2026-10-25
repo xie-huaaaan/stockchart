@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -78,6 +79,14 @@ def _resolve_style(style: StyleLike) -> StockingStyle:
     return style
 
 
+def _normalize_style_seq(style: StyleSeq) -> list[StockingStyle]:
+    """把 StyleSeq 归一为实例列表；空列表视为错误。"""
+    styles = [style] if isinstance(style, (str, StockingStyle)) else list(style)
+    if not styles:
+        raise ValueError("style 列表不能为空")
+    return [_resolve_style(s) for s in styles]
+
+
 @dataclass(slots=True, frozen=True)
 class Scale:
     """线性比例尺：数据值 ↔ 基线上方像素。
@@ -139,6 +148,16 @@ class _BarRecord:
 
 
 @dataclass(slots=True)
+class _LegSpec:
+    """一根腿的完整绘制规格，由 L4 计算后交给 _add_columns 摆放。"""
+
+    leg: Leg
+    height_px: float
+    side: BarSide
+    style: StockingStyle
+
+
+@dataclass(slots=True)
 class _YAxisRecord:
     """y 轴的绘制意图。ticks 为数据值，绘制时经 scale 换算为像素。"""
 
@@ -197,11 +216,26 @@ def _skia_image(arr: NDArray[np.uint8]) -> skia.Image:
     return skia.Image.fromarray(np.ascontiguousarray(arr[:, :, [2, 1, 0, 3]]))
 
 
-def _even_ticks(domain: tuple[float, float], n: int = 4) -> list[float]:
-    """把 domain 均分为 n 段，返回 n+1 个刻度值（含两端）。"""
+def _nice_ticks(domain: tuple[float, float]) -> list[float]:
+    """按 1/2/2.5/5×10^k 的整步长取刻度（约 5 个），domain 含 0 时必有 0 刻度。"""
     lo, hi = domain
-    step = (hi - lo) / n
-    return [round(lo + i * step, 10) for i in range(n)] + [hi]
+    span = hi - lo
+    if span <= 0:
+        return [lo]
+    raw = span / 4
+    mag = 10.0 ** math.floor(math.log10(raw))
+    step = 10.0 * mag
+    for mult in (1.0, 2.0, 2.5, 5.0):
+        if mult * mag >= raw - 1e-12:
+            step = mult * mag
+            break
+    start = math.ceil(lo / step - 1e-9) * step
+    ticks: list[float] = []
+    v = start
+    while v <= hi + 1e-9:
+        ticks.append(round(v, 10))
+        v += step
+    return ticks or [lo]
 
 
 # 图例色块统一用同一条固定腿渲染，取其袜身中段的织物
@@ -329,7 +363,7 @@ class BarPlot:
         """
         self._y_axis = _YAxisRecord(
             scale=scale,
-            ticks=[float(v) for v in (ticks if ticks is not None else _even_ticks(scale.domain))],
+            ticks=[float(v) for v in (ticks if ticks is not None else _nice_ticks(scale.domain))],
             label=label,
             grid=grid,
             seed=self._rng.getrandbits(32),
@@ -396,10 +430,7 @@ class BarPlot:
 
     def _style_list(self, style: StyleSeq) -> list[StockingStyle]:
         """把样式参数归一为实例列表；空列表视为错误。"""
-        styles = [style] if isinstance(style, (str, StockingStyle)) else list(style)
-        if not styles:
-            raise ValueError("style 列表不能为空")
-        return [_resolve_style(s) for s in styles]
+        return _normalize_style_seq(style)
 
     def _place_group(
         self,
@@ -554,6 +585,42 @@ class BarPlot:
         """续排时光标与已有内容保持 group_gap 的边缘间距。"""
         if self._group_centers:
             self._l3_cursor += gap
+
+    def _add_columns(
+        self,
+        slots: Sequence[Sequence[Sequence[_LegSpec]]],
+        *,
+        bar_gap: float,
+        slot_gap: float,
+        slots_px: Sequence[float],
+        lead: float,
+    ) -> list[list[list[_BarRecord]]]:
+        """按槽位居中排布腿（L4 自适应布局专用），返回与 slots 同构的记录。
+
+        槽 → 列 → 腿规格：列从左到右排开（列间 bar_gap），同一列的腿共享
+        足底中心 x（镜像图的上下双腿）。每槽占宽 slots_px，腿在其中居中，
+        槽中心记入 _group_centers 供 x 标签对齐。
+        """
+        records: list[list[list[_BarRecord]]] = []
+        x = float(lead)
+        for slot, slot_w in zip(slots, slots_px, strict=True):
+            natural = sum(col[0].leg.width for col in slot) + (len(slot) - 1) * bar_gap
+            cursor = x + (slot_w - natural) / 2
+            slot_records: list[list[_BarRecord]] = []
+            for column in slot:
+                col_x = cursor + column[0].leg.foot_center_x
+                col_records: list[_BarRecord] = []
+                for spec in column:
+                    before = len(self._bars)
+                    self.add_bar(col_x, spec.height_px, spec.leg, style=spec.style, side=spec.side)
+                    col_records.append(self._bars[before])
+                slot_records.append(col_records)
+                cursor += column[0].leg.width + bar_gap
+            self._group_centers.append(x + slot_w / 2)
+            records.append(slot_records)
+            x += slot_w + slot_gap
+        self._l3_cursor = x - slot_gap
+        return records
 
     def render(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Canvas:
         """渲染。scale 为输出放大倍数（抗锯齿），不影响素材像素坐标。"""
@@ -758,9 +825,10 @@ class BarPlot:
         t_px = [axis.scale.to_px(v) for v in axis.ticks]
         up_items = [(p, _format_tick(v)) for v, p in zip(axis.ticks, t_px, strict=True) if p >= 0]
         down_items = [(-p, _format_tick(v)) for v, p in zip(axis.ticks, t_px, strict=True) if p < 0]
-        eff_up, _ = self._effective_extents()
+        eff_up, eff_down = self._effective_extents()
         up_len = max([0.0, eff_up, *t_px])
-        down_len = max([0.0, *(-p for p in t_px if p < 0)])
+        down_zone = eff_down if any(b.side == "down" for b in self._bars) else 0.0
+        down_len = max([0.0, *(-p for p in t_px if p < 0), down_zone])
         sketch_axis(
             canvas,
             direction="up",

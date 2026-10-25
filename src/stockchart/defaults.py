@@ -73,6 +73,12 @@ DEFAULT_TITLE_SIZE = 44
 DEFAULT_BAR_GAP = 28
 """组内相邻腿边缘之间的空隙。"""
 
+DEFAULT_MAX_FILL = 0.8
+"""最大值映射到 y_extent 的比例（L4 bar）。"""
+
+DEFAULT_MIN_FILL = 0.1
+"""含负值时值域压缩的下界比例（L4 bar）。"""
+
 DEFAULT_GROUP_GAP = 96
 """相邻组边缘之间的空隙。"""
 

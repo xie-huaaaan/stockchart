@@ -27,6 +27,7 @@ from stockchart.stocking import (
     render_stocking,
 )
 from stockchart.text import FontSpec, TextAnchor, draw_text, measure_text
+from stockchart.topline import bar, mirror_bar
 
 __all__ = [
     "STYLES",
@@ -52,9 +53,11 @@ __all__ = [
     "StyleSeq",
     "TextAnchor",
     "Welt",
+    "bar",
     "draw_text",
     "load_leg",
     "measure_text",
+    "mirror_bar",
     "render_stocking",
     "sketch_axis",
     "sketch_line",
