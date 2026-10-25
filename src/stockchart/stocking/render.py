@@ -129,14 +129,17 @@ def render_stocking(
         shading_layer[..., 3] *= fade_ramp
         shading_layer[..., 2] *= fade_ramp
 
-    # 合成：将腿皮肤与袜子融合
-    result = _composite(src, fabric_layer, shading_layer, alpha_mask, y_start)
+    # 合成：将腿皮肤与袜子融合（光影后置，使上沿条带同样受光）
+    result = _composite(src, fabric_layer, alpha_mask, y_start)
 
     # 绘制上沿
     result = _render_top_edge(
         result, style.top, style.fabric, style.shading,
         alpha_mask, col_profile, y_start, H, W, rng, dip, wave
     )
+
+    # 应用光影：在条带绘制之后，袜口/蕾丝与袜身统一受光
+    result = _apply_shading(result, shading_layer)
 
     # 膝盖褶皱等素材内部墨线增强：以"织物压痕"的方式补画到袜子上
     result = _boost_ink_lines(
@@ -719,11 +722,10 @@ def _alpha_over(
 def _composite(
     src_leg: NDArray[np.float64],
     fabric: NDArray[np.float64],
-    shading: NDArray[np.float64],
     alpha: NDArray[np.float64],
     y0: int,
 ) -> NDArray[np.float64]:
-    """将腿皮肤、袜子纹理、光影三层合成为最终 RGBA。"""
+    """将腿皮肤与袜子纹理合成为 RGBA（光影由 _apply_shading 后置应用）。"""
     result = src_leg.copy()
 
     fa = fabric[..., 3:4]   # 袜子 alpha (H,W,1)
@@ -738,23 +740,29 @@ def _composite(
     mask[y0:] = 1.0
 
     result[..., :3] = blended_rgb * mask + leg_rgb * (1.0 - mask)
+    return result
 
-    # 阴影与高光 alpha 分开存储在 shading 的不同通道
-    # shading[..., 3] = 阴影 alpha; shading[..., 2] 被用作高光 alpha 的临时通道
+
+def _apply_shading(
+    img: NDArray[np.float64],
+    shading: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """对合成结果应用光影：边缘阴影正片叠底、竖向高光 screen。
+
+    在上沿条带绘制之后调用，使袜口/蕾丝同样受光。
+    shading[..., 3] 为阴影 alpha，[..., 2] 为高光 alpha。
+    """
     sh_a = shading[..., 3:4]
     hl_a = shading[..., 2:3]
     sh_rgb = shading[..., :3]
 
     # 正片叠底阴影：shadow_rgb 通常偏冷，乘在当前颜色上
-    mul = result[..., :3] * sh_rgb
-    result[..., :3] = result[..., :3] * (1.0 - sh_a) + mul * sh_a
+    mul = img[..., :3] * sh_rgb
+    img[..., :3] = img[..., :3] * (1.0 - sh_a) + mul * sh_a
 
-    # screen 高光（白色）
-    screen = 1.0 - (1.0 - result[..., :3]) * (1.0 - 1.0)
-    result[..., :3] = result[..., :3] * (1.0 - hl_a) + screen * hl_a
-
-    result[..., 3] = src_leg[..., 3]
-    return result
+    # screen 高光（白色）：提亮
+    img[..., :3] = img[..., :3] + (1.0 - img[..., :3]) * hl_a
+    return img
 
 
 # ---------------------------------------------------------------------------
@@ -941,11 +949,14 @@ def _draw_lace(
                            out=hole_map[y0w:y1w, x0w:x1w])
             k += 1
 
-    eff_t = weight * in_zone * t * (1.0 - hole_map * 0.75)
+    eff_t = weight * in_zone * t
     img[..., :3] = (
         img[..., :3] * (1.0 - eff_t[..., np.newaxis])
         + lace_rgb * eff_t[..., np.newaxis]
     )
+
+    # 孔点加深（镂空阴影感），软边圆盘
+    img[..., :3] *= (1.0 - hole_map * 0.5)[..., np.newaxis]
 
     # 波浪下沿细边线：勾勒扇贝轮廓（蕾丝色加深）
     img = _draw_edge_line(img, alpha, wave_bot, sh, rng,
