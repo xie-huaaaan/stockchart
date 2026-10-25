@@ -7,6 +7,7 @@ TopEdge（Bare/Welt/Lace/Fade）、Shading、Stripe。
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
@@ -450,3 +451,16 @@ def _make_styles() -> dict[str, StockingStyle]:
 
 STYLES: MappingProxyType[str, StockingStyle] = MappingProxyType(_make_styles())
 """内置预设注册表（只读），键见 docs/api.md。"""
+
+
+# ---------------------------------------------------------------------------
+# 样式参数别名（各层接口的 style 参数）
+# ---------------------------------------------------------------------------
+
+
+type StyleLike = StockingStyle | str
+"""单个样式：StockingStyle 实例或 STYLES 键名。"""
+
+
+type StyleSeq = StyleLike | Sequence[StyleLike]
+"""样式参数：单个样式，或按位置循环的样式列表（循环语义见 docs/api.md L3/L4）。"""

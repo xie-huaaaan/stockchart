@@ -45,8 +45,20 @@ DEFAULT_WOBBLE = 2.0
 DEFAULT_TICK_SIZE = 16
 """刻度线长度。"""
 
+DEFAULT_TICK_LABEL_GAP = 10
+"""刻度数字与刻度线端点的间距。"""
+
 DEFAULT_TICK_LABEL_SIZE = 26
 """y 轴刻度数字字号。"""
+
+DEFAULT_ARROW_SIZE = 26
+"""坐标轴箭头的翼长。"""
+
+DEFAULT_ARROW_HALF_ANGLE_DEG = 26.0
+"""箭头两翼与轴干线的夹角（度）。"""
+
+DEFAULT_SKETCH_SEGMENT_PX = 28
+"""手绘线条抖动细分的目标段长：段内不加点，段间插抖动点。"""
 
 DEFAULT_X_LABEL_SIZE = 30
 """x 轴标签字号。"""

@@ -14,6 +14,8 @@ from stockchart.stocking.styles import (
     StockingStyle,
     Stripe,
     Striped,
+    StyleLike,
+    StyleSeq,
     Welt,
 )
 
@@ -30,6 +32,8 @@ __all__ = [
     "StockingStyle",
     "Stripe",
     "Striped",
+    "StyleLike",
+    "StyleSeq",
     "Welt",
     "render_stocking",
 ]

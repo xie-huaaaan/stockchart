@@ -27,7 +27,20 @@ type Color = tuple[int, int, int] | tuple[int, int, int, int]
 
 
 class Canvas:
-    """最终渲染结果的载体。不公开构造，由 `BarPlot.render()` 产生。"""
+    """最终渲染结果的载体：一块 RGBA 画布。
+
+    通常由 `BarPlot.render()` 产生并绘制；自由绘制时也可直接构造，
+    配合 L1 原语（`draw_text` / `sketch_*`）在上面作画。
+    """
+
+    def __init__(
+        self,
+        width_px: int,
+        height_px: int,
+        *,
+        background: Color = DEFAULT_BACKGROUND,
+    ) -> None:
+        """构造空白画布并填充背景色。尺寸单位为素材像素。"""
 
     def save(self, path: str | Path) -> Path:
         """写出 PNG 文件。"""
@@ -249,6 +262,15 @@ def draw_text(
     font 为家族名列表或字体文件路径；缺省走内置回退链（见 docs/design.md"字体"）。
     anchor 等参数的取值细节随实现微调，语义不变。
     """
+
+
+def measure_text(
+    text: str,
+    *,
+    size_px: float,
+    font: FontSpec | None = None,
+) -> float:
+    """测量一段文字按 `draw_text` 相同回退规则绘制后的宽度（像素）。空串为 0。"""
 
 
 def sketch_line(
