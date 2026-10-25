@@ -82,18 +82,34 @@ def render_stocking(
     # 环形线条（横纹、袜口、蕾丝）的透视下弯量：中线最大、两侧缘为 0
     dip = _curve_dip(col_profile, alpha_mask, style.shading.curve)
 
-    # 上沿条带静区高度：袜身图案从条带下沿起算
-    band_h = _band_extent(style.top)
+    # Lace 波形只计算一次，供图案裁剪与上沿绘制共用（保证相位一致）
+    wave = _lace_wave(style.top, y_start, dip, W, H, rng) \
+        if isinstance(style.top, Lace) else None
+
+    # 上沿条带下沿（每列）：袜身图案从这条线起算，条带直接覆盖在皮肤上。
+    # Welt 为条带底沿弧线；Lace 为波浪边缘；Bare / Fade 为袜口弧线本身。
+    if isinstance(style.top, Welt):
+        row = min(y_start + int(style.top.height), H - 1)
+        origin_col = y_start + style.top.height + dip[row]          # (W,)
+        pattern_offset = style.top.height
+    elif isinstance(style.top, Lace):
+        assert wave is not None
+        origin_col = wave[0]
+        pattern_offset = style.top.height
+    else:
+        origin_col = y_start + dip[min(y_start, H - 1)]
+        pattern_offset = 0.0
 
     # 生成袜子 RGBA 纹理 (H, W, 4)，y_start 以上行全透明
     fabric_layer = _render_fabric(
-        style.fabric, src, alpha_mask, col_profile, y_start, H, W, rng, dip, band_h
+        style.fabric, src, alpha_mask, col_profile, y_start, H, W,
+        rng, dip, pattern_offset,
     )
 
-    # 袜子顶边沿弧线裁剪：使织物边界与袜口/蕾丝/边线的弧形上沿处处重合
-    ys_grid = np.arange(H, dtype=np.float64)[:, np.newaxis]  # (H, 1)
-    top_arc = y_start + dip                                  # (H, W)
-    fabric_layer[ys_grid < top_arc] = 0.0
+    # 织物沿条带下沿逐列裁剪：图案与上沿边缘处处贴合（Lace 沿波浪无缺口）
+    ys_grid = np.arange(H, dtype=np.float64)[:, np.newaxis]      # (H, 1)
+    fabric_layer[ys_grid < origin_col[np.newaxis, :]] = 0.0
+    top_arc = y_start + dip                                      # (H, W) 袜口弧线
 
     # Fade：渐隐沿弧线自袜口顶端向下 length 像素内完成（顶端透明，底端全显）
     fade_ramp: NDArray[np.float64] | None = None
@@ -119,7 +135,7 @@ def render_stocking(
     # 绘制上沿
     result = _render_top_edge(
         result, style.top, style.fabric, style.shading,
-        alpha_mask, col_profile, y_start, H, W, rng, dip
+        alpha_mask, col_profile, y_start, H, W, rng, dip, wave
     )
 
     # 膝盖褶皱等素材内部墨线增强：以"织物压痕"的方式补画到袜子上
@@ -289,18 +305,28 @@ def _curve_dip(
     return curve * half_w * (1.0 - u * u)
 
 
-def _band_extent(top: "Bare | Welt | Lace | Fade") -> float:
-    """上沿条带静区的高度：袜身图案须让位到条带下沿之下。
+def _lace_wave(
+    top: Lace,
+    y0: int,
+    dip: NDArray[np.float64] | None,
+    W: int,
+    H: int,
+    rng: np.random.Generator,
+) -> tuple[NDArray[np.float64], float, float, float]:
+    """蕾丝波浪下沿的每列 y 坐标及波形参数 (wave_bot, scallop, amplitude, phase)。
 
-    Welt 取条带高度；Lace 取条带高度加波浪谷底振幅（与 _draw_lace 公式一致）；
-    Bare / Fade 无条带。
+    wave_bot 在 (y0 + height ± 振幅) 之间起伏，计入条带下沿所在行的弧线
+    下弯量；振幅约为 scallop 的 15%（使扇贝圆缓）。
     """
-    if isinstance(top, Welt):
-        return top.height
-    if isinstance(top, Lace):
-        scallop = max(top.scallop, 20.0)
-        return top.height + min(scallop * 0.15, top.height * 0.25)
-    return 0.0
+    scallop = max(top.scallop, 20.0)
+    amplitude = min(scallop * 0.15, top.height * 0.25)
+    phase = rng.uniform(0, scallop)
+    dip_bot = dip[min(y0 + int(top.height), H - 1)] if dip is not None else np.zeros(W)
+    wave_bot = (y0 + top.height) + dip_bot + amplitude * np.sin(
+        2 * math.pi * (np.arange(W, dtype=np.float64) + phase) / scallop
+    )
+    wave_bot = np.clip(wave_bot, float(y0), float(H - 1))
+    return wave_bot, scallop, amplitude, phase
 
 
 # ---------------------------------------------------------------------------
@@ -318,26 +344,26 @@ def _render_fabric(
     W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
-    band_h: float = 0.0,
+    pattern_offset: float = 0.0,
 ) -> NDArray[np.float64]:
     """生成 (H, W, 4) float64 的袜身 RGBA 层，y_start 以上行全透明。
 
     dip 为环形图案（横纹、网格横线、印花行）的透视下弯量 (H, W)。
-    band_h 为上沿条带的"静区"高度：袜身图案从条带下沿起算，
-    静区内以主色纯织物填充（对齐真实袜口的素色针织带）。
+    pattern_offset 为上沿条带高度：图案相位从条带下沿起算（是否可见由
+    render_stocking 中的逐列裁剪决定）。
     """
     layer = np.zeros((H, W, 4), dtype=np.float64)
 
     if isinstance(fabric, Plain):
         layer = _fabric_plain(fabric, src, alpha, u, y_start, H, W)
     elif isinstance(fabric, Striped):
-        layer = _fabric_striped(fabric, src, alpha, u, y_start, H, W, dip, band_h)
+        layer = _fabric_striped(fabric, src, alpha, u, y_start, H, W, dip, pattern_offset)
     elif isinstance(fabric, Ribbed):
-        layer = _fabric_ribbed(fabric, src, alpha, u, y_start, H, W, dip, band_h)
+        layer = _fabric_ribbed(fabric, src, alpha, u, y_start, H, W)
     elif isinstance(fabric, Fishnet):
-        layer = _fabric_fishnet(fabric, src, alpha, u, y_start, H, W, rng, dip, band_h)
+        layer = _fabric_fishnet(fabric, src, alpha, u, y_start, H, W, rng, dip)
     elif isinstance(fabric, Dotted):
-        layer = _fabric_dotted(fabric, src, alpha, u, y_start, H, W, rng, dip, band_h)
+        layer = _fabric_dotted(fabric, src, alpha, u, y_start, H, W, rng, dip, pattern_offset)
 
     # 渲染区外清零
     layer[:y_start] = 0.0
@@ -419,28 +445,19 @@ def _fabric_striped(
     u: NDArray[np.float64],
     y0: int, H: int, W: int,
     dip: NDArray[np.float64] | None = None,
-    band_h: float = 0.0,
+    pattern_offset: float = 0.0,
 ) -> NDArray[np.float64]:
-    """横条纹袜：条纹从袜口静区下沿起算，静区内为主色纯织物。"""
-    layer = np.zeros((H, W, 4), dtype=np.float64)
-    ys = np.arange(H, dtype=np.float64).reshape(H, 1)
-    dip2 = dip if dip is not None else 0.0
+    """横条纹袜：条纹相位从上沿条带下沿起算，沿弧线下弯。
 
-    # 条纹：相位从静区下沿起算；静区之上清除
-    ys_pat = ys - y0 - band_h - dip2
+    条带覆盖区的清除由 render_stocking 的逐列裁剪完成。
+    """
+    layer = np.zeros((H, W, 4), dtype=np.float64)
+    ys_pat = np.arange(H, dtype=np.float64).reshape(H, 1) - y0 - pattern_offset
+    if dip is not None:
+        ys_pat = ys_pat - dip
     rgb_map, opa_map = _stripe_opacity_at_y(f, ys_pat)
     layer[..., :3] = rgb_map
     layer[..., 3] = opa_map
-    origin = y0 + band_h + dip2  # (H, W)
-    layer[ys < origin] = 0.0
-
-    # 静区：第一条带的颜色与不透明度作为主色纯织物填充
-    if band_h > 0:
-        first = f.stripes[0]
-        in_band = (ys >= y0 + dip2) & (ys < origin) & (alpha > 0.05)
-        layer[in_band, :3] = color_rgb(first.color)
-        layer[in_band, 3] = first.opacity * color_alpha(first.color)
-
     layer[:y0] = 0.0
     return layer
 
@@ -451,10 +468,8 @@ def _fabric_ribbed(
     alpha: NDArray[np.float64],
     u: NDArray[np.float64],
     y0: int, H: int, W: int,
-    dip: NDArray[np.float64] | None = None,
-    band_h: float = 0.0,
 ) -> NDArray[np.float64]:
-    """竖罗纹：用 cos 函数在 u 方向产生明暗交替的条纹；静区内为纯色。"""
+    """竖罗纹：用 cos 函数在 u 方向产生明暗交替的条纹。"""
     layer = np.zeros((H, W, 4), dtype=np.float64)
     rgb = color_rgb(f.color)
 
@@ -471,18 +486,6 @@ def _fabric_ribbed(
 
     layer[..., :3] = rgb * brightness[..., np.newaxis]
     layer[..., 3] = f.opacity * color_alpha(f.color)
-
-    # 静区与弧线之上清除罗纹（按弧线逐像素），随后回填纯色静区
-    ys = np.arange(H, dtype=np.float64).reshape(H, 1)
-    dip2 = dip if dip is not None else 0.0
-    origin = y0 + band_h + dip2
-    layer[ys < origin] = 0.0
-
-    if band_h > 0:
-        in_band = (ys >= y0 + dip2) & (ys < origin) & (alpha > 0.05)
-        layer[in_band, :3] = rgb
-        layer[in_band, 3] = f.opacity * color_alpha(f.color)
-
     layer[:y0] = 0.0
     return layer
 
@@ -520,11 +523,10 @@ def _fabric_fishnet(
     y0: int, H: int, W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
-    band_h: float = 0.0,
 ) -> NDArray[np.float64]:
     """网袜：网线不透明、网孔透明（可叠底袜），横向网线沿弧线下弯。
 
-    静区内无网线（底袜若有则照常填充）。
+    条带覆盖区的清除由 render_stocking 的逐列裁剪完成。
     """
     layer = np.zeros((H, W, 4), dtype=np.float64)
 
@@ -539,10 +541,6 @@ def _fabric_fishnet(
     rgb = color_rgb(f.color)
     layer[..., :3] = rgb
     layer[..., 3] = net * color_alpha(f.color)
-
-    # 静区与弧线之上清除网线
-    origin = y0 + band_h + (dip if dip is not None else 0.0)
-    layer[np.arange(H, dtype=np.float64).reshape(H, 1) < origin] = 0.0
 
     # 底袜
     if f.underlay is not None:
@@ -619,14 +617,14 @@ def _fabric_dotted(
     y0: int, H: int, W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
-    band_h: float = 0.0,
+    pattern_offset: float = 0.0,
 ) -> NDArray[np.float64]:
-    """印花袜：底袜 + 图案叠加；图案行沿弧线下弯，从静区下沿起算。"""
+    """印花袜：底袜 + 图案叠加；图案行沿弧线下弯，相位从条带下沿起算。"""
     base = _fabric_plain(f.base, src, alpha, u, y0, H, W)
 
     row_half_w = np.where(alpha > 0.05, 1, 0).sum(axis=1) / 2.0
     abs_x = u * row_half_w[:, np.newaxis]
-    ys = (np.arange(H, dtype=np.float64) - y0 - band_h).reshape(H, 1) * np.ones((1, W))
+    ys = (np.arange(H, dtype=np.float64) - y0 - pattern_offset).reshape(H, 1) * np.ones((1, W))
     if dip is not None:
         ys = ys - dip
 
@@ -635,10 +633,6 @@ def _fabric_dotted(
     dot_layer = np.zeros((H, W, 4), dtype=np.float64)
     dot_layer[..., :3] = color_rgb(f.color)
     dot_layer[..., 3] = dot * f.opacity * color_alpha(f.color)
-
-    # 静区与弧线之上无图案
-    origin = y0 + band_h + (dip if dip is not None else 0.0)
-    dot_layer[np.arange(H, dtype=np.float64).reshape(H, 1) < origin] = 0.0
     dot_layer[:y0] = 0.0
 
     return _alpha_over(base, dot_layer)
@@ -779,11 +773,13 @@ def _render_top_edge(
     H: int, W: int,
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
+    wave: tuple[NDArray[np.float64], float, float, float] | None = None,
 ) -> NDArray[np.float64]:
     """在图像上原地绘制上沿效果，返回修改后的图像。
 
     Fade 的渐隐已在织物 alpha 中实现，此处无需再画。
     dip 为环形线条的透视下弯量 (H, W)，可为 None（不弯）。
+    wave 为 Lace 的 (wave_bot, scallop, amplitude, phase)，由 render_stocking 预计算。
     """
     if isinstance(top, Bare):
         img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng,
@@ -791,7 +787,8 @@ def _render_top_edge(
     elif isinstance(top, Welt):
         img = _draw_welt(img, fabric, alpha, y0, H, W, top, sh, rng, dip)
     elif isinstance(top, Lace):
-        img = _draw_lace(img, fabric, alpha, y0, H, W, top, sh, rng, dip)
+        assert wave is not None
+        img = _draw_lace(img, fabric, alpha, y0, H, W, top, sh, rng, dip, wave)
     return img
 
 
@@ -895,72 +892,66 @@ def _draw_lace(
     top: Lace,
     sh: Shading,
     rng: np.random.Generator,
-    dip: NDArray[np.float64] | None = None,
+    dip: NDArray[np.float64] | None,
+    wave: tuple[NDArray[np.float64], float, float, float],
 ) -> NDArray[np.float64]:
-    """蕾丝边：整条带随弧线下弯，下沿叠加正弦波浪（亚像素软边缘）。"""
+    """蕾丝边：半透明带直接覆盖在皮肤上，孔点透出其下的皮肤，
+    沿波浪下沿画细边线勾勒扇贝轮廓。
+
+    wave 为 render_stocking 预计算的 (wave_bot, scallop, amplitude, phase)，
+    与织物图案的逐列裁剪共用同一波形。
+    """
     if top.color is not None:
         lace_rgb = color_rgb(top.color)
     else:
         lace_rgb = _fabric_main_color(fabric)
 
-    h = int(top.height)
-    scallop = max(top.scallop, 20.0)
-    # 振幅：不超过 h 的 25%，使扇贝形态圆缓
-    amplitude = min(scallop * 0.15, h * 0.25)
-
-    phase = rng.uniform(0, scallop)
-    xs = np.arange(W, dtype=np.float64)  # (W,)
-
-    if dip is None:
-        dip2 = np.zeros((H, W))
-        dip_bot = np.zeros(W)
-    else:
-        dip2 = dip
-        dip_bot = dip[min(y0 + h, H - 1)]  # 带底部所在行的下弯量 (W,)
-
-    # wave_bot[x]：浮点下沿 y 坐标 = 带底（随弧线） + 正弦波
-    wave_bot = (y0 + h) + dip_bot + amplitude * np.sin(
-        2 * math.pi * (xs + phase) / scallop
-    )  # (W,)
-    wave_bot = np.clip(wave_bot, float(y0), float(H - 1))
+    wave_bot, scallop, amplitude, phase = wave
 
     t = top.opacity
     y_mat = np.arange(H, dtype=np.float64)[:, np.newaxis]  # (H, 1)
 
-    # 下沿的亚像素软混合权重：距 wave_bot 约 1.5px 过渡
+    # 下沿的亚像素软混合权重
     soft_dist = y_mat - (wave_bot[np.newaxis, :] - 0.5)
     weight = np.clip(1.0 - soft_dist / 1.5 + 1.0 / 3.0, 0.0, 1.0)
 
-    # 上边界：随弧线 y0 + dip；且只在腿内
+    # 上边界：随袜口弧线 y0 + dip；且只在腿内
+    dip2 = dip if dip is not None else np.zeros((H, W))
     in_zone = (y_mat >= y0 + dip2) & (alpha > 0.05)
-    eff_t = weight * in_zone * t
+
+    # 孔点：波峰处的软圆盘，局部提高蕾丝的透明度（透出皮肤）
+    hole_map = np.zeros((H, W), dtype=np.float64)
+    if top.holes:
+        dot_r = 2.2
+        x_peak = scallop * 0.75 - phase  # sin=-1 处，波峰（带最浅）
+        k = 0
+        while True:
+            xp = int(x_peak + k * scallop)
+            if xp - 4 >= W:
+                break
+            if xp + 4 >= 0 and xp - 4 < W:
+                xp_c = max(0, min(W - 1, xp))
+                cy = (y0 + wave_bot[xp_c]) / 2.0
+                y0w, y1w = max(0, int(cy) - 4), min(int(cy) + 5, H)
+                x0w, x1w = max(0, xp - 4), min(xp + 5, W)
+                gy, gx = np.mgrid[y0w:y1w, x0w:x1w]
+                dist = np.sqrt((gy - cy) ** 2 + (gx - xp) ** 2)
+                disc = np.clip(1.0 - dist / dot_r, 0.0, 1.0)
+                np.maximum(hole_map[y0w:y1w, x0w:x1w], disc,
+                           out=hole_map[y0w:y1w, x0w:x1w])
+            k += 1
+
+    eff_t = weight * in_zone * t * (1.0 - hole_map * 0.75)
     img[..., :3] = (
         img[..., :3] * (1.0 - eff_t[..., np.newaxis])
         + lace_rgb * eff_t[..., np.newaxis]
     )
 
-    # 镂空圆点：分布在波浪的峰顶（wave_bot 最小处，sin=-1）附近
-    if top.holes:
-        dot_r = 2
-        # sin=-1 出现在 2π(x+phase)/T = -π/2 + 2kπ，即 x = T*(0.75) - phase + k*T
-        first_peak_x = scallop * 0.75 - phase
-        k = 0
-        while True:
-            xp = int(first_peak_x + k * scallop)
-            if xp >= W:
-                break
-            if xp >= 0:
-                # 峰顶处带最浅，圆点取带的中线（计入该列弧线下弯）
-                peak_bot = y0 + h + dip_bot[xp] - amplitude
-                mid_y = int((y0 + peak_bot) / 2)
-                for dy in range(-dot_r, dot_r + 1):
-                    for dx in range(-dot_r, dot_r + 1):
-                        if dy**2 + dx**2 <= dot_r**2:
-                            yy, xx = mid_y + dy, xp + dx
-                            if 0 <= yy < H and 0 <= xx < W and alpha[yy, xx] > 0.05:
-                                img[yy, xx, :3] *= 0.5
-            k += 1
+    # 波浪下沿细边线：勾勒扇贝轮廓（蕾丝色加深）
+    img = _draw_edge_line(img, alpha, wave_bot, sh, rng,
+                          color=tuple(lace_rgb * 0.55))  # type: ignore[arg-type]
 
+    # 袜口顶端画一条手绘边线
     img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng,
-                          color=tuple(lace_rgb))  # type: ignore[arg-type]
+                          color=tuple(lace_rgb * 0.8))  # type: ignore[arg-type]
     return img
