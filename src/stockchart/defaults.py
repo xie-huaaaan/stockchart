@@ -116,6 +116,12 @@ DEFAULT_LEGEND_ROW_GAP = 18
 DEFAULT_LEGEND_MARGIN = 20
 """图例带与相邻内容（标题 / 绘图区）的间距。"""
 
+DEFAULT_SWATCH_RADIUS = 8.0
+"""图例织物色块的圆角半径。"""
+
+DEFAULT_SWATCH_STROKE = 2.0
+"""图例织物色块描边宽度。"""
+
 # ---------------------------------------------------------------------------
 # 网格线与数值标签
 # ---------------------------------------------------------------------------
@@ -125,6 +131,15 @@ DEFAULT_GRID_COLOR: tuple[int, int, int, int] = (176, 170, 158, 150)
 
 DEFAULT_GRID_WIDTH = 1.5
 """y 轴网格线宽度。"""
+
+DEFAULT_GRID_DASH: tuple[float, float] = (14.0, 10.0)
+"""y 轴网格虚线的（实段长, 空隙长）。"""
+
+DEFAULT_TITLE_LINE_FACTOR = 1.4
+"""标题行高系数（字号 × 系数 ≈ 标题占位高度）。"""
+
+DEFAULT_LABEL_LINE_FACTOR = 1.35
+"""x 标签行高系数。"""
 
 DEFAULT_VALUE_LABEL_SIZE = 26
 """数值标签字号。"""
