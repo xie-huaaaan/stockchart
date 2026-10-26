@@ -8,7 +8,7 @@ TopEdge（Bare/Welt/Lace/Fade）、Shading、Stripe。
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Literal
 
@@ -301,6 +301,47 @@ class StockingStyle:
     fabric: Fabric
     top: TopEdge = field(default_factory=Welt)
     shading: Shading = field(default_factory=Shading)
+
+
+def scale_style(style: StockingStyle, factor: float) -> StockingStyle:
+    """把样式里所有"像素长度"乘以 factor，得到同一视觉在另一分辨率下的等价样式。
+
+    比例类参数（opacity、rim、stretch、curve、highlight_width、angle、depth、
+    pinch、skin 等）保持不变；factor 为 1 时原样返回。
+    """
+    if factor == 1.0:
+        return style
+
+    def fabric(f: Fabric) -> Fabric:
+        if isinstance(f, Striped):
+            stripes = tuple(replace(s, width=s.width * factor) for s in f.stripes)
+            return replace(f, stripes=stripes, offset=f.offset * factor)
+        if isinstance(f, Ribbed):
+            return replace(f, rib_width=f.rib_width * factor)
+        if isinstance(f, Fishnet):
+            under = fabric(f.underlay) if f.underlay is not None else None
+            return replace(
+                f, cell=f.cell * factor, line_width=f.line_width * factor, underlay=under
+            )
+        if isinstance(f, Dotted):
+            return replace(f, base=fabric(f.base), size=f.size * factor, spacing=f.spacing * factor)
+        return f
+
+    def top(t: TopEdge) -> TopEdge:
+        if isinstance(t, Welt):
+            return replace(t, height=t.height * factor)
+        if isinstance(t, Lace):
+            return replace(t, height=t.height * factor, scallop=t.scallop * factor)
+        if isinstance(t, Fade):
+            return replace(t, length=t.length * factor)
+        return t
+
+    return replace(
+        style,
+        fabric=fabric(style.fabric),
+        top=top(style.top),
+        shading=replace(style.shading, wobble=style.shading.wobble * factor),
+    )
 
 
 # ---------------------------------------------------------------------------

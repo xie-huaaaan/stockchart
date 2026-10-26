@@ -30,6 +30,7 @@ from stockchart.stocking.styles import (
     StockingStyle,
     Striped,
     Welt,
+    scale_style,
 )
 
 if TYPE_CHECKING:
@@ -47,24 +48,37 @@ def render_stocking(
     height_px: int,
     *,
     seed: int | None = None,
+    scale: float = 1.0,
 ) -> Leg:
     """给腿穿丝袜：从脚端向上覆盖 height_px 像素。
 
     Args:
         leg: 待渲染的腿素材。
         style: 丝袜样式，可从 STYLES 预设取得。
-        height_px: 丝袜上沿到脚端的像素数。小于等于 0 时返回原图（裸腿）；
+        height_px: 丝袜上沿到脚端的像素数（素材像素）。小于等于 0 时为裸腿
+            （`Shading.skin` 大于 0 时裸腿仍按皮肤光影渲染，否则原样返回）；
             不小于 leg.height 时整腿全盖。
         seed: 纹理类随机效果的随机源。
+        scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
+            光影都是该分辨率的真细节，不是把成品放大；素材先按比例重采样。
+            返回的 Leg 尺寸为素材像素 × scale，足底中心/足宽同步放大，
+            图层按 1:1 贴图即可得到 target_scale 倍的输出。
 
     Returns:
-        新的 Leg：像素已替换，元数据与原素材一致。
+        新的 Leg：像素已替换，元数据与原素材一致（`scale != 1` 时按倍率放大）。
     """
+    if scale <= 0:
+        raise ValueError(f"scale 须为正数，得到 {scale}")
+    if scale != 1.0:
+        leg = _resample_leg(leg, scale)
+        style = scale_style(style, scale)
+        height_px = round(height_px * scale)
+
     if height_px <= 0:
         if style.shading.skin <= 0:
             return leg
         # 裸腿也要参与皮肤光影，否则同一张图里裸腿比穿袜腿少一层受光
-        return _shade_bare_leg(leg, style)
+        return _shade_bare_leg(leg, style, scale)
 
     height_px = min(height_px, leg.height)
     rng = np.random.default_rng(seed if seed is not None else 0)
@@ -202,6 +216,7 @@ def render_stocking(
         ys_grid,
         top_arc,
         y_start,
+        scale,
     )
 
     out = (np.clip(result, 0.0, 1.0) * 255.0).astype(np.uint8)
@@ -224,12 +239,13 @@ def _luminance(rgb: NDArray[np.float64]) -> NDArray[np.float64]:
 def _ink_mask(
     src: NDArray[np.float64],
     alpha: NDArray[np.float64],
+    scale: float = 1.0,
 ) -> NDArray[np.float64]:
     """检测素材内部的手绘线条（膝盖褶皱等），返回 [0,1] 软掩码。
 
     以肤色亮度的 90 分位为基准，亮度低于基准 0.05 开始、0.18 达到全强度；
     排除 alpha 边缘约 3px 环带（轮廓线不参与，避免与侧缘阴影叠加），
-    并做轻微模糊保持手绘感。
+    并做轻微模糊保持手绘感。腐蚀与模糊的像素窗口按 scale 放大。
     """
     from PIL import Image, ImageFilter
 
@@ -244,17 +260,20 @@ def _ink_mask(
 
     ink = np.clip((t_start - lum) / (t_start - t_full), 0.0, 1.0)
 
-    # 排除轮廓：对腿 mask 做约 3px 腐蚀
+    # 排除轮廓：对腿 mask 做约 3px 腐蚀（窗口随倍率放大，保持相对宽度）
+    win = max(3, 2 * round(3 * scale) + 1)
     leg_u8 = (alpha > 0.05).astype(np.uint8) * 255
     interior = (
-        np.asarray(Image.fromarray(leg_u8).filter(ImageFilter.MinFilter(7))).astype(np.float64)
+        np.asarray(Image.fromarray(leg_u8).filter(ImageFilter.MinFilter(win))).astype(np.float64)
         / 255.0
     )
     ink *= interior
 
-    # 轻微模糊
+    # 轻微模糊（半径同样按倍率放大）
     ink_img = Image.fromarray((ink * 255).astype(np.uint8))
-    ink = np.asarray(ink_img.filter(ImageFilter.GaussianBlur(0.8))).astype(np.float64) / 255.0
+    ink = (
+        np.asarray(ink_img.filter(ImageFilter.GaussianBlur(0.8 * scale))).astype(np.float64) / 255.0
+    )
     return ink
 
 
@@ -269,6 +288,7 @@ def _boost_ink_lines(
     ys_grid: NDArray[np.float64],
     top_arc: NDArray[np.float64],
     y0: int,
+    scale: float = 1.0,
 ) -> NDArray[np.float64]:
     """把素材自带的内部墨线以织物褶痕的形式补画到袜子上。
 
@@ -279,7 +299,7 @@ def _boost_ink_lines(
     if sh.ink <= 0:
         return img
 
-    ink = _ink_mask(src, alpha)
+    ink = _ink_mask(src, alpha, scale)
     if not (ink > 0.01).any():
         return img
 
@@ -811,8 +831,43 @@ def _composite(
     return result
 
 
-def _shade_bare_leg(leg: Leg, style: StockingStyle) -> Leg:
-    """给裸腿整体打上皮肤光影（不画袜子）。"""
+def _resample_leg(leg: Leg, scale: float) -> Leg:
+    """按倍率重采样腿图，尺寸与足底元数据同步放大。
+
+    先乘 alpha 再插值（预乘），否则透明区的黑色会被插值拉进边缘形成暗边。
+    """
+    h2 = max(1, round(leg.height * scale))
+    w2 = max(1, round(leg.width * scale))
+    from PIL import Image
+
+    src = leg.image.astype(np.float64) / 255.0
+    a = src[..., 3:4]
+    pm = src[..., :3] * a
+    rgb = Image.fromarray((np.clip(pm, 0, 1) * 255).round().astype(np.uint8)).resize(
+        (w2, h2), Image.Resampling.BICUBIC
+    )
+    al = Image.fromarray((np.clip(a[..., 0], 0, 1) * 255).round().astype(np.uint8)).resize(
+        (w2, h2), Image.Resampling.BICUBIC
+    )
+    out = np.dstack(
+        [
+            np.asarray(rgb).astype(np.float64) / 255.0,
+            np.asarray(al).astype(np.float64)[..., np.newaxis] / 255.0,
+        ]
+    )
+    out[..., :3] /= np.maximum(out[..., 3:4], 1e-6)
+    return replace(
+        leg,
+        image=(np.clip(out, 0, 1) * 255).round().astype(np.uint8),
+        width=w2,
+        height=h2,
+        foot_center_x=round(leg.foot_center_x * scale),
+        foot_width=round(leg.foot_width * scale),
+    )
+
+
+def _shade_bare_leg(leg: Leg, style: StockingStyle, scale: float = 1.0) -> Leg:
+    """给裸腿整体打上皮肤光影（不画袜子）。scale 只用于保持接口一致。"""
     H, W = leg.height, leg.width
     src = leg.image.astype(np.float64) / 255.0
     alpha = src[..., 3]

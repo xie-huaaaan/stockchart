@@ -218,6 +218,38 @@ class TestSkinShading:
         assert diff[:, leg.width // 2 - 11].max() > 0
 
 
+class TestRenderScale:
+    """倍率渲染：在 scale 倍像素空间生成，而非放大成品图。"""
+
+    def test_dims_and_metadata_scale(self) -> None:
+        leg = make_synthetic_leg(720, 160)
+        out = render_stocking(leg, STYLES["black_sheer"], 400, seed=1, scale=2)
+        assert (out.height, out.width) == (1440, 320)
+        assert out.foot_center_x == 2 * leg.foot_center_x
+        assert out.foot_width == 2 * leg.foot_width
+
+    def test_bad_scale(self) -> None:
+        leg = make_synthetic_leg(720, 160)
+        with pytest.raises(ValueError):
+            render_stocking(leg, STYLES["black_sheer"], 400, scale=0)
+
+    def test_scale2_matches_scale1_when_downsampled(self) -> None:
+        leg = make_synthetic_leg(720, 160)
+        a = render_stocking(leg, STYLES["stripe_blue_white"], 400, seed=1).image
+        b = render_stocking(leg, STYLES["stripe_blue_white"], 400, seed=1, scale=2).image
+        small = np.asarray(
+            Image.fromarray(b).resize((leg.width, leg.height), Image.Resampling.LANCZOS)
+        ).astype(int)
+        diff = np.abs(small[:, :, :3] - a.astype(int)[:, :, :3])
+        # 高频条纹在降采样时会有少量差异，整体应高度一致
+        assert diff.mean() < 12
+
+    def test_bare_leg_scale_doubles_size(self) -> None:
+        leg = make_synthetic_leg(720, 160)
+        out = render_stocking(leg, STYLES["black_sheer"], 0, scale=2)
+        assert out.height == 1440
+
+
 # ---------------------------------------------------------------------------
 # L1：STYLES 预设
 # ---------------------------------------------------------------------------

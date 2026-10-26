@@ -229,14 +229,8 @@ def _skia_image(arr: NDArray[np.uint8]) -> skia.Image:
     return skia.Image.fromarray(np.ascontiguousarray(arr[:, :, [2, 1, 0, 3]]))
 
 
-# 输出放大时的位图采样：默认的最近邻会把每个像素复制成方块，放大后是硬边马赛克
-_SAMPLING_UPSCALE = skia.SamplingOptions(skia.FilterMode.kLinear)
+# 位图按 1:1 贴图（袜子已按输出倍率原生渲染），用最近邻避免二次重采样
 _SAMPLING_NATIVE = skia.SamplingOptions()
-
-
-def _image_sampling(scale: float) -> skia.SamplingOptions:
-    """1:1 输出用最近邻（零损失），放大时用线性插值，避免方块感和振铃。"""
-    return _SAMPLING_NATIVE if abs(scale - 1.0) < 1e-9 else _SAMPLING_UPSCALE
 
 
 def _nice_ticks(domain: tuple[float, float], *, max_ticks: int = 7) -> list[float]:
@@ -290,20 +284,27 @@ def _swatch_leg() -> Leg:
     return _swatch_leg_cache
 
 
-def _render_swatch(style: StockingStyle, size: int, seed: int) -> NDArray[np.uint8]:
-    """渲染该样式并裁取袜身中部的一小块织物，作为图例色块。"""
+def _render_swatch(
+    style: StockingStyle, size: int, seed: int, *, scale: float = 1.0
+) -> NDArray[np.uint8]:
+    """渲染该样式并裁取袜身中部的一小块织物，作为图例色块。
+
+    scale > 1 时按该倍率渲染并裁出 size × scale 见方的色块，供 1:1 贴图使用。
+    """
     leg = _swatch_leg()
     sh = round(leg.height * 0.55)
-    img = render_stocking(leg, style, sh, seed=seed).image
+    img = render_stocking(leg, style, sh, seed=seed, scale=scale).image
     h, w = img.shape[:2]
-    # 袜身中段：袜区（底部 sh 行）内垂直居中的 size 行
-    top = (h - sh) + max(0, (sh - size) // 2)
-    band = img[top : top + size]
+    px = max(1, round(size * scale))
+    # 袜身中段：袜区（底部 sh 行）内垂直居中的 px 行
+    sock_h = round(sh * scale)
+    top = (h - sock_h) + max(0, (sock_h - px) // 2)
+    band = img[top : top + px]
     cols = np.where(band[:, :, 3].max(axis=0) > 0)[0]
     center = int((cols[0] + cols[-1]) // 2) if len(cols) else w // 2
-    left = min(max(0, center - size // 2), max(0, w - size))
-    out = np.zeros((size, size, 4), np.uint8)
-    crop = band[:, left : left + size]
+    left = min(max(0, center - px // 2), max(0, w - px))
+    out = np.zeros((px, px, 4), np.uint8)
+    crop = band[:, left : left + px]
     out[: crop.shape[0], : crop.shape[1]] = crop
     return out
 
@@ -884,14 +885,19 @@ class BarPlot:
 
     def _draw_bars(self, canvas: Canvas, layout: _Layout, *, scale: float = 1.0) -> None:
         sc = canvas.skia_canvas()
-        sampling = _image_sampling(scale)
         for bar in self._bars:
-            stocked = render_stocking(bar.leg, bar.style, round(bar.height_px), seed=bar.seed)
+            # 袜子按输出倍率原生生成；图像素 = 设备像素，绘制时抵消画布变换
+            stocked = render_stocking(
+                bar.leg, bar.style, round(bar.height_px), seed=bar.seed, scale=scale
+            )
             arr = stocked.image if bar.side == "up" else np.flipud(stocked.image)
-            img = _skia_image(arr)
-            px = layout.plot_left + bar.x - stocked.foot_center_x
-            py = layout.baseline_y - stocked.height if bar.side == "up" else layout.baseline_y
-            sc.drawImage(img, px, py, sampling, None)
+            px = layout.plot_left + bar.x - bar.leg.foot_center_x
+            py = layout.baseline_y - bar.height_px if bar.side == "up" else layout.baseline_y
+            sc.save()
+            sc.translate(px, py)
+            sc.scale(1.0 / scale, 1.0 / scale)
+            sc.drawImage(_skia_image(arr), 0.0, 0.0, _SAMPLING_NATIVE, None)
+            sc.restore()
 
     def _draw_y_axis(self, canvas: Canvas, layout: _Layout) -> None:
         axis = self._y_axis
@@ -975,8 +981,14 @@ class BarPlot:
             x = layout.plot_left + (self._width_px - row_w) / 2
             for i in row:
                 label, style = rec.items[i]
-                swatch = _skia_image(_render_swatch(style, DEFAULT_LEGEND_SWATCH, rec.seed + i))
-                sc.drawImage(swatch, x, y, _image_sampling(scale), None)
+                swatch = _skia_image(
+                    _render_swatch(style, DEFAULT_LEGEND_SWATCH, rec.seed + i, scale=scale)
+                )
+                sc.save()
+                sc.translate(x, y)
+                sc.scale(1.0 / scale, 1.0 / scale)
+                sc.drawImage(swatch, 0.0, 0.0, _SAMPLING_NATIVE, None)
+                sc.restore()
                 rect = skia.Rect.MakeXYWH(x, y, DEFAULT_LEGEND_SWATCH, DEFAULT_LEGEND_SWATCH)
                 rrect = skia.RRect.MakeRectXY(rect, DEFAULT_SWATCH_RADIUS, DEFAULT_SWATCH_RADIUS)
                 sc.drawRRect(
