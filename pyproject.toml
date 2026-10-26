@@ -15,8 +15,11 @@ dev = [
     "pytest>=9.1",
     "ruff>=0.17",
     "pyright>=1.1.414",
-    # 仅 tools/ 下的素材切分脚本使用（连通域标记），不进入运行时依赖
+    # 仅 tools/ 下的素材脚本使用，不进入运行时依赖：
+    # scipy 用于切分连通域，vtracer/cairosvg 用于位图矢量化与栅格化
     "scipy>=1.18",
+    "vtracer>=0.6.11",
+    "cairosvg>=2.7",
 ]
 
 [build-system]

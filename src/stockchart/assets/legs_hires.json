@@ -1,0 +1,132 @@
+{
+ "leg_01": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 338
+ },
+ "leg_02": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 318
+ },
+ "leg_03": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 298
+ },
+ "leg_04": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 298
+ },
+ "leg_05": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 304
+ },
+ "leg_06": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 296
+ },
+ "leg_07": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 358
+ },
+ "leg_08": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 346
+ },
+ "leg_09": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 330
+ },
+ "leg_10": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 346
+ },
+ "leg_11": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 332
+ },
+ "leg_12": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 366
+ },
+ "leg_13": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 356
+ },
+ "leg_14": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 334
+ },
+ "leg_15": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 352
+ },
+ "leg_16": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 318
+ },
+ "leg_17": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 318
+ },
+ "leg_18": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 332
+ },
+ "leg_19": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 340
+ },
+ "leg_20": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 338
+ },
+ "leg_21": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 338
+ },
+ "leg_22": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 316
+ },
+ "leg_23": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 362
+ },
+ "leg_24": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 290
+ },
+ "leg_25": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 290
+ },
+ "leg_26": {
+  "density": 2,
+  "out_height": 1440,
+  "out_width": 300
+ }
+}
