@@ -12,7 +12,8 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
   视觉观感（间距、刻度、标签、图例、光影）已评审通过；
 - ✅ 渲染倍率原生：`render_stocking(scale=)` 在目标像素空间生成袜身纹理与光影，
   `BarPlot.render(scale=)` 位图按 1:1 贴图；素材用 `Leg.pixels_per_unit` 表达密度，
-  内置 2 倍密素材由 `tools/trace_legs.py` 生成；
+  内置 2 倍密素材由 `tools/split_master.py` 从 13 对超分母图切分、追踪 SVG 母图后
+  栅格化生成；
 - ⬜ 待做：公开 API 整理——`functools.singledispatch` 支持 pandas 等常用数据结构
   （不硬依赖这些库）、参数收敛（下层透传参数改用 `**kwargs` 打包）、文档同步。
   用户明确表示：现阶段以渲染效果为先，API 允许较大调整；
@@ -25,9 +26,12 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
   `0` 为"只作用于袜子"的旧观感；裸腿同样参与，保证同图各腿受光一致。
 - **不做 SVG 输出**：袜身是逐像素算法（条纹相位、网眼、蕾丝孔点、光影、墨线检测），
   转矢量要么重写渲染器、要么追踪成品（会改变线宽）。输出只有 PNG。
-- **矢量化只用于素材**：`tools/trace_legs.py` 先放大 4 倍再追踪（1–2px 细线与
-  灰阶在原分辨率下会被追踪器混匀/变淡，墨量偏大 20%–55%；预放大后误差 <5%）；
-  用户已用 Upscayl 备好 4× 超分母图（`dist/`，gitignore），不再做手工矢量母版。
+- **矢量化只用于素材**：常规管线是 `tools/split_master.py`——把用户用 Upscayl
+  做的 13 对超分母图（`dist/all_up_1.png`）按 alpha 连通域切分、形状匹配认领编号，
+  每条腿在母图原分辨率追踪成 SVG 母图（`dist/leg_svg/`，gitignore），再按输出密度
+  栅格化。1–2px 细线在原分辨率下会被追踪器混匀/变淡（墨量偏大 20%–55%），母图
+  本身已放大 4 倍，无需再预放大；`tools/trace_legs.py` 只作为没有超分母图时从
+  720p 重建的退路。SVG 只作素材母图，不对外输出。
 - **一套高密度素材 + 按需降采样**，不做多分辨率阶梯：素材比目标密则降采样。
 
 ## 环境与命令
@@ -37,8 +41,11 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 - `uv run python -m pytest`：测试（本机裸 `uv run pytest` 有脚本路径问题）
 - `uv run ruff check . && uv run ruff format .`：lint 与格式化
 - `uv run python -m pyright`：类型检查（strict）
+- `uv run python tools/split_master.py dist/all_up_1.png --density 2`：
+  切分超分母图、生成 SVG 母图并替换 `leg_XX@Nx.png` 与 `legs_hires.json`
+  （`--no-svg` 只做位图缩放，`--density 4` 可出 4 倍密）
 - `uv run python tools/trace_legs.py [--density 2] [--pre-scale 4] [--only leg_01]`：
-  由 720p 素材生成 `leg_XX@Nx.png` 与 `legs_hires.json`
+  没有超分母图时从 720p 素材重建高密度素材（退路）
 - `uv run python tools/render_plot_review.py` 等：重出评审图到 `out/`
 
 ## 目录
@@ -46,8 +53,10 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 - `src/stockchart/`：库源码。`src/stockchart/assets/` 只放打包进库的资源
   （`leg_XX.png` 设计尺寸素材、`leg_XX@2x.png` 高密度素材、`legs.json` 与 `legs_hires.json`）。
 - `assets/`：开发期原始素材与参考图（`row1–3.png`、`sample.jpg`），不打包、运行时不引用。
-- `dist/`：用户用 Upscayl 做的 4×/5× 超分母图（gitignore，不入库），供素材管线使用。
-- `tools/`：开发脚本（`split_legs.py` 切分、`trace_legs.py` 矢量化、`render_*_review.py` 评审图），
+- `dist/`：用户用 Upscayl 做的 4×/5× 超分母图（gitignore，不入库），
+  以及 `split_master.py` 生成的 `dist/leg_svg/` SVG 母图集（同样不入库）。
+- `tools/`：开发脚本（`split_legs.py` 切分 720p 素材、`split_master.py` 从超分母图
+  重建高密度素材、`trace_legs.py` 退路、`render_*_review.py` 评审图），
   不属于库的公开 API，可依赖 scipy / vtracer / cairosvg 等 dev 依赖。
 - `tests/`、`docs/`
 
@@ -56,7 +65,7 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 - 运行时只允许：`skia-python`（渲染、文字）、`numpy`、`pillow`。新增运行时依赖前先和用户确认。
 - 不使用 matplotlib。不依赖系统是否装有某个具体字体。
 - 开发依赖（pytest、ruff、pyright、scipy、vtracer、cairosvg）放在 `[dependency-groups].dev`；
-  后两者只给 `tools/trace_legs.py` 用，不进运行时。
+  后两者只给素材管线（`split_master.py` / `trace_legs.py`）用，不进运行时。
 
 ## 代码约定
 
@@ -81,10 +90,14 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
   配对编号 `pair_01`…`pair_13`。
 - 元数据至少含：腿编号、所属配对编号、左/右、来源行与序号、像素尺寸、足底中心 x、足底宽度。
 - 切分时丢弃像素面积过小的杂点（用户手工制作时的瑕疵），阈值写在脚本常量里。
-- **高密度素材**：`tools/trace_legs.py` 先放大 4× 再矢量化（vtracer stacked）再栅格化，
-  产出 `leg_XX@2x.png`（alpha 取原图升采样，保证轮廓不变）与 `legs_hires.json`；
-  `LegLibrary` 按该 json 自动选最密的一套并写 `pixels_per_unit`。
-  用户已用 Upscayl 备好 4× 超分母图（`dist/`），后续升级素材走同一条管线。
+- **高密度素材**：`tools/split_master.py` 从 `dist/all_up_1.png`（13 对 / 26 条腿）
+  切分，按形状匹配（alpha 掩膜 IoU）认领 `leg_XX`，每条腿在母图原分辨率追踪成
+  SVG 母图（`dist/leg_svg/leg_XX.svg`：viewBox 为裁剪坐标、显示尺寸为设计尺寸 × 4、
+  `preserveAspectRatio="none"`），再按密度栅格化成 `leg_XX@Nx.png` 并写
+  `legs_hires.json`；`LegLibrary` 按该 json 自动选最密的一套并写 `pixels_per_unit`。
+  母图的高度/长宽比与设计尺寸有漂移，因此每条腿都拉伸到设计尺寸 × 密度；alpha 取
+  母图裁剪（与追踪内容同源，旧 720p alpha 会裁掉母图外描边）。母图缺腿时保留旧条目。
+  `tools/trace_legs.py` 是没有超分母图时的退路（先放大 4× 再追踪）。
 - 修改素材后必须重新生成预览图（带编号）并让用户核对配对与左右。
 
 ## 渲染约定
