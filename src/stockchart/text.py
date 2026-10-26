@@ -1,4 +1,4 @@
-"""L1 渲染原语：文字绘制与测量（逐字符字体回退，见 docs/design.md"字体"）。"""
+"""L1 渲染原语：文字绘制与测量（逐字符字体回退，见 docs/design.zh-CN.md"字体"）。"""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ type TextAnchor = tuple[HorizontalAnchor, VerticalAnchor]
 type FontSpec = str | Path | Sequence[str]
 """字体：家族名、字体文件路径，或依次尝试的家族名列表。"""
 
-# 手写/楷体偏好回退链（design.md"字体"），按平台取用
+# 手写/楷体偏好回退链（design.zh-CN.md"字体"），按平台取用
 _FALLBACK_FAMILIES: dict[str, tuple[str, ...]] = {
     "win32": ("楷体", "华文行楷", "Ink Free", "Segoe Print"),
     "darwin": ("Kaiti SC", "Bradley Hand", "Marker Felt"),
@@ -74,7 +74,7 @@ def _resolve_typeface(spec: FontSpec | None) -> skia.Typeface:
 
 
 def _fallback_typeface(ch: str) -> skia.Typeface | None:
-    """按系统回退字体找一个含该字形的 Typeface（design.md"字体"第 3 步）。"""
+    """按系统回退字体找一个含该字形的 Typeface（design.zh-CN.md"字体"第 3 步）。"""
     cp = ord(ch)
     if cp in _fallback_cache:
         return _fallback_cache[cp]
@@ -140,7 +140,7 @@ def draw_text(
     """画一段单行文字。
 
     逐字符字体回退保证中文可显示；缺字形画"豆腐块"，不抛异常。
-    font 为家族名列表或字体文件路径；缺省走内置回退链（docs/design.md"字体"）。
+    font 为家族名列表或字体文件路径；缺省走内置回退链（docs/design.zh-CN.md"字体"）。
     anchor 指定 (x, y) 对应文字包围盒的哪一处（水平 left/center/right、
     垂直 top/middle/baseline/bottom）。不处理换行，文本按单行绘制。
     rotation 为绕 (x, y) 顺时针旋转的角度（度），用于旋转的轴标签等。

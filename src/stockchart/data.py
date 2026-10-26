@@ -77,7 +77,7 @@ type DataInput = (
     | _SeriesLike
     | PlotData
 )
-"""`bar` / `mirror_bar` 接受的数据形式；完整说明见 docs/api.md“数据输入”。"""
+"""`bar` / `mirror_bar` 接受的数据形式；完整说明见 docs/api.zh-CN/data-input.md。"""
 
 
 @singledispatch

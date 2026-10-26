@@ -1,303 +1,461 @@
-# 设计文档
+# Design Notes
 
-状态：L0–L4 全部实现，渲染观感已评审通过；下一步是公开 API 整理。
-丝袜样式的完整参数与预设见 [api.md](api.md) "丝袜样式"一节，本文件记录设计取舍与渲染算法思路。
+Status: all layers L0–L4 are implemented and visually reviewed; this file records
+the design decisions and the rendering-algorithm approach behind them.
+Full parameters and presets for stocking styles: see the API reference,
+[Stocking styles](api/rendering.md).
 
-## 目标效果
+## Target Look
 
-`assets/sample.jpg`：每个柱子是一条肤色的腿，腿上套着深灰色丝袜，
-丝袜从脚底往上盖到数据对应的高度，丝袜以上露出肤色。
-库的定位比这张图更广：做成“腿素材创意工具包”，柱状图（含分组）只是第一个上层应用。
+The original hand-made reference image (a pair of skin-toned legs with a dark-gray
+stocking; kept out of the repository, now under the gitignored `dist/`): each bar is a
+skin-toned leg wearing a dark-gray stocking;
+the stocking is pulled up from the sole to the height corresponding to the data
+value, and skin shows above it. The library's scope is broader than this image:
+it is meant to be a creative toolkit of leg assets, of which bar charts
+(including grouped ones) are just the first application layered on top.
 
-## 名称
+## Name
 
-- 项目名与包名：`stockchart`（`import stockchart`）。PyPI 上未被占用（已查询）。`stockplot`、`stockings` 已被占用。
+- Project and package name: `stockchart` (`import stockchart`). Not taken on
+  PyPI (verified). `stockplot` and `stockings` are already taken.
 
-## 素材
+## Assets
 
-`assets/row1.png`、`row2.png`、`row3.png`：720px 高的透明底 PNG，已检查：
+The hand-made source bitmaps (`row1.png`, `row2.png`, `row3.png`, `sample.jpg`) are no
+longer part of the repository — they live in the gitignored `dist/` next to the
+super-resolution masters. The library itself only ships transparent SVGs
+(see "Assets and Output" below). Historical dimensions of the row images:
 
-| 文件 | 尺寸 | 腿数 | 对数 |
+| File | Size | Legs | Pairs |
 | --- | --- | --- | --- |
 | row1.png | 3607×720 | 6 | 3 |
 | row2.png | 3880×720 | 10 | 5 |
 | row3.png | 3277×720 | 10 | 5 |
 
-- 每条腿从大腿根到脚踝，顶部和底部都被裁成平口，腿高均为 720px，宽 144–181px。
-- 肤色约 RGB(253, 234, 228)，边缘有手绘线条和少量半透明像素，没有阴影。
-- 每行里夹有极少数手工制作留下的小杂点（如 row1 x≈780 处），按面积阈值剔除。
-- 同一对内的两条腿间距很小，对与对之间间距明显更大；按从左到右的顺序，每对左边是左腿，右边是右腿。
-- 切分方法：alpha 通道连通域标记 → 按面积过滤杂点 → 按 x 排序 → 相邻两两配对。输出同时生成带编号的预览图，供用户核对。
+- Each leg runs from the top of the thigh to the ankle, cropped flat at both
+  ends; all legs are 720px tall and 144–181px wide.
+- Skin tone is roughly RGB(253, 234, 228), with hand-drawn outlines and a few
+  semi-transparent pixels at the edges; there are no shadows.
+- A few small stray specks left over from hand-crafting appear within each row
+  (e.g. at x≈780 in row1); these are removed by an area threshold.
+- Within a pair the two legs sit very close together, while the gap between
+  pairs is clearly larger; in left-to-right order, each pair has the left leg
+  on the left and the right leg on the right.
+- Splitting method: connected-component labeling on the alpha channel → filter
+  specks by area → sort by x → pair adjacent legs two by two. The output also
+  includes a numbered preview image for the user to verify.
 
-## 数据到丝袜高度的映射（顶层两个分支）
+## Mapping Data to Stocking Height (Two Top-Level Branches)
 
-- 映射只发生在顶层（`bar` / `mirror_bar`），中层以下全部使用设计像素（见"素材与输出"）。
-  基线对应的数据值默认 0，可调。
-- **y 轴极大值** `y_extent` 是像素值，不是比例。默认 760（腿高 720，留一点顶部余量），
-  已随评审确认。所有腿高度相同，因此不同柱子之间可直接比较。
-- 分支 A（`bar`，全部朝上）：
-  - 无负值：`height = v / max × max_fill × y_extent`（`max_fill` 默认 0.8），0 值即裸腿；
-  - 含负值：整个值域线性压缩到 `[min_fill, max_fill]`（默认 0.1 / 0.8）。0 值的腿带一段
-    丝袜、y 轴 0 刻度悬在丝袜中间某处——为完整保留大小关系所做的既定取舍；
-  - 全部数据为 0：全部裸腿；全负数据同规则，值越大丝袜越高。
-- 分支 B（`mirror_bar`，正负镜像）：比例 = `max_abs_fill`（默认 0.8）× y_extent / max|v|；
-  正值画上方腿，负值画下方翻转腿（脚贴基线），0 视为 +0。`mode="single"` 只画数据侧；
-  `mode="both"` 双侧都画、另一侧裸腿。下方空间仅在需要时保留（single 且含负值，或 both）。
-  x 标签默认不锚定基线，而锚定**全部内容最低点**（含朝下腿、y 轴向下延伸）之下，
-  可用 `pos` 参数改为贴基线上下（"auto" 自动选没有腿的一侧）；
-  y 轴干线随负刻度向下延伸，箭头仍在最上端。
-- 丝袜高度映射和腿的布局是分开的两层，方便单独测试。完整签名见 [api.md](api.md)。
+- The mapping happens only at the top layer (`bar` / `mirror_bar`); everything
+  below works in design pixels (see "Assets and Output"). The data value
+  corresponding to the baseline defaults to 0 and is adjustable.
+- **The y-axis maximum** `y_extent` is a pixel value, not a ratio. Default 760
+  (leg height 720, leaving a little headroom), confirmed during review. All
+  legs have the same height, so bars are directly comparable to each other.
+- Branch A (`bar`, everything upward):
+  - No negative values: `height = v / max × max_fill × y_extent` (`max_fill`
+    defaults to 0.8); a value of 0 means a bare leg;
+  - With negative values: the whole value range is linearly compressed into
+    `[min_fill, max_fill]` (defaults 0.1 / 0.8). A leg at value 0 then carries
+    a band of stocking and the y-axis 0 tick hangs somewhere in the middle of
+    the stocking — a deliberate trade-off to fully preserve size ordering;
+  - All-zero data: all bare legs; all-negative data follows the same rule, with
+    larger values meaning higher stockings.
+- Branch B (`mirror_bar`, mirrored positive/negative): ratio =
+  `max_abs_fill` (default 0.8) × y_extent / max|v|; positive values draw the
+  upper leg, negative values draw the flipped lower leg (foot against the
+  baseline), and 0 counts as +0. `mode="single"` draws only the data side;
+  `mode="both"` draws both sides with a bare leg on the other. Space below is
+  reserved only when needed (single with negative values, or both). By default
+  x labels are not anchored to the baseline but to a point below **the lowest
+  point of all content** (including downward legs and the y axis extending
+  downward); the `pos` parameter can pin them against the baseline above or
+  below instead ("auto" automatically picks the side without legs). The y-axis
+  trunk line extends downward with the negative ticks, and the arrowhead stays
+  at the very top.
+- Stocking-height mapping and leg layout are two separate layers, so they can
+  be tested independently. Full signatures: [API reference](api/index.md).
 
-## 丝袜渲染（已实现）
+## Stocking Rendering (Implemented)
 
-目标：贴合素材的日系平涂风格——"动漫里画袜子的方式"，而非写实织物渲染。
-素材特征决定了基本策略：肤色近乎纯色（无阴影）、灰色手绘描边、膝盖有少量褶皱线、
-腿只画到脚踝。全部由 numpy 数学生成，不使用位图素材。
+Goal: an anime-style flat-coloring look that fits the assets — "the way anime
+draws stockings" — not realistic fabric rendering. The assets' characteristics
+dictate the basic strategy: skin is nearly a flat color (no shadows), gray
+hand-drawn outlines, a few crease lines at the knee, and legs drawn only down
+to the ankle. Everything is generated with numpy math; no bitmap assets are used.
 
-结构：`StockingStyle = Fabric（袜身）+ TopEdge（上沿）+ Shading（光影）`，
-三者独立组合；19 个预设见 api.md。
+Structure: `StockingStyle = Fabric + TopEdge + Shading`, three independently
+combinable parts; 19 presets, see the API reference.
 
-### 渲染管线（render_stocking）
+### Rendering Pipeline (render_stocking)
 
-1. **列剖面** `_column_profile`：每行按 alpha 覆盖范围估计腿宽，得到归一化横向坐标
-   u ∈ [−1, 1]——所有"绕腿一圈"的效果都以 u 为参数；
-2. **弧线下弯量** `_curve_dip`：`dip = curve × 半宽 × (1 − u²)`——略微俯视圆柱时横向
-   环绕线（条纹、袜口、蕾丝、网格横线）呈中线下垂、两侧相对上提的弧线，下垂量与
-   局部腿宽成正比；
-3. **织物层** `_render_fabric`：按 Fabric 种类生成 RGBA，图案相位从上沿条带下沿起算；
-4. **逐列裁剪**：织物沿上沿条带下沿（Welt 底沿弧线 / Lace 波浪边缘）逐列裁剪，
-   图案与条带边缘处处贴合、无缺口；
-5. **Fade**：渐隐自袜口顶端向下 `length` 像素内对织物 alpha 做线性爬坡；
-6. **织物合成**：袜色按织物 alpha 与皮肤混合（rim/stretch 调制不透明度）；
-7. **上沿绘制**：Welt 不透明条带（双层织物）/ Lace 0.85 半透明带 + 波浪软边缘 +
-   孔点加深 + 波浪边线；条带直接覆于皮肤上（条带即该区域的织物）；
-8. **光影后置** `_apply_shading`：侧缘阴影（正片叠底）与竖向高光（screen）在条带
-   绘制之后统一应用，使袜口与袜身连续受光；袜口以上的裸皮按 `Shading.skin`
-   强度参与同一套光影（默认 0.5；0 即只作用于袜子、为旧观感），并用偏暖的
-   `skin_shadow_color`——冷紫阴影落在皮肤上会显脏。Fade 的渐隐区里光影从
-   sock 全强度交叉过渡到 skin 强度，避免袜口处出现阴影断层；裸腿（高度 0）
-   在 skin>0 时同样打光，保证同一张图里各腿受光一致；
-9. **墨线增强** `_boost_ink_lines`：检测素材内部手绘线（膝盖褶皱），以"织物压痕"
-   补画到袜子上——深色织物用 shadow_color screen 提亮为冷灰线，浅色织物按原线条
-   深度比压暗；强度 = `Shading.ink` × 局部织物覆盖率，裸腿处不增强，无底网袜跳过；
-10. **倍率原生** `scale`：>1 时整条管线在 scale 倍像素空间里跑——素材按预乘
-    alpha 双三次重采样、样式里所有像素长度乘以 scale、织物/上沿/光影按该分辨率
-    重新生成。所以放大输出里袜身纹理是真细节（不是把成品图放大成方块）；位图
-    按设备像素 1:1 贴图。素材本身的分辨率是唯一的剩余限制（见下文"素材与输出"）。
+1. **Column profile** `_column_profile`: per row, estimate the leg width from
+   the alpha coverage, yielding a normalized transverse coordinate
+   u ∈ [−1, 1] — every "wrapped around the leg" effect is parameterized by u;
+2. **Curve dip** `_curve_dip`: `dip = curve × half-width × (1 − u²)` — viewed
+   slightly from above, horizontal wrapping lines (stripes, the welt, lace,
+   fishnet rows) form arcs that sag at the center and rise relatively at the
+   sides, with the dip proportional to the local leg width;
+3. **Fabric layer** `_render_fabric`: generate RGBA per Fabric kind; the
+   pattern phase is counted from the bottom edge of the top-edge band;
+4. **Per-column clipping**: the fabric is clipped column by column along the
+   bottom edge of the top-edge band (the Welt band's bottom arc / the Lace
+   scallop edge), so the pattern hugs the band's edge everywhere with no gaps;
+5. **Fade**: within `length` pixels measured downward from the top of the
+   welt, the fabric alpha ramps up linearly;
+6. **Fabric compositing**: the stocking color is blended with the skin by the
+   fabric alpha (rim/stretch modulate the opacity);
+7. **Top-edge drawing**: the Welt is an opaque band (double-layer fabric) /
+   Lace is a 0.85 semi-transparent band with soft scallop edges + darkened
+   hole dots + a scallop edge line; the band is drawn directly over the skin
+   (the band *is* the fabric of that region);
+8. **Shading applied afterwards** `_apply_shading`: the rim shadow (multiply
+   blending) and the vertical highlight (screen blending) are applied uniformly
+   after the top-edge band is drawn, so the welt and the fabric receive light
+   continuously. Bare skin above the welt participates in the same shading at
+   the `Shading.skin` strength (default 0.5; 0 means shading affects only the
+   stocking — the old look) and uses a warm-tinted `skin_shadow_color` — a
+   cold purple shadow looks dirty on skin. Within the fade's transition zone,
+   shading cross-fades from full `sock` strength to the skin strength, avoiding
+   a shadow discontinuity at the welt; bare legs (height 0) are also lit when
+   skin>0, so all legs in the same chart receive light consistently;
+9. **Ink-line boost** `_boost_ink_lines`: detect the hand-drawn lines inside
+   the asset (knee crease lines) and redraw them onto the stocking as "fabric
+   indentation" — on dark fabric they are brightened to cold-gray lines with
+   `shadow_color` via screen blending; on light fabric they are darkened in
+   proportion to the original line depth. Strength = `Shading.ink` × local
+   fabric coverage; no boost on bare legs, and sheer fishnet without an opaque
+   base skips this step;
+10. **Native scale** `scale`: when >1, the whole pipeline runs in a pixel
+    space scaled by `scale` — the asset is resampled with premultiplied alpha
+    and bicubic interpolation, every pixel length in the style is multiplied
+    by `scale`, and fabric / top edge / shading are regenerated at that
+    resolution. So zoomed output shows real fabric detail (not a chunky
+    upscaled bitmap); bitmaps are composited 1:1 in device pixels. The asset's
+    own resolution is the only remaining limit (see "Assets and Output" below).
 
-### 设计取舍（评审迭代得出）
+### Design Trade-offs (From Review Iterations)
 
-- **条纹/罗纹/网格的透视压缩**：图案在"腿面展开坐标"（u × 半宽）中生成，两侧自然
-  变密；条带边界做约 1.2px 亚像素软化，避免逐列相位取整的阶梯锯齿；
-- **上沿与织物的关系**：曾尝试"静区填充主色纯织物"，会与蕾丝同色糊成宽带；正确
-  模型是条带本身即织物、直接覆于皮肤，图案从条带下沿起算；
-- **Lace 半透明（0.85）**：镂空织物透出的是皮肤（图案已让位），孔点用加深而非
-  提透明度表达（用户评审定）；
-- **光影必须后置**：先画条带再打光，否则条带平涂像贴纸；高光 screen 公式曾写错
-  为恒等操作，已修正；
-- **墨线增强的边界**：排除 alpha 边缘 3px 环带（轮廓不与侧缘阴影叠加）、软阈值 +
-  轻微模糊保持手绘感、乘法压深适配任意袜色。
-- **上沿线条的抖动要低频**：袜口/蕾丝边线曾按列独立取噪声，相邻列各跳 1–2px，
-  观感是"毛刺"而不是手绘（实测 65 列里 36 列跳变）。改为对白噪声平滑两次的
-  随机游走，振幅仍是 `wobble`、波长 20–40px；边线与条带边界一并改成按覆盖率
-  混合（1px 软过渡），斜向处不再有逐列取整造成的阶梯。
+- **Perspective compression of stripes/ribbing/fishnet**: patterns are
+  generated in the leg's "unwrapped surface coordinates" (u × half-width), so
+  they naturally densify toward the sides; band boundaries get about 1.2px of
+  sub-pixel softening to avoid stairstepping from per-column phase rounding;
+- **Relationship between the top edge and the fabric**: an earlier attempt
+  filled the dead zone with plain fabric in the dominant color, which blurred
+  into a wide band of the same color as the lace. The correct model is that
+  the band *is* the fabric, drawn directly over the skin, with the pattern
+  phase starting from the band's bottom edge;
+- **Lace semi-transparency (0.85)**: what shows through the openwork fabric is
+  skin (the pattern gives way there), and the hole dots are expressed by
+  darkening rather than reducing opacity (decided in user review);
+- **Shading must come after the top edge**: if you light before drawing the
+  band, the band's flat color looks like a sticker. The highlight's screen
+  formula was once written incorrectly as an identity operation; fixed;
+- **Boundaries of the ink-line boost**: exclude a 3px ring along the alpha
+  edge (outlines must not stack with the rim shadow), use a soft threshold +
+  slight blur to keep the hand-drawn feel, and use multiplicative darkening so
+  it adapts to any stocking color;
+- **Top-edge line wobble must be low-frequency**: the welt/lace edge lines
+  once sampled noise independently per column, so adjacent columns jumped by
+  1–2px and the result read as "glitches" rather than hand-drawn (measured:
+  36 of 65 columns jumped). Replaced with a random walk over white noise
+  smoothed twice — the amplitude is still `wobble`, with a 20–40px wavelength;
+  the edge lines and band boundaries were also switched to coverage-based
+  blending (1px soft transition), removing stairsteps from per-column rounding
+  on diagonal stretches.
 
-### 性能
+### Performance
 
-单腿 720×~170 全 numpy 向量化，单次渲染 < 50ms；暂不引入 C/C++。
+A single leg at 720×~170, fully numpy-vectorized, renders in < 50ms; no
+C/C++ extensions for now.
 
-## 字体
+## Fonts
 
-不打包字体。选择流程（用 skia `FontMgr`）：
+No fonts are bundled. Selection flow (via skia's `FontMgr`):
 
-1. 用户传入 `font`（家族名列表或文件路径）则优先使用；
-2. 否则按手写/楷体偏好列表查找系统已装字体（Windows：`楷体`、`华文行楷`、`Ink Free`、`Segoe Print`；macOS：`Kaiti SC`、`Bradley Hand`、`Marker Felt`；Linux：`Noto Serif CJK`、`WenQuanYi`、`Noto Sans CJK` 等），列表可扩展；
-3. 对每个字符逐个检查字形是否存在（`unicharToGlyph != 0`），不存在则用 `FontMgr.matchFamilyStyleCharacter` 按系统回退字体找一个有该字形的，把文本按字体切成多个 run 分别绘制；
-4. 都找不到则绘制该字体的缺字符号，不抛异常。
+1. If the user passes `font` (a list of family names or a file path), use it
+   first;
+2. Otherwise, search installed system fonts against a preference list favoring
+   handwriting/regular-script styles (Windows: `楷体`, `华文行楷`, `Ink Free`,
+   `Segoe Print`; macOS: `Kaiti SC`, `Bradley Hand`, `Marker Felt`; Linux:
+   `Noto Serif CJK`, `WenQuanYi`, `Noto Sans CJK`, etc.); the list is
+   extensible;
+3. Check glyph coverage character by character (`unicharToGlyph != 0`); when a
+   glyph is missing, use `FontMgr.matchFamilyStyleCharacter` to find a system
+   fallback font that has it, splitting the text into multiple runs by font and
+   drawing each run separately;
+4. If nothing is found, draw that font's missing-glyph box instead of raising.
 
-已在本机验证：skia 的字体管理器能枚举系统字体，`脱`、`天` 能通过系统回退匹配到 Microsoft YaHei UI；
-本机有 `楷体`、`华文行楷`、`Ink Free`、`Segoe Print`。这条路径不经过 matplotlib 的字体配置，也就没有它的缓存和配置问题。
+Verified locally: skia's font manager enumerates system fonts, and `脱` / `天`
+resolve to Microsoft YaHei UI through the system fallback; this machine has
+`楷体`, `华文行楷`, `Ink Free`, `Segoe Print`. This path never touches
+matplotlib's font configuration, so none of its caching/configuration issues apply.
 
-## 布局与分组
+## Layout and Grouping
 
-- 间距：`bar_gap` 为相邻腿**边缘之间**的空隙（默认 28，腿宽 144–181 不等，
-  按边缘留白视觉才均匀），`group_gap` 为组间距（默认 120），两者独立。
-  组间距在评审后调大，让分组边界更明显。
-- 取腿策略（默认）：沿列的顺序依次取“左、右、左、右……”，素材选哪一对按 `seed` 伪随机、
-  优先不重复，也可以手动指定。
-- 成对选择不再是独立函数：顶层 `paired` 参数（默认 True）在数据恰好 2 系列时让每组
-  使用同一对素材（系列 0 左腿、系列 1 右腿），其余系列数时忽略该参数。
-- 单腿素材只在不要求成对时使用。
-- **样式循环**：批量方法的 `style` 可传列表，`cycle` 参数决定循环方式。
-  "group" 按**组内位置**循环（组内第 i 根用 `styles[i % len]`）——列表长度
-  等于系列数时即"每系列一个样式"的常规行为，同一系列全图样式一致、可读性
-  最好；"sequence" 按**全部柱子的绘制顺序**循环（组 0 第 0 根、组 0 第 1 根、
-  组 1 第 0 根……），一维数据下即"每根柱一个样式"。L4 默认值 "auto"：一维
-  取 "sequence"、二维取 "group"——一维数据每组只有 1 根柱，组内循环会退化
-  为全部柱同一样式，故不作默认。列表更长时多余样式不用，更短时周期性重复
-  （由调用者负责）。`legs` / `pairs` 显式参数须与数据等长，不参与循环
-  （循环是调色板语义，只属于样式）。
-- **x 标签锚定**：默认（"content"）画在全部内容最低点之下（含朝下腿与
-  y 轴向下延伸），与基线解耦；无下方内容时自然贴着基线下方。"auto" 紧贴
-  基线、选没有柱子的一侧——镜像图常有一侧全空（如全负数据的上方），标签
-  贴基线旁比挂在最低腿之下更近、更易读；两侧都有腿时退回 "content"。
-  也可显式 "above" / "below" 强制贴基线一侧（该侧有腿时会重叠，调用者
-  自负）。L4 的 `mirror_bar` 默认 "auto"，`bar` 默认 "content"。L4 自适应
-  宽度把每组标签宽度计入组宽，默认宽度下不会重叠。
-- **过长的 x 标签自动倾斜**：`add_x_labels(rotation="auto")` 先按水平测量
-  相邻标签是否相压，压住时依次尝试 45°/60°/75°/90°，取第一个不重叠的角度；
-  画布下方（或基线上方）按旋转后的包围盒增加高度，左右也补足伸出绘图区的
-  部分，文字不会被裁。传 `rotation=0` 关闭自动倾斜，传固定角度则始终倾斜。
-  这是主流绘图库（matplotlib / seaborn）处理密集刻度的常规做法：保留完整
-  文字，而不是截断或无限加宽画布。L4 通过 `ChartOptions` 的
-  `x_label_rotation` 可覆盖默认行为。
-- **标题与轴名**：`add_title` 默认在**绘图区**（柱子所占范围）上方水平居中，
-  `align="left"` 靠绘图区左缘；标题比画布宽时对称扩宽画布，不折行、不裁字。
-  `add_x_axis_name` 横向居中标在 x 标签之下（底部图例之上）；
-  `add_y_axis_name` 写在刻度数字左侧、以 y 轴上下延展范围居中——中日韩文字
-  逐字竖排，拉丁/数字等整体旋转 90° 自下而上阅读。
-  字号：标题 52、轴名 30（刻度 26 / x 标签 30）。L4 的 `title` / `xlabel` /
-  `ylabel` 直接映射到这三个方法。
+- Spacing: `bar_gap` is the gap between the **edges** of adjacent legs
+  (default 28; leg widths vary 144–181, so spacing by edges looks visually
+  even), and `group_gap` is the group spacing (default 120); the two are
+  independent. The group spacing was increased after review to make group
+  boundaries more obvious.
+- Leg-picking strategy (default): take legs along each column in the order
+  "left, right, left, right…"; which pair the assets come from is chosen
+  pseudo-randomly by `seed`, preferring no repeats, and can also be specified
+  manually.
+- Paired selection is no longer a standalone function: the top-level `paired`
+  parameter (default True) makes each group reuse the same pair of assets when
+  the data has exactly 2 series (series 0 takes the left leg, series 1 the
+  right leg); with any other series count the parameter is ignored.
+- Single-leg assets are used only when pairing is not requested.
+- **Style cycling**: the batch methods accept a list for `style`, and the
+  `cycle` parameter decides how it cycles. "group" cycles by **position within
+  the group** (bar i in a group uses `styles[i % len]`) — when the list length
+  equals the series count this is the conventional "one style per series"
+  behavior, where each series keeps one style across the whole chart for the
+  best readability; "sequence" cycles by **the draw order of all bars** (group
+  0 bar 0, group 0 bar 1, group 1 bar 0, …), which for one-dimensional data is
+  "one style per bar". The L4 default "auto": "sequence" for 1-D, "group" for
+  2-D — in 1-D data each group has only one bar, so group cycling would
+  degenerate into every bar sharing one style, hence not the default. If the
+  list is longer the extra styles go unused; if shorter it repeats
+  periodically (the caller's responsibility). The explicit `legs` / `pairs`
+  parameters must match the data length and do not participate in cycling
+  (cycling is palette semantics and belongs to styles only).
+- **x label anchoring**: by default ("content") labels are drawn below the
+  lowest point of all content (including downward legs and the y axis
+  extending downward), decoupled from the baseline; with nothing below, they
+  naturally sit just under the baseline. "auto" hugs the baseline and picks the
+  side without bars — mirror charts often leave one side completely empty
+  (e.g. above all-negative data), and labels beside the baseline are closer
+  and more readable than ones hanging under the lowest leg; when both sides
+  have legs it falls back to "content". You can also force a baseline side
+  with "above" / "below" (overlap is the caller's problem if that side has
+  legs). L4's `mirror_bar` defaults to "auto", `bar` to "content". L4's
+  adaptive width counts each group's label width into the group width, so at
+  default widths labels do not overlap.
+- **Automatic tilting of overly long x labels**: `add_x_labels(rotation="auto")`
+  first measures horizontally whether adjacent labels collide; if they do, it
+  tries 45°/60°/75°/90° in order and takes the first angle without overlap.
+  Canvas height below (or above the baseline) is increased by the rotated
+  bounding box, and the sides are padded for any overhang past the plot area,
+  so text is never clipped. Pass `rotation=0` to disable auto-tilting, or a
+  fixed angle to always tilt. This is the standard approach for dense ticks in
+  mainstream plotting libraries (matplotlib / seaborn): keep the full text
+  rather than truncate it or widen the canvas indefinitely. L4 can override
+  the default through `ChartOptions`'s `x_label_rotation`.
+- **Title and axis names**: `add_title` by default centers horizontally above
+  the **plot area** (the range the bars occupy); `align="left"` aligns to the
+  plot area's left edge. If the title is wider than the canvas, the canvas is
+  widened symmetrically — no wrapping, no clipping. `add_x_axis_name` centers
+  the x-axis name below the x labels (above a bottom legend);
+  `add_y_axis_name` writes it to the left of the tick numbers, vertically
+  centered over the y axis's full vertical extent — CJK text is set vertically
+  character by character, while Latin letters/digits are rotated 90° as a
+  whole and read bottom-to-top.
+  Font sizes: title 52, axis names 30 (ticks 26 / x labels 30). L4's `title` /
+  `xlabel` / `ylabel` map directly onto these three methods.
 
-## 图例
+## Legend
 
-系列命名统一走图例（主流库惯例；系列靠纹理与左右腿区分，没有图例超过 2 系列就
-分不清谁是谁），x 轴标签保持每组一层、不做两层系列名——两层标签属于"层级类别"
-（组标签下再分子标签），是另一个功能，将来需要时单独加。
+Series naming goes through the legend uniformly (mainstream-library practice;
+series are distinguished by texture and left/right leg, and without a legend
+more than 2 series becomes unreadable). x labels stay one layer per group —
+no second layer of series names; two-layer labels belong to "hierarchical
+categories" (sub-labels under group labels), which is a separate feature to add
+later if needed.
 
-- marker 是**织物纹理色块**：从该样式渲染的袜身中部裁取一小块织物（约 48px 见方、
-  小圆角、细描边），能同时体现纹理与配色；不画迷你腿，紧凑且不与柱子混淆。
-  成对模式下色块仍取系列样式，左右腿信息由图本身表达。
-- 每项 = 色块 + 系列名。位置默认在标题下方、绘图区上方水平居中；
-  `loc="bottom"` 置于最底部（x 标签之下）。`ncol` 指定一行几项；缺省自动——
-  单行放得下就单行，否则按宽度换行。
-- **过长的图例标签自动折行**：单个标签宽度超过一行可用宽度时按字/词折成
-  多行（最多 3 行，仍放不下则末行加省略号）；`ncol` 指定时按等宽列折行，
-  各列不会错位。色块与多行文字块垂直居中，行高随之增长。
-- 图例带高度自动计入画布上/下边距；宽度上不再撑大画布，而是折行适配已有
-  宽度。L4 传 `series_labels` 即自动生成图例，不传不出图例（保持参考图
-  那种极简单系列的样子）。
+- The marker is a **fabric texture swatch**: a small piece of fabric cut from
+  the middle of a stocking rendered in that style (about 48px square, small
+  corner radius, thin outline), conveying both texture and color scheme; no
+  mini legs are drawn — compact, and not confusable with the bars. In paired
+  mode the swatch still uses the series' style; left/right information is
+  conveyed by the chart itself.
+- Each entry = swatch + series name. Default position: horizontally centered
+  between the title and the plot area; `loc="bottom"` puts it at the very
+  bottom (below the x labels). `ncol` fixes the number of entries per row;
+  by default automatic — one row if it fits, otherwise wrapped by width.
+- **Automatic wrapping of overly long legend labels**: when a single label is
+  wider than the available line width, it wraps by character/word into multiple
+  lines (up to 3; if it still does not fit, the last line gets an ellipsis).
+  When `ncol` is given, labels wrap into equal-width columns that never drift
+  out of alignment. The swatch is vertically centered against the multi-line
+  text block, and the row height grows accordingly.
+- The legend's height is automatically added to the top/bottom canvas margins;
+  its width no longer stretches the canvas — it wraps to fit the existing
+  width. In L4, passing `series_labels` generates the legend automatically;
+  without it no legend is drawn (preserving the reference image's
+  minimal single-series look).
 
-## 可读性增强（可选参数，默认关）
+## Readability Enhancements (Optional Parameters, Off by Default)
 
-- **数值标签**（L4 `value_labels=True`）：袜口上方手写数值，镜像图的下方腿写在
-  袜口下方；字号略小于 x 标签。标签以**袜口那一行的腿轮廓中心**对齐，而不是足底
-  中心——腿素材本身倾斜，按足底中心居中会明显偏离袜口。丝袜高度难以精确读数，
-  信息图场景常用。
-- **y 轴网格线**（L2 `add_y_axis(grid=True)`，L4 `bar/mirror_bar(grid=True)`）：
-  沿各刻度画横向虚线（浅暖灰、压在腿与袜之下，辅助对齐读数）；线条随
-  `axis_style` 保持直线或手绘抖动。与基线重合的 0 刻度不画，避免与 x 轴
-  叠成双线。
+- **Value labels** (L4 `value_labels=True`): a handwritten value above the
+  welt; on mirror charts the lower leg's value goes below its welt. Font size
+  slightly smaller than the x labels. Labels align to **the leg outline's
+  center on the welt row**, not the sole center — the leg assets themselves
+  are tilted, so centering on the sole would visibly miss the welt. Stocking
+  height is hard to read precisely, and this is common in infographic use.
+- **y-axis grid lines** (L2 `add_y_axis(grid=True)`, L4
+  `bar/mirror_bar(grid=True)`): horizontal dashed lines along each tick (light
+  warm gray, drawn beneath the legs and stockings to help align readings);
+  the lines follow `axis_style` — straight or hand-drawn wobble. The 0 tick,
+  which coincides with the baseline, is not drawn, to avoid doubling the x axis.
 
-## 素材与输出（设计像素 vs 图像密度）
+## Assets and Output (Design Pixels vs Pixel Density)
 
-- **设计像素是布局坐标系**：`Leg` 的 `width/height/foot_center_x/foot_width` 一律
-  写设计像素（腿高 720），间距、字号、`y_extent` 全在这个单位下。调用方从不传
-  设计尺寸，也不该改它——它属于素材，由 `LegLibrary` 提供。
-- **图像密度是另一回事**：`Leg.pixels_per_unit` 表示"`image` 像素 / 设计像素"。
-  内置素材的 `image` 只是设计尺寸的布局预览（1）；`render_stocking(scale=k)` 把
-  渲染空间放大到 k 像素/设计单位时，会按 k 重新栅格化 SVG（袜身纹理、上沿、光影
-  也按该分辨率重算），返回的 Leg 元数据仍是设计像素。
-- **内置素材只存透明 SVG**：`tools/split_master.py` 从用户用 Upscayl 做的 13 对
-  超分母图（`dist/all_up_1.png`）切分：按 alpha 连通域切出每条腿，用归一化 alpha
-  掩膜的 IoU 与库内编号做一对一匹配；每条腿先拉伸到**设计尺寸 × 4**，再用 vtracer
-  追踪成彩色 SVG。vtracer 需要不透明输入，输出会先铺一块满画布底色，因此还要用
-  腿身可见轮廓（蓝色通道低于纸底）生成 `<clipPath>`，把背景裁掉——SVG 本身因此
-  是透明的，可作为唯一素材存进库。
-- **按目标高度栅格化**：`vector.rasterize_svg` 把 SVG 渲染到目标像素尺寸。skia 的
-  SVGDOM 在缩放容器时会把 clipPath 算错（实测左移/裁掉一部分），所以总是先按
-  固有尺寸（设计 × 4）渲染，再 Lanczos 缩放到目标；结果缓存在 Leg 上。运行时
-  每条腿首次栅格化约 85ms（4×），图表重绘会复用缓存。
-- **母图贴边的腿**：母图左右边缘可能把腿截断（当前 pair_04、pair_08）；同一对
-  一起回退到 720p 行图重新追踪，其余来自 AI 母图。母图相对设计尺寸有轻微漂移，
-  每条腿都拉伸到设计尺寸 × 4；master 来源的墨量约为旧 720p 素材的 80%–91%，
-  720p 兜底来源为 93%–97%。
-- **为什么不再从 720p 追踪**：1–2px 细线与抗锯齿灰阶在原分辨率下会被追踪器
-  量化成几块平色、相邻笔画还会被最小特征阈值粘连（实测墨量偏大 20%–55%、
-  褶皱糊成块）。母图本身已放大 4 倍，直接追踪即可；不再保留位图高密度管线。
-- 外部自定义素材（`load_leg`）仍按 1:1 设计像素对待（`pixels_per_unit=1`，
-  `svg=None`）；需要更高密度时再给它加密度参数。
+- **Design pixels are the layout coordinate system**: `Leg`'s
+  `width/height/foot_center_x/foot_width` are always in design pixels (leg
+  height 720), and spacing, font sizes, and `y_extent` all live in this unit.
+  Callers never pass design sizes, and should never change them — they belong
+  to the asset, provided by `LegLibrary`.
+- **Pixel density is a separate matter**: `Leg.pixels_per_unit` means
+  "`image` pixels / design pixels". The bundled assets' `image` is only a
+  design-size layout preview (1); `render_stocking(scale=k)` scales the
+  rendering space to k pixels per design unit, re-rasterizes the SVG at k
+  (fabric texture, top edge, and shading are recomputed at that resolution
+  too), and the returned Leg metadata is still in design pixels.
+- **Bundled assets are stored only as transparent SVG**: `tools/split_master.py`
+  splits the 13 pairs of super-resolution master artwork the user made with
+  Upscayl (`dist/all_up_1.png`): each leg is cut out via alpha connected
+  components, matched one-to-one against the library's numbering by the IoU of
+  normalized alpha masks; each leg is first stretched to **design size × 4**,
+  then traced into a color SVG with vtracer. vtracer requires opaque input and
+  its output is pre-filled with a full-canvas background color, so a
+  `<clipPath>` generated from the leg's visible silhouette (blue channel below
+  the paper background) is applied to cut the background away — the SVG is
+  therefore transparent and can be stored in the library as the sole asset.
+- **Rasterizing at the target height**: `vector.rasterize_svg` renders the SVG
+  to the target pixel size. skia's SVGDOM miscalculates clipPath when scaling
+  the container (observed: shifted left / partially clipped), so it always
+  renders at the intrinsic size (design × 4) first, then scales to the target
+  with Lanczos; the result is cached on the Leg. At runtime each leg costs
+  about 85ms on first rasterization (4×), and chart redraws reuse the cache.
+- **Legs clipped at the master artwork's edges**: the master artwork's left and
+  right edges may cut off legs (currently pair_04, pair_08); those pairs fall
+  back together to the 720p row images and are re-traced from there, while the
+  rest come from the AI master artwork. The master artwork drifts slightly
+  relative to the design size, so every leg is stretched to design size × 4;
+  master-sourced ink amount is roughly 80%–91% of the old 720p assets, and the
+  720p fallback source is 93%–97%.
+- **Why we no longer trace from 720p**: at the original resolution, 1–2px thin
+  lines and anti-aliased grays get quantized by the tracer into a few flat
+  colors, and adjacent strokes fuse at the minimum-feature threshold (measured:
+  ink amount 20%–55% too high, crease lines blurred into blobs). The master
+  artwork is already upscaled 4×, so tracing it directly suffices; the bitmap
+  high-density pipeline is retired.
+- External custom assets (`load_leg`) are still treated as 1:1 design pixels
+  (`pixels_per_unit=1`, `svg=None`); a density parameter can be added later if
+  needed.
 
-## 公开 API 分层
+## Public API Layering
 
-分五层，完整签名与语义见 [api.md](api.md)：
+Five layers; full signatures and semantics in the [API reference](api/index.md):
 
-- L0 素材：`Leg`、`LegLibrary`、`load_leg()`
-- L1 渲染原语：`render_stocking()`、`StockingStyle` / `STYLES`、`draw_text()`、`sketch_line()`、`sketch_axis()`
-- L2 自由柱状图：`BarPlot`、`Scale`、`Canvas`
-- L3 布局封装：`BarPlot.add_bars / add_grouped_bars / add_paired_bars`
-- L4 一行出图：`bar()`、`mirror_bar()`（`paired` 参数控制成对选腿，仅恰好 2 系列时生效）
+- L0 Assets: `Leg`, `LegLibrary`, `load_leg()`
+- L1 Rendering primitives: `render_stocking()`, `StockingStyle` / `STYLES`,
+  `draw_text()`, `sketch_line()`, `sketch_axis()`
+- L2 Free-form bar charts: `BarPlot`, `Scale`, `Canvas`
+- L3 Layout helpers: `BarPlot.add_bars / add_grouped_bars / add_paired_bars`
+- L4 One-line charts: `bar()`, `mirror_bar()` (the `paired` parameter controls
+  paired leg selection and only takes effect with exactly 2 series)
 
-## 数据输入与参数透传
+## Data Input and Parameter Pass-Through
 
-- L4 的 `data` 先经 `normalize_data`（`functools.singledispatch`）归一为
-  `PlotData`：一维/二维序列、numpy 数组、`dict` / `Mapping`（标量值→键作
-  x 标签，等长序列值→键作系列名并自动出图例）、pandas 风格表对象
-  （按 `index` / `columns` / `to_numpy()` 结构识别，**不 import pandas**）、
-  已归一化的 `PlotData`。自定义类型用 `register_data_type` 注册，显式传入的
-  `labels` / `series_labels` 覆盖数据推断值。
-- L4 只保留图表语义参数；`axis_style`、`background`、`grid`、`ticks`、
-  `x_label_pos`、`x_label_rotation`、`title_align` / `title_size_px`、
-  `axis_name_size_px`、`legend_loc` / `legend_ncol`、`bar_gap` / `group_gap`
-  收进 `ChartOptions`，以 `**options` 传入并在内部路由到 `BarPlot` / `add_*`。
-  未知键运行时报 `TypeError`（拼错的参数不会被静默忽略）。旧的
-  `bar(..., grid=True)` / `axis_style="handdrawn"` 等写法仍然可用，只是不再
-  出现在签名里。
+- L4's `data` first goes through `normalize_data` (`functools.singledispatch`)
+  and is normalized to `PlotData`: 1-D/2-D sequences, numpy arrays,
+  `dict` / `Mapping` (scalar values → keys become x labels; equal-length
+  sequence values → keys become series names and the legend is generated
+  automatically), pandas-style table objects (recognized by their
+  `index` / `columns` / `to_numpy()` structure, **without importing pandas**),
+  and already-normalized `PlotData`. Custom types are registered with
+  `register_data_type`; explicitly passed `labels` / `series_labels` override
+  values inferred from the data.
+- L4 keeps only chart-semantic parameters; `axis_style`, `background`, `grid`,
+  `ticks`, `x_label_pos`, `x_label_rotation`, `title_align` / `title_size_px`,
+  `axis_name_size_px`, `legend_loc` / `legend_ncol`, `bar_gap` / `group_gap`
+  are packed into `ChartOptions`, passed via `**options`, and routed internally
+  to `BarPlot` / `add_*`. Unknown keys raise `TypeError` at runtime (misspelled
+  parameters are never silently ignored). The old `bar(..., grid=True)` /
+  `axis_style="handdrawn"` spellings still work; they just no longer appear in
+  the signature.
 
-## 坐标轴样式
+## Axis Styles
 
-- **默认直线（clean）**：坐标轴、箭头、刻度与网格用无抖动的直线绘制。
-  早期版本默认手绘抖动，评审认为观感不佳，改为可选。
-- **手绘抖动（handdrawn）**：`axis_style="handdrawn"` 时用确定性噪声对折线
-  做细分抖动，由 `seed` 控制；轴线、箭头、刻度线一并抖动，网格线用更轻的
-  振幅。参考图那种"手画"的质感仍可在需要时开启。
-- 样式在 `BarPlot` 构造时指定，L4 的 `bar` / `mirror_bar` 通过
-  `ChartOptions` 的 `axis_style` 键传入。`sketch_axis` 仍是纯渲染原语：
-  起点 + 方向 + 长度 + 像素刻度偏移，不感知 Scale；刻度值 → 像素的换算由
-  L2 的 `add_y_axis` 完成（含负值向下延伸）。
-- 轴名称与轴分离：`add_y_axis` 只管刻度与网格，名称用 `add_y_axis_name`；
-  x 轴名称用 `add_x_axis_name`。这样没有轴（自由排版）时也能单独写名称。
+- **Straight lines by default (clean)**: axes, arrowheads, ticks, and grid are
+  drawn as straight lines without wobble. Earlier versions defaulted to
+  hand-drawn wobble; review judged the look poor, so it became optional.
+- **Hand-drawn wobble (handdrawn)**: with `axis_style="handdrawn"`, polylines
+  are subdivided and wobbled with deterministic noise controlled by `seed`;
+  axis lines, arrowheads, and tick marks wobble too, while grid lines use a
+  lighter amplitude. The reference image's hand-drawn feel remains available
+  when wanted.
+- The style is set at `BarPlot` construction; L4's `bar` / `mirror_bar` pass it
+  through `ChartOptions`'s `axis_style` key. `sketch_axis` remains a pure
+  rendering primitive: start point + direction + length + pixel tick offsets,
+  unaware of `Scale`; converting tick values to pixels is L2's `add_y_axis`
+  job (including extending downward for negative values).
+- Axis names are separate from the axes: `add_y_axis` only handles ticks and
+  grid, names go through `add_y_axis_name`; the x-axis name uses
+  `add_x_axis_name`. This way names can be written standalone even on charts
+  with no axes (free-form layout).
 
-## 开发顺序
+## Development Order
 
-1. ✅ `tools/split_legs.py` 切分素材（26 腿 / 13 对），预览图已核对；
-2. ✅ `LegLibrary` + `load_leg` + 测试；
-3. ✅ `render_stocking`：5 种 Fabric × 4 种 TopEdge × Shading，19 个预设，用户评审通过
-   （评审图脚本 `tools/render_*_review.py`，产物在 `out/`，不入库）；
-4. ✅ L1 文字与线条（`Canvas`/`draw_text`/`measure_text`/`sketch_line`/`sketch_axis`）；
-5. ✅ L2–L4（`Scale`/`BarPlot`/`add_bars` 系列/`bar`/`mirror_bar`），
-   评审图 `tools/render_plot_review.py`；间距、字号、图例尺寸、刻度密度、数值标签
-   对齐等已按评审反馈调整并通过；
-6. ✅ 渲染倍率原生（`render_stocking(scale=)` + `Leg.pixels_per_unit`）与透明 SVG
-   素材（`tools/split_master.py`：超分母图切分 → 追踪 → clipPath → SVG）；
-7. ✅ 绘制细节：坐标轴默认直线（手绘风可选）、x 标签过长自动倾斜、图例长标签
-   自动折行、默认组间距调大；
-8. ✅ 公开 API 整理：`normalize_data`（`singledispatch`）支持 pandas 等数据格式、
-   L4 透传参数收进 `ChartOptions`、标题默认居中与 x / y 轴名、文档同步。
+1. ✅ `tools/split_legs.py` splits the assets (26 legs / 13 pairs); preview
+   images verified;
+2. ✅ `LegLibrary` + `load_leg` + tests;
+3. ✅ `render_stocking`: 5 Fabric kinds × 4 TopEdge kinds × Shading, 19
+   presets, approved in user review (review scripts `tools/render_*_review.py`,
+   output in `out/`, not committed);
+4. ✅ L1 text and lines (`Canvas`/`draw_text`/`measure_text`/`sketch_line`/`sketch_axis`);
+5. ✅ L2–L4 (`Scale`/`BarPlot`/`add_bars` family/`bar`/`mirror_bar`), review
+   images via `tools/render_plot_review.py`; spacing, font sizes, legend
+   sizes, tick density, value-label alignment, etc. adjusted per review
+   feedback and approved;
+6. ✅ Native render scale (`render_stocking(scale=)` + `Leg.pixels_per_unit`)
+   and transparent SVG assets (`tools/split_master.py`: master-artwork
+   splitting → tracing → clipPath → SVG);
+7. ✅ Drawing details: straight axes by default (hand-drawn optional),
+   automatic tilting of overly long x labels, automatic wrapping of overly
+   long legend labels, larger default group spacing;
+8. ✅ Public API cleanup: `normalize_data` (`singledispatch`) supporting pandas
+   and other data formats, L4 pass-through parameters packed into
+   `ChartOptions`, title centered by default and x / y axis names, docs in sync.
 
-## 已定事项
+## Settled Decisions
 
-- 默认样式为 `black_sheer`（黑丝），`gray_sheer` 对应参考图配色；19 个预设见 api.md；
-- `y_extent` 默认 760（腿高 720，留一点顶部余量），评审后保留；
-- 系列命名用图例（织物纹理色块 marker）；`style` 列表的循环方式由 `cycle` 控制——
-  `group`（组内位置，默认用于二维）/`sequence`（整体顺序，默认用于一维）；
-  数值标签与 y 轴网格线为可选参数、默认关闭；
-- **光影覆盖整条腿**（`Shading.skin=0.5`）：皮肤用偏暖的 `skin_shadow_color`，
-  `0` 回到只作用于袜子的旧观感；裸腿同样打光；
-- **x 标签位置**由 `pos` 控制：`content`（内容最低点之下，默认）、`auto`（贴基线、
-  自动选无腿一侧，`mirror_bar` 默认）、`above`/`below`；过长时默认自动倾斜避让，
-  可用 `rotation` 固定角度或关闭；
-- **坐标轴默认直线**（`axis_style="clean"`）；手绘抖动需显式
-  `axis_style="handdrawn"`；
-- **标题默认居中**（52px），x 轴名横向居中；y 轴名 30px，中日韩文字竖排、
-  其余文字旋转 90°；
-  L4 的 `title` / `xlabel` / `ylabel` 直接可用；
-- **数据输入归一**：`normalize_data` + `register_data_type`；pandas 只按结构
-  识别，不作为运行时依赖；
-- **L4 参数分层**：图表语义参数留在签名，透传参数收进 `ChartOptions`
-  并由 `**options` 接收；
-- **组间距默认 120**（原 96），分组边界更清晰；
-- 输出只有 PNG，不做 SVG/PDF；SVG 只作为内置腿素材的存储格式，对外仍只出 PNG，
-  理由见"素材与输出"；
-- `library.alternate` 的 docstring 左右腿描述与实现相反，实现为准（偶数下标左腿），
-  文档随之修正。
+- The default style is `black_sheer` (black sheer); `gray_sheer` matches the
+  reference image's color scheme; 19 presets, see the API reference;
+- `y_extent` defaults to 760 (leg height 720, leaving a little headroom),
+  kept after review;
+- Series naming uses the legend (fabric texture swatch markers); how a `style`
+  list cycles is controlled by `cycle` — `group` (position within the group,
+  the default for 2-D) / `sequence` (overall draw order, the default for 1-D);
+  value labels and y-axis grid lines are optional and off by default;
+- **Shading covers the whole leg** (`Shading.skin=0.5`): skin uses the
+  warm-tinted `skin_shadow_color`; `0` returns to the old look where shading
+  affects only the stocking; bare legs are lit too;
+- **x label position** is controlled by `pos`: `content` (below the lowest
+  point of all content, the default), `auto` (against the baseline,
+  automatically picking the side without legs — `mirror_bar`'s default),
+  `above`/`below`; overly long labels auto-tilt out of the way by default,
+  with `rotation` fixing an angle or disabling tilting;
+- **Straight axes by default** (`axis_style="clean"`); hand-drawn wobble
+  requires explicit `axis_style="handdrawn"`;
+- **Title centered by default** (52px), x-axis name horizontally centered;
+  y-axis name 30px, CJK text vertical, all other text rotated 90°;
+  L4's `title` / `xlabel` / `ylabel` work directly;
+- **Normalized data input**: `normalize_data` + `register_data_type`; pandas
+  is recognized by structure only and is not a runtime dependency;
+- **L4 parameter layering**: chart-semantic parameters stay in the signature;
+  pass-through parameters are packed into `ChartOptions` and received via
+  `**options`;
+- **Group spacing defaults to 120** (previously 96), making group boundaries
+  clearer;
+- Output is PNG only; no SVG/PDF. SVG exists only as the storage format for
+  the bundled leg assets; the public output is still PNG only — reasoning in
+  "Assets and Output";
+- The docstring of `library.alternate` describes left/right legs opposite to
+  the implementation; the implementation is authoritative (even indices are
+  left legs), and the docs will be corrected to match.

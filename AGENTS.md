@@ -1,7 +1,8 @@
 # AGENTS.md
 
 stockchart 是一个创意绘图库：用丝袜被拉起的高度表示数据大小。设计见
-[docs/design.md](docs/design.md)，公开 API 以 [docs/api.md](docs/api.md) 为准。
+[docs/design.zh-CN.md](docs/design.zh-CN.md)，公开 API 以 `docs/api.zh-CN/`
+（英文版 `docs/api/`）为准，中英文需同步修改。
 
 ## 现状
 
@@ -26,7 +27,7 @@ L4 的下层参数通过 `ChartOptions` 透传。新会话先看 `git log --onel
 - `src/stockchart/`：库源码；`assets/` 只放 `leg_XX.svg` 与 `legs.json`。
 - `tests/`、`docs/`
 - `tools/`：开发脚本，不属于公开 API，可依赖 scipy / vtracer。
-- `assets/`、`dist/`、`out/`：开发素材与评审产物，不打包、运行时不引用。
+- `dist/`、`out/`：开发素材与评审产物，不打包、运行时不引用。
 
 ## 必须遵守
 
@@ -36,8 +37,9 @@ L4 的下层参数通过 `ChartOptions` 透传。新会话先看 `git log --onel
   一经发布不得变动。
 - 默认值集中在 `defaults.py`；随机行为由 `seed` 控制，保证可复现。
 - pandas 只按 `index` / `columns` / `to_numpy()` 结构识别，不 import、不进依赖。
-- 公开 API 的 docstring 与 `docs/api.md` 同步；改签名先改文档。
-- 新增 L4 透传参数时同步 `ChartOptions`、`_OPTION_KEYS` 与 api.md 的选项表。
+- 公开 API 的 docstring 与 `docs/api.zh-CN/`（及英文版 `docs/api/`）同步；改签名先改文档。
+- 新增 L4 透传参数时同步 `ChartOptions`、`_OPTION_KEYS` 与 `docs/api.zh-CN/charts.md`
+  的选项表。
 
 ## 风格与提交
 

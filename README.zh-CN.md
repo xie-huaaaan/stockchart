@@ -1,15 +1,14 @@
-# stockchart
+# 丝袜统计图 (Stock Chart)
 
-[English](https://github.com/xie-huaaaan/stockchart/blob/main/README.md) |
-[简体中文](https://github.com/xie-huaaaan/stockchart/blob/main/README.zh-CN.md)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
 [![PyPI](https://img.shields.io/pypi/v/stockchart)](https://pypi.org/project/stockchart/)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
-[![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](https://github.com/xie-huaaaan/stockchart/blob/main/LICENSE)
+[![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
 
 **用丝袜被拉起的高度表示数据的创意绘图库。**
 
-![分组丝袜图：三个月、两个系列](https://raw.githubusercontent.com/xie-huaaaan/stockchart/main/docs/images/hero-zh.png)
+![分组丝袜图：三个月、两个系列](docs/images/hero-zh.png)
 
 `stockchart` 是柱状图的一种有趣替代：每个数值对应一条腿上丝袜被拉起的高度，
 数值越大丝袜越高，0 则是一条裸腿。它适合信息图、幻灯片、海报，以及任何希望
@@ -17,11 +16,34 @@
 
 - **数值 → 丝袜高度**：支持分组、成对，以及正负值上下镜像。
 - **19 种内置样式**：透肉丝袜、厚袜、条纹、针织、网袜、波点、爱心、蕾丝边等。
-- **直接吃常见数据**：列表、NumPy 数组、字典、pandas `DataFrame` / `Series`。
+- **支持常见数据类型**：列表、NumPy 数组、字典、pandas `DataFrame` / `Series`。
   pandas 是可选依赖，库本身不会 import 它。
 - **原生高分辨率输出**：丝袜纹理与光影按目标像素密度重新生成，不是把小图放大。
 - **分层可组合**：一行 `bar()` 即可出图；需要自由排版时可下沉到逐像素放置。
 - **不依赖 matplotlib**：文字与线条由 Skia 渲染，逐字符字体回退，中文可正常显示。
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/showcase-grouped-zh.png" alt="分组图：周末计划与实际的小时数对比"><br>
+      <sub>分组图 —— <code>black_sheer</code>（松紧袜口）与 <code>white_sheer</code>（蕾丝边）</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/showcase-single-zh.png" alt="含负值的单系列图，全部朝上的腿"><br>
+      <sub>单系列含负值 —— 依旧全是朝上的腿（<code>heart_white</code>）</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="62%" align="center">
+      <img src="docs/images/showcase-styles-zh.png" width="95%" alt="七条腿穿着七种不同的丝袜样式"><br>
+      <sub>样式巡礼 —— 5 种袜身、4 种上沿</sub>
+    </td>
+    <td width="38%" align="center">
+      <img src="docs/images/showcase-mirror-zh.png" width="62%" alt="正负值镜像图"><br>
+      <sub>镜像图 —— 正负值上下分布</sub>
+    </td>
+  </tr>
+</table>
 
 ## 安装
 
@@ -64,11 +86,12 @@ bar(
 from stockchart import mirror_bar
 
 mirror_bar(
-    [4.2, -2.8, 6.1, -5.5],
-    labels=["周一", "周二", "周三", "周四"],
+    [4.2, -2.8, 6.1, -5.5, 3.4, -1.9],
+    labels=["周一", "周二", "周三", "周四", "周五", "周六"],
     title="每日变化",
     style="gray_sheer",
     value_labels=True,
+    seed=2,
 ).save("mirror.png")
 ```
 
@@ -102,20 +125,35 @@ bar(df, title="每月活跃用户", style=["black_sheer", "white_sheer"]).save("
 
 显式传入的 `labels=` / `series_labels=` 会覆盖从数据推断出的值。自定义容器可以用
 `register_data_type` 注册，详见
-[数据输入参考](https://github.com/xie-huaaaan/stockchart/blob/main/docs/api.md)。
+[数据输入参考](docs/api.zh-CN/data-input.md)。
 
 ## 丝袜样式
 
 传一个预设名，或用列表让样式循环：
 
 ```python
-bar([320, 480, 250], style=["black_sheer", "white_sheer", "fishnet_black"])
+bar(
+    [5, 6, 7, 8, 6, 9, 4],
+    labels=["肉丝", "白丝", "彩条", "针织", "网袜", "波点", "厚袜"],
+    title="每种来一条",
+    style=[
+        "nude_sheer",
+        "white_sheer",
+        "stripe_rainbow",
+        "knit_cream",
+        "fishnet_black",
+        "polka_black",
+        "black_pantyhose",
+    ],
+    value_labels=True,
+    seed=3,
+)
 ```
 
 19 个预设覆盖透肉丝袜、厚袜、条纹、针织、网袜、波点、爱心、蕾丝边等。需要更细的
 控制时，可以直接构造 `StockingStyle`：袜身用 `Plain` / `Striped` / `Ribbed` /
 `Fishnet` / `Dotted`，上沿用 `Bare` / `Welt` / `Lace` / `Fade`。完整样式表见
-[API 参考](https://github.com/xie-huaaaan/stockchart/blob/main/docs/api.md)。
+[渲染原语参考](docs/api.zh-CN/rendering.md)。
 
 ## 标题、轴名与选项
 
@@ -137,7 +175,7 @@ bar(
 图表语义参数留在函数签名里；`grid`、`axis_style`、`legend_loc`、`legend_ncol`、
 `x_label_rotation`、`bar_gap`、`group_gap` 等下层选项通过类型化的选项包透传。
 完整列表见
-[`ChartOptions` 表](https://github.com/xie-huaaaan/stockchart/blob/main/docs/api.md)。
+[`ChartOptions` 表](docs/api.zh-CN/charts.md)。
 
 ## API 分层
 
@@ -179,9 +217,8 @@ array = plot.to_numpy()
 
 ## 文档
 
-- [API 参考](https://github.com/xie-huaaaan/stockchart/blob/main/docs/api.md)
-- [设计说明](https://github.com/xie-huaaaan/stockchart/blob/main/docs/design.md)
-- [English README](https://github.com/xie-huaaaan/stockchart/blob/main/README.md)
+- [API 参考](docs/api.zh-CN/index.md)——每层一页
+- [设计说明](docs/design.zh-CN.md)
 
 ## 开发
 
@@ -204,6 +241,6 @@ uv run python -m pyright
 
 Copyright © 2026 xie-huaaaan。
 
-本项目以 [Mozilla Public License 2.0](https://github.com/xie-huaaaan/stockchart/blob/main/LICENSE)
+本项目以 [Mozilla Public License 2.0](LICENSE)
 （MPL-2.0）发布。你可以在闭源项目中使用 `stockchart`；如果修改了受 MPL 覆盖的源文件，
 这些文件需要继续以 MPL-2.0 提供。

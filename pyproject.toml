@@ -36,7 +36,7 @@ dependencies = [
 Homepage = "https://github.com/xie-huaaaan/stockchart"
 Repository = "https://github.com/xie-huaaaan/stockchart"
 Issues = "https://github.com/xie-huaaaan/stockchart/issues"
-Documentation = "https://github.com/xie-huaaaan/stockchart/blob/main/docs/api.md"
+Documentation = "https://github.com/xie-huaaaan/stockchart/blob/main/docs/api/index.md"
 
 [tool.hatch.version]
 path = "src/stockchart/__init__.py"

@@ -1,15 +1,14 @@
-# stockchart
+# Stock Chart
 
-[English](https://github.com/xie-huaaaan/stockchart/blob/main/README.md) |
-[简体中文](https://github.com/xie-huaaaan/stockchart/blob/main/README.zh-CN.md)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
 [![PyPI](https://img.shields.io/pypi/v/stockchart)](https://pypi.org/project/stockchart/)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
-[![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](https://github.com/xie-huaaaan/stockchart/blob/main/LICENSE)
+[![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
 
 **A creative plotting library that draws data as stockings pulled up over a pair of legs.**
 
-![A grouped stockchart: two series over three months](https://raw.githubusercontent.com/xie-huaaaan/stockchart/main/docs/images/hero.png)
+![A grouped stockchart: two series over three months](docs/images/hero.png)
 
 `stockchart` is a playful alternative to the bar chart. Each value becomes the height of a
 stocking pulled up over a leg: a larger value means more stocking, and zero is a bare leg.
@@ -28,6 +27,29 @@ rather than conventional.
   when you need a custom layout.
 - **No matplotlib.** Text and lines are rendered with Skia, including a per-character font
   fallback for Chinese, Japanese, and Korean.
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/showcase-grouped.png" alt="A grouped chart comparing planned and actual weekend hours"><br>
+      <sub>Grouped chart — <code>black_sheer</code> (welt) and <code>white_sheer</code> (lace)</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/showcase-single.png" alt="A single-series chart with negative values, all legs upright"><br>
+      <sub>Single series with negative values — every leg stays upright (<code>heart_white</code>)</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="62%" align="center">
+      <img src="docs/images/showcase-styles.png" width="95%" alt="Seven legs wearing seven different stocking styles"><br>
+      <sub>A sweep of presets — 5 fabric types, 4 top edges</sub>
+    </td>
+    <td width="38%" align="center">
+      <img src="docs/images/showcase-mirror.png" width="62%" alt="A mirror chart with positive and negative values"><br>
+      <sub>Mirror chart — positive and negative values</sub>
+    </td>
+  </tr>
+</table>
 
 ## Installation
 
@@ -72,11 +94,12 @@ A mirror chart for positive and negative values:
 from stockchart import mirror_bar
 
 mirror_bar(
-    [4.2, -2.8, 6.1, -5.5],
-    labels=["Mon", "Tue", "Wed", "Thu"],
+    [4.2, -2.8, 6.1, -5.5, 3.4, -1.9],
+    labels=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
     title="Daily change",
     style="gray_sheer",
     value_labels=True,
+    seed=2,
 ).save("mirror.png")
 ```
 
@@ -110,29 +133,42 @@ bar(df, title="Monthly report", style=["black_sheer", "white_sheer"]).save("char
 
 Explicit `labels=` and `series_labels=` override anything inferred from the data. Custom
 containers can be registered with `register_data_type`; see the
-[data input reference](https://github.com/xie-huaaaan/stockchart/blob/main/docs/api.md).
+[data input reference](docs/api/data-input.md).
 
 ## Stocking styles
 
 Pass a preset name, or a list of names to cycle through styles:
 
 ```python
-bar([320, 480, 250], style=["black_sheer", "white_sheer", "fishnet_black"])
+bar(
+    [5, 6, 7, 8, 6, 9, 4],
+    labels=["Sheer", "Lace", "Stripe", "Knit", "Fishnet", "Dots", "Tights"],
+    title="One of each",
+    style=[
+        "nude_sheer",
+        "white_sheer",
+        "stripe_rainbow",
+        "knit_cream",
+        "fishnet_black",
+        "polka_black",
+        "black_pantyhose",
+    ],
+    value_labels=True,
+    seed=3,
+)
 ```
 
 The 19 presets cover sheer stockings, opaque tights, stripes, ribbed knit, fishnet,
 polka dots, hearts, lace trims, and more. For direct control, pass a `StockingStyle`
 built from `Plain`, `Striped`, `Ribbed`, `Fishnet`, or `Dotted` fabrics with a
 `Bare`, `Welt`, `Lace`, or `Fade` top edge. The full style table is in the
-[API reference](https://github.com/xie-huaaaan/stockchart/blob/main/docs/api.md).
+[rendering reference](docs/api/rendering.md).
 
 ## Titles, axis names, and options
 
 ```python
 bar(
-    [[320, 210], [450, 280], [510, 190]],
-    labels=["Jan", "Feb", "Mar"],
-    series_labels=["This site", "Neighbor"],
+    data,
     title="Monthly report",  # centered over the plot by default
     xlabel="Month",
     ylabel="Active users",
@@ -146,7 +182,7 @@ bar(
 Chart-level parameters stay in the signature; lower-level options such as `grid`,
 `axis_style`, `legend_loc`, `legend_ncol`, `x_label_rotation`, `bar_gap`, and `group_gap`
 are passed through a typed option bag. See the
-[`ChartOptions` table](https://github.com/xie-huaaaan/stockchart/blob/main/docs/api.md).
+[`ChartOptions` table](docs/api/charts.md).
 
 ## API layers
 
@@ -188,9 +224,8 @@ that density. SVG and PDF output are intentionally not supported.
 
 ## Documentation
 
-- [API reference](https://github.com/xie-huaaaan/stockchart/blob/main/docs/api.md) (Chinese)
-- [Design notes](https://github.com/xie-huaaaan/stockchart/blob/main/docs/design.md) (Chinese)
-- [中文说明](https://github.com/xie-huaaaan/stockchart/blob/main/README.zh-CN.md)
+- [API reference](docs/api/index.md) — one page per layer
+- [Design notes](docs/design.md)
 
 ## Development
 
@@ -212,8 +247,6 @@ may still change in minor releases.
 
 ## License
 
-Copyright © 2026 xie-huaaaan.
-
-Released under the [Mozilla Public License 2.0](https://github.com/xie-huaaaan/stockchart/blob/main/LICENSE)
-(MPL-2.0). You can use `stockchart` in closed-source projects; if you modify MPL-covered
-source files, those files must remain available under MPL-2.0.
+Released under the [Mozilla Public License 2.0](LICENSE) (MPL-2.0). You can use
+`stockchart` in closed-source projects; if you modify MPL-covered source files, those
+files must remain available under MPL-2.0.

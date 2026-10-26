@@ -2,7 +2,7 @@
 
 公开类型：StockingStyle、Fabric（Plain/Striped/Ribbed/Fishnet/Dotted）、
 TopEdge（Bare/Welt/Lace/Fade）、Shading、Stripe。
-预设字典：STYLES（只读映射，键见 docs/api.md）。
+预设字典：STYLES（只读映射，键见 docs/api.zh-CN/rendering.md）。
 """
 
 from __future__ import annotations
@@ -499,7 +499,7 @@ def _make_styles() -> dict[str, StockingStyle]:
 
 
 STYLES: MappingProxyType[str, StockingStyle] = MappingProxyType(_make_styles())
-"""内置预设注册表（只读），键见 docs/api.md。"""
+"""内置预设注册表（只读），键见 docs/api.zh-CN/rendering.md。"""
 
 
 # ---------------------------------------------------------------------------
@@ -512,4 +512,4 @@ type StyleLike = StockingStyle | str
 
 
 type StyleSeq = StyleLike | Sequence[StyleLike]
-"""样式参数：单个样式，或按位置循环的样式列表（循环语义见 docs/api.md L3/L4）。"""
+"""样式参数：单个样式，或按位置循环的样式列表（循环语义见 docs/api.zh-CN/layout.md）。"""

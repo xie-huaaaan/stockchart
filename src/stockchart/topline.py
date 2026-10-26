@@ -4,7 +4,7 @@
 
 """L4 一行出图：bar 与 mirror_bar。数据归一化 + 全自动布局。
 
-映射规则见 docs/api.md；腿的摆放经由 BarPlot 的私有槽位接口完成，
+映射规则见 docs/api.zh-CN/charts.md；腿的摆放经由 BarPlot 的私有槽位接口完成，
 本模块不直接操作画布。丝袜高度映射与腿的布局是分开的两层。
 """
 
@@ -252,7 +252,7 @@ def bar(
     Args:
         data: 支持一维/二维序列、numpy 数组、dict、pandas 风格表对象与
             PlotData；DataFrame 的 index/columns 会自动成为 x 标签与系列名。
-            完整列表见 docs/api.md“数据输入”。
+            完整列表见 docs/api.zh-CN/data-input.md。
         labels: 每组（无分组时每根柱）一个标签；缺省用数据里推断的标签。
         series_labels: 每系列一个名字，传入即自动生成图例（marker 为各系列
             样式的织物色块）；缺省用数据里推断的系列名。仅二维数据可用，
@@ -274,7 +274,7 @@ def bar(
         y_extent: 基线上方预留的像素高度。
         width_px: 画布宽；缺省按腿数、间距与标签宽度自适应。
         options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap 等），
-            见 docs/api.md 的 ChartOptions 表。
+            见 docs/api.zh-CN/charts.md 的 ChartOptions 表。
 
     数据 → 丝袜高度（基线对应的数据值默认 0）:
         - 全部数据为 0: 全部裸腿。
