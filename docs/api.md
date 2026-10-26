@@ -475,9 +475,11 @@ class BarPlot:
         size_px: float = DEFAULT_AXIS_NAME_SIZE,
         color: Color = DEFAULT_TEXT_COLOR,
     ) -> BarPlot:
-        """添加 y 轴名称：逐字竖排（中文书写习惯）在刻度数字左侧。
+        """添加 y 轴名称，写在刻度数字左侧。
 
-        纵向以 y 轴上下延展范围居中；占用左侧边距，不影响绘图区坐标。
+        中日韩文字逐字竖排（契合书写习惯）；拉丁、数字等文字整体旋转 90°
+        自下而上阅读。纵向以 y 轴上下延展范围居中；占用左侧边距，不影响
+        绘图区坐标。
         """
 
     def add_legend(
@@ -714,7 +716,7 @@ def bar(
             一维数据传入抛 ValueError。
         title: 整图标题，默认在绘图区上方水平居中；title_align="left" 可改左对齐。
         xlabel: x 轴名称，写在 x 标签下方。
-        ylabel: y 轴名称，逐字竖排在刻度数字左侧。
+        ylabel: y 轴名称，写在刻度数字左侧（中日韩文字竖排，其余旋转）。
         style: 单个样式，或样式列表——循环方式由 cycle 决定。
         cycle: 样式列表的循环方式："group" 按组内位置（组内第 i 根用
             styles[i % len]，列表长度等于系列数时即"每系列一个样式"）；

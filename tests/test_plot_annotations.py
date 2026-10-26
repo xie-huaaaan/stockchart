@@ -338,6 +338,17 @@ class TestAxisNames:
         assert p._x_axis_name is not None and p._x_axis_name.size_px == 20
         assert p._y_axis_name is not None and p._y_axis_name.size_px == 22
 
+    def test_y_axis_name_stacks_cjk(self) -> None:
+        p = BarPlot(600).add_y_axis_name("人数")
+        assert p._y_axis_name is not None
+        assert not p._y_axis_name.rotate
+
+    def test_y_axis_name_rotates_latin(self) -> None:
+        p = BarPlot(600).add_y_axis_name("Users")
+        assert p._y_axis_name is not None
+        assert p._y_axis_name.rotate
+        p.render(scale=1)
+
     def test_y_axis_no_longer_takes_label(self) -> None:
         p = BarPlot(600)
         with pytest.raises(TypeError):

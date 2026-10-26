@@ -77,6 +77,7 @@ from stockchart.text import (
     TextAnchor,
     draw_text,
     measure_text,
+    measure_text_height,
     wrap_text,
 )
 
@@ -208,11 +209,27 @@ class _TitleRecord:
 
 @dataclass(slots=True)
 class _AxisNameRecord:
-    """轴名称的绘制意图；y 轴名称逐字竖排，x 轴名称水平居中。"""
+    """轴名称的绘制意图；y 轴名称按文字种类竖排或旋转。"""
 
     text: str
     size_px: float = DEFAULT_AXIS_NAME_SIZE
     color: Color = DEFAULT_TEXT_COLOR
+    rotate: bool = False
+
+
+def _is_cjk_text(text: str) -> bool:
+    """文字以中日韩字符为主时逐字竖排比旋转更自然。"""
+    chars = [ch for ch in text if not ch.isspace()]
+    if not chars:
+        return False
+    cjk = sum(
+        "\u3040" <= ch <= "\u30ff"  # 日文假名
+        or "\u3400" <= ch <= "\u9fff"  # 汉字（含扩展 A）
+        or "\uac00" <= ch <= "\ud7af"  # 韩文
+        or "\u3000" <= ch <= "\u303f"  # 中文标点
+        for ch in chars
+    )
+    return cjk * 2 >= len(chars)
 
 
 @dataclass(slots=True)
@@ -471,8 +488,13 @@ class BarPlot:
         size_px: float = DEFAULT_AXIS_NAME_SIZE,
         color: Color = DEFAULT_TEXT_COLOR,
     ) -> BarPlot:
-        """添加 y 轴名称：逐字竖排在刻度数字左侧，纵向以轴范围居中。"""
-        self._y_axis_name = _AxisNameRecord(text=text, size_px=size_px, color=color)
+        """添加 y 轴名称：中日韩文字逐字竖排，其余文字旋转 90° 写在刻度数字左侧。"""
+        self._y_axis_name = _AxisNameRecord(
+            text=text,
+            size_px=size_px,
+            color=color,
+            rotate=not _is_cjk_text(text),
+        )
         return self
 
     def add_x_labels(
@@ -967,7 +989,12 @@ class BarPlot:
             down_len = max([0.0, *(-p for p in tick_px if p < 0)])
         left = float(DEFAULT_PLOT_LEFT_PAD)
         if self._y_axis_name is not None:
-            name_w = self._y_axis_name.size_px
+            name = self._y_axis_name
+            name_w = (
+                measure_text_height(name.text, size_px=name.size_px)
+                if name.rotate
+                else name.size_px
+            )
             y_name_x = left + name_w / 2
             left += name_w + DEFAULT_AXIS_NAME_GAP
         if axis is not None:
@@ -1226,19 +1253,32 @@ class BarPlot:
     def _draw_axis_names(self, canvas: Canvas, layout: _Layout) -> None:
         y_name = self._y_axis_name
         if y_name is not None and y_name.text:
-            # 轴名称纵向排列（契合中文书写习惯），在轴干线上下之间居中
-            cell = y_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
-            start = layout.y_name_y - len(y_name.text) * cell / 2
-            for i, ch in enumerate(y_name.text):
+            if y_name.rotate:
+                # 拉丁等文字按常规旋转 90°，自下而上阅读
                 draw_text(
                     canvas,
-                    ch,
+                    y_name.text,
                     layout.y_name_x,
-                    start + (i + 0.5) * cell,
+                    layout.y_name_y,
                     size_px=y_name.size_px,
                     color=y_name.color,
                     anchor=("center", "middle"),
+                    rotation=-90,
                 )
+            else:
+                # 中日韩文字逐字竖排（契合书写习惯），在轴干线上下之间居中
+                cell = y_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
+                start = layout.y_name_y - len(y_name.text) * cell / 2
+                for i, ch in enumerate(y_name.text):
+                    draw_text(
+                        canvas,
+                        ch,
+                        layout.y_name_x,
+                        start + (i + 0.5) * cell,
+                        size_px=y_name.size_px,
+                        color=y_name.color,
+                        anchor=("center", "middle"),
+                    )
         x_name = self._x_axis_name
         if x_name is not None and layout.x_name_y is not None:
             draw_text(

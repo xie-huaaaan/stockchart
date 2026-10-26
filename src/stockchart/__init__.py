@@ -1,6 +1,6 @@
 """stockchart: draw data as stockings pulled up over legs."""
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0"
 
 from stockchart.canvas import Canvas
 from stockchart.color import Color
