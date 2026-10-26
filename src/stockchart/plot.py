@@ -260,17 +260,18 @@ def _nice_ticks(domain: tuple[float, float], *, max_ticks: int = 7) -> list[floa
 
 
 def _sock_top_center_x(leg: Leg, height_px: float) -> float:
-    """袜口那一行腿轮廓的水平中心（素材列坐标），供数值标签对齐袜口。
+    """袜口那一行腿轮廓的水平中心（设计坐标），供数值标签对齐袜口。
 
     腿素材本身是倾斜的，足底中心与袜口中心不在同一竖线上；按足底中心居中
     写数值会让标签明显偏离袜口。裸腿取腿顶端的轮廓中心。
     """
     h = round(height_px)
     row = 0 if h <= 0 else max(0, min(leg.height - h, leg.height - 1))
-    cols = np.where(leg.image[row, :, 3] > 0)[0]
+    row_img = min(round(row * leg.pixels_per_unit), leg.image.shape[0] - 1)
+    cols = np.where(leg.image[row_img, :, 3] > 0)[0]
     if len(cols) == 0:
         return float(leg.foot_center_x)
-    return float((cols[0] + cols[-1]) / 2)
+    return float((cols[0] + cols[-1]) / 2 / leg.pixels_per_unit)
 
 
 # 图例色块统一用同一条固定腿渲染，取其袜身中段的织物

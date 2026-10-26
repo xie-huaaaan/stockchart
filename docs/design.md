@@ -174,28 +174,29 @@
 - **设计像素是布局坐标系**：`Leg` 的 `width/height/foot_center_x/foot_width` 一律
   写设计像素（腿高 720），间距、字号、`y_extent` 全在这个单位下。调用方从不传
   设计尺寸，也不该改它——它属于素材，由 `LegLibrary` 提供。
-- **图像密度是另一回事**：`Leg.pixels_per_unit` 表示"图像像素 / 设计像素"。
-  `render_stocking(scale=k)` 把渲染空间放大到 k 像素/设计单位（袜身纹理、
-  上沿、光影都按该分辨率重算），返回的 Leg 元数据仍是设计像素。
-- **一套高密度素材即可，不做多分辨率阶梯**：素材比目标密就降采样（Lanczos），
-  比目标疏才升采样。调用方只需给 `scale`（输出倍数），系统自动换算；
-  素材不够密时只能得到柔和的放大结果，不会失败。
-- **素材来源**：`tools/split_master.py` 从用户用 Upscayl 做的 13 对超分母图
-  （`dist/all_up_1.png`）重建素材：按 alpha 连通域切出每条腿，用归一化 alpha 掩膜
-  的 IoU 与库内编号做一对一匹配；每条腿在母图原分辨率追踪成 SVG 母图
-  （`dist/leg_svg/leg_XX.svg`），再按目标密度栅格化成 `leg_XX@Nx.png` 并写
-  `legs_hires.json`，`LegLibrary` 自动选用最密的一套。SVG 的 viewBox 保持母图
-  裁剪坐标，显示尺寸写成设计尺寸 × 4，并用 `preserveAspectRatio="none"` 完成
-  设计长宽比拉伸，因此同一份 SVG 可按任意密度重出。母图相对设计尺寸有轻微漂移，
-  每条腿都拉伸到设计尺寸 × 密度；alpha 取母图裁剪，与追踪内容同源（用旧 720p
-  alpha 会裁掉母图外描边）。
+- **图像密度是另一回事**：`Leg.pixels_per_unit` 表示"`image` 像素 / 设计像素"。
+  内置素材的 `image` 只是设计尺寸的布局预览（1）；`render_stocking(scale=k)` 把
+  渲染空间放大到 k 像素/设计单位时，会按 k 重新栅格化 SVG（袜身纹理、上沿、光影
+  也按该分辨率重算），返回的 Leg 元数据仍是设计像素。
+- **内置素材只存透明 SVG**：`tools/split_master.py` 从用户用 Upscayl 做的 13 对
+  超分母图（`dist/all_up_1.png`）切分：按 alpha 连通域切出每条腿，用归一化 alpha
+  掩膜的 IoU 与库内编号做一对一匹配；每条腿先拉伸到**设计尺寸 × 4**，再用 vtracer
+  追踪成彩色 SVG。vtracer 需要不透明输入，输出会先铺一块满画布底色，因此还要用
+  腿身可见轮廓（蓝色通道低于纸底）生成 `<clipPath>`，把背景裁掉——SVG 本身因此
+  是透明的，可作为唯一素材存进库。
+- **按目标高度栅格化**：`vector.rasterize_svg` 把 SVG 渲染到目标像素尺寸。skia 的
+  SVGDOM 在缩放容器时会把 clipPath 算错（实测左移/裁掉一部分），所以总是先按
+  固有尺寸（设计 × 4）渲染，再 Lanczos 缩放到目标；结果缓存在 Leg 上。运行时
+  每条腿首次栅格化约 85ms（4×），图表重绘会复用缓存。
+- **母图贴边的腿**：母图左右边缘可能把腿截断（当前 pair_04、pair_08）；同一对
+  一起回退到 720p 行图重新追踪，其余来自 AI 母图。母图相对设计尺寸有轻微漂移，
+  每条腿都拉伸到设计尺寸 × 4；master 来源的墨量约为旧 720p 素材的 80%–91%，
+  720p 兜底来源为 93%–97%。
 - **为什么不再从 720p 追踪**：1–2px 细线与抗锯齿灰阶在原分辨率下会被追踪器
   量化成几块平色、相邻笔画还会被最小特征阈值粘连（实测墨量偏大 20%–55%、
-  褶皱糊成块）。母图本身已放大 4 倍，直接追踪即可；`tools/trace_legs.py` 保留为
-  没有超分母图时的退路（先放大 4× 再追踪）。超分母图是 AI 超分的产物，描边比
-  原 720p 素材更细更深，最终 2 倍密素材的墨量约为旧素材的 83%–97%。
-- 外部自定义素材（`load_leg`）目前按 1:1 设计像素对待；等多分辨率素材格式
-  稳定后再给它加 `pixels_per_unit` 参数。
+  褶皱糊成块）。母图本身已放大 4 倍，直接追踪即可；不再保留位图高密度管线。
+- 外部自定义素材（`load_leg`）仍按 1:1 设计像素对待（`pixels_per_unit=1`，
+  `svg=None`）；需要更高密度时再给它加密度参数。
 
 ## 公开 API 分层
 
@@ -223,8 +224,8 @@
 5. ✅ L2–L4（`Scale`/`BarPlot`/`add_bars` 系列/`bar`/`mirror_bar`），
    评审图 `tools/render_plot_review.py`；间距、字号、图例尺寸、刻度密度、数值标签
    对齐等已按评审反馈调整并通过；
-6. ✅ 渲染倍率原生（`render_stocking(scale=)` + `Leg.pixels_per_unit`）与 2 倍密素材
-   （`tools/split_master.py`：超分母图切分 → SVG 母图 → 2 倍密 PNG）；
+6. ✅ 渲染倍率原生（`render_stocking(scale=)` + `Leg.pixels_per_unit`）与透明 SVG
+   素材（`tools/split_master.py`：超分母图切分 → 追踪 → clipPath → SVG）；
 7. ⬜ 公开 API 整理：`singledispatch` 支持 pandas 等数据格式、参数收敛与文档同步。
 
 ## 已定事项
@@ -238,7 +239,7 @@
   `0` 回到只作用于袜子的旧观感；裸腿同样打光；
 - **x 标签位置**由 `pos` 控制：`content`（内容最低点之下，默认）、`auto`（贴基线、
   自动选无腿一侧，`mirror_bar` 默认）、`above`/`below`；
-- 输出只有 PNG，不做 SVG/PDF；矢量化只用于素材——SVG 是内部母图，对外仍只出
-  高密度 PNG，理由见"素材与输出"；
+- 输出只有 PNG，不做 SVG/PDF；SVG 只作为内置腿素材的存储格式，对外仍只出 PNG，
+  理由见"素材与输出"；
 - `library.alternate` 的 docstring 左右腿描述与实现相反，实现为准（偶数下标左腿），
   文档随之修正。

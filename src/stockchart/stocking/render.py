@@ -60,7 +60,8 @@ def render_stocking(
             不小于 leg.height 时整腿全盖。
         seed: 纹理类随机效果的随机源。
         scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
-            光影都是该分辨率的真细节，不是把成品放大；素材先按比例重采样。
+            光影都是该分辨率的真细节，不是把成品放大；内置矢量素材按该倍率
+            重新栅格化，外部位图素材先按比例重采样。
             返回的 Leg 尺寸为素材像素 × scale，足底中心/足宽同步放大，
             图层按 1:1 贴图即可得到 target_scale 倍的输出。
 
@@ -70,7 +71,7 @@ def render_stocking(
     if scale <= 0:
         raise ValueError(f"scale 须为正数，得到 {scale}")
 
-    # 图像密度统一到 scale（素材更密则降采样，更疏则升采样），元数据保持设计像素
+    # 图像密度统一到 scale（矢量素材重栅格化，位图降/升采样），元数据保持设计像素
     leg = _resample_leg(leg, scale)
     density = leg.pixels_per_unit
     if density != 1.0:
@@ -838,9 +839,12 @@ def _composite(
 def _resample_leg(leg: Leg, density: float) -> Leg:
     """把腿图重采样到 density 个像素/设计像素；元数据仍是设计像素。
 
-    素材比目标更密时降采样（画质最好，也保证高清素材被真正利用），否则升采样。
-    先乘 alpha 再插值（预乘），否则透明区的黑色会被插值拉进边缘形成暗边。
+    内置矢量素材按目标密度重新栅格化；外部位图素材比目标更密时降采样
+    （画质最好），否则升采样。位图先乘 alpha 再插值（预乘），否则透明区的
+    黑色会被插值拉进边缘形成暗边。
     """
+    if leg.svg is not None:
+        return leg.at_density(density)
     if abs(leg.pixels_per_unit - density) < 1e-9:
         return leg
     h_img, w_img = leg.image.shape[:2]

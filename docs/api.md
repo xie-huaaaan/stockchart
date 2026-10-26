@@ -59,22 +59,31 @@ class Canvas:
 ```python
 @dataclass(slots=True, frozen=True)
 class Leg:
-    """一条腿部素材：RGBA 像素与定位元数据。
+    """一条腿部素材：定位元数据 + 透明 SVG 源（或 RGBA 像素）。
 
-    宽高、足底中心、足宽等元数据一律使用**设计像素**（腿高 720 的坐标系），
-    与图像的实际密度无关；`pixels_per_unit` 描述"图像像素 / 设计像素"。
+    宽高、足底中心、足宽等元数据一律使用**设计像素**（腿高 720 的坐标系）。
+    内置素材带 `svg`：`image` 只是设计尺寸的布局预览，渲染时按目标倍率重新
+    栅格化；外部 PNG 素材没有 `svg`，`image` 就是原始位图。
 
     Attributes:
-        image: (H, W, 4) uint8；脚在图像底端、素材正放。
+        image: (H, W, 4) uint8；脚在图像底端、素材正放。内置素材为设计尺寸，
+            外部素材为 PNG 原尺寸。
         width: 设计像素宽。
         height: 设计像素高。
         foot_center_x: 足底中心在设计坐标系里的 x，放置对齐的锚点。
         foot_width: 足底宽度（设计像素）。
-        pixels_per_unit: 图像像素 / 设计像素；1 为素材即设计尺寸，
-            2 表示图像是设计尺寸的两倍密（渲染时按需降采样，不重复放大）。
+        pixels_per_unit: `image` 像素 / 设计像素。内置素材为 1；外部位图可能 >1。
         leg_id: 内置素材编号（如 "leg_03"）；外部素材为 None。
         pair_id: 所属配对编号（如 "pair_02"）；外部素材为 None。
         side: "left" / "right"；外部素材为 None。
+        svg: 内置透明 SVG 源；外部素材为 None。渲染时按目标倍率栅格化。
+
+    Methods:
+        raster_at(pixels_per_unit): 按目标密度栅格化 `svg`，结果缓存在 Leg 上。
+            内置素材首次调用约 85ms（4× 渲染后缩放），之后直接复用。
+            没有 `svg` 的外部素材抛 ValueError。
+        at_density(pixels_per_unit): 返回该密度下可直接绘制的 Leg；密度相同
+            时返回自身。`render_stocking(scale=)` 内部使用。
     """
 
     image: np.ndarray
@@ -86,11 +95,12 @@ class Leg:
     leg_id: str | None = None
     pair_id: str | None = None
     side: Literal["left", "right"] | None = None
+    svg: bytes | None = None
 ```
 
 ```python
 class LegLibrary:
-    """内置腿部素材库（26 条腿 / 13 对）。"""
+    """内置腿部素材库（26 条腿 / 13 对；每条腿是透明 SVG）。"""
 
     def __init__(self, *, seed: int | None = None) -> None:
         """seed 同时作为后续自动选腿的默认随机源。"""
@@ -126,7 +136,8 @@ def load_leg(
         foot_width: 足底宽度。缺省按底部 alpha 覆盖宽度自动估计。
 
     Returns:
-        自定义素材的 Leg 实例，可直接传入各层接口。
+        自定义素材的 Leg 实例，可直接传入各层接口；`svg` 为 None，
+        `pixels_per_unit` 为 1（不做多分辨率识别）。
     """
 ```
 
@@ -246,7 +257,8 @@ def render_stocking(
             不小于 leg.height 时整腿全盖。
         seed: 纹理类随机效果的随机源。
         scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
-            光影都是该分辨率的真细节，不是把成品图放大；素材先按比例重采样。
+            光影都是该分辨率的真细节，不是把成品图放大；内置 SVG 素材按该倍率
+            重新栅格化，外部位图素材按比例重采样。
             返回的 Leg 图像为「设计像素 × scale」（`pixels_per_unit == scale`），
             足底中心/足宽等元数据仍是设计像素；图层按 1:1 贴图即得到 scale 倍输出。
 
@@ -257,7 +269,8 @@ def render_stocking(
     约定：本函数是丝袜渲染算法的对外契约（算法由独立设计实现）。始终在素材
     自身坐标系内从脚端向上渲染；腿的上下翻转由上层放置时处理（翻转与渲染
     先后等价，不在此层做）。`scale` 只是把渲染空间等比例放大，几何语义不变；
-    素材本身比目标更密时按需降采样（高清素材不会被重复放大）。
+    内置 SVG 素材按目标倍率栅格化；外部位图素材比目标更密时按需降采样
+    （高清素材不会被重复放大）。
     """
 ```
 

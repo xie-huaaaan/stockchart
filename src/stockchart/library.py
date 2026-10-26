@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from stockchart.legs import Leg
+from stockchart.vector import rasterize_svg
 
 # ---------------------------------------------------------------------------
 # load_leg：从外部 PNG 加载自定义腿素材
@@ -78,7 +79,6 @@ class LegLibrary:
         self._meta: list[dict[str, str | int]] = []
         self._cache: dict[str, Leg] = {}
         self._pair_map: dict[str, list[str]] = {}  # pair_id → [left_id, right_id]
-        self._hires: dict[str, dict[str, float]] = {}  # leg_id → 高密度素材元数据
         self._load_metadata()
 
     # ------------------------------------------------------------------
@@ -154,7 +154,7 @@ class LegLibrary:
     # ------------------------------------------------------------------
 
     def _load_metadata(self) -> None:
-        """读取 legs.json 与可选的 legs_hires.json，构建 pair_map。"""
+        """读取 legs.json，构建 pair_map。"""
         pkg = files("stockchart.assets")
         json_bytes = (pkg / "legs.json").read_bytes()
         loaded: list[dict[str, str | int]] = json.loads(json_bytes)
@@ -170,45 +170,27 @@ class LegLibrary:
             else:
                 self._pair_map[pid][1] = lid
 
-        hires_path = pkg / "legs_hires.json"
-        if hires_path.is_file():
-            raw: dict[str, dict[str, float]] = json.loads(hires_path.read_text(encoding="utf-8"))
-            self._hires = raw
-
     def _load_leg(self, leg_id: str) -> Leg:
-        """懒加载单条腿，结果缓存。
-
-        若存在 `leg_XX@Nx.png`（高密度素材，由 tools/trace_legs.py 生成），优先
-        使用它并把密度记进 `pixels_per_unit`；设计像素元数据仍来自 legs.json。
-        """
+        """懒加载单条腿的 SVG，栅格化设计尺寸预览并缓存。"""
         if leg_id in self._cache:
             return self._cache[leg_id]
 
         entry = next(m for m in self._meta if m["leg_id"] == leg_id)
         pkg = files("stockchart.assets")
-
-        import io
-
-        density = 1.0
-        filename = f"{leg_id}.png"
-        info = self._hires.get(leg_id)
-        if info is not None:
-            density = float(info["density"])
-            filename = f"{leg_id}@{int(density)}x.png"
-        png_bytes = (pkg / filename).read_bytes()
-
-        img = np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGBA"))
+        width, height = int(entry["width"]), int(entry["height"])
+        svg = (pkg / f"{leg_id}.svg").read_bytes()
+        image = rasterize_svg(svg, width, height)
 
         leg = Leg(
-            image=img,
-            width=int(entry["width"]),
-            height=int(entry["height"]),
+            image=image,
+            width=width,
+            height=height,
             foot_center_x=int(entry["foot_center_x"]),
             foot_width=int(entry["foot_width"]),
-            pixels_per_unit=density,
             leg_id=leg_id,
             pair_id=str(entry["pair_id"]),
             side="left" if entry["side"] == "left" else "right",  # type: ignore[arg-type]
+            svg=svg,
         )
         self._cache[leg_id] = leg
         return leg

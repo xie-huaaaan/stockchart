@@ -122,6 +122,44 @@ class TestLegLibrary:
         assert a is b
 
 
+class TestVectorAssets:
+    """内置素材只存透明 SVG，渲染时按目标密度栅格化。"""
+
+    def test_builtin_leg_has_svg_source(self) -> None:
+        leg = LegLibrary().get("leg_01")
+        assert leg.svg is not None
+        assert leg.pixels_per_unit == 1.0
+        assert leg.image.shape == (leg.height, leg.width, 4)
+
+    def test_raster_at_target_density_is_cached(self) -> None:
+        leg = LegLibrary().get("leg_01")
+        img = leg.raster_at(2)
+        assert img.shape == (leg.height * 2, leg.width * 2, 4)
+        assert img[:, :, 3].min() == 0
+        assert img[:, :, 3].max() > 250
+        assert leg.raster_at(2) is img
+
+        hi = leg.at_density(2)
+        assert hi.pixels_per_unit == 2
+        assert hi.image is img
+        assert hi.svg is leg.svg
+
+    def test_render_stocking_vector_scale(self) -> None:
+        leg = LegLibrary().get("leg_01")
+        out = render_stocking(leg, STYLES["black_sheer"], 400, seed=1, scale=2)
+        assert out.image.shape == (1440, leg.width * 2, 4)
+        assert out.pixels_per_unit == 2
+
+    def test_external_leg_has_no_vector_source(self, tmp_path: Path) -> None:
+        leg = make_synthetic_leg(720, 160)
+        png_path = tmp_path / "leg.png"
+        Image.fromarray(leg.image).save(png_path)
+        loaded = load_leg(png_path)
+        assert loaded.svg is None
+        with pytest.raises(ValueError):
+            loaded.raster_at(2)
+
+
 # ---------------------------------------------------------------------------
 # L0：load_leg
 # ---------------------------------------------------------------------------

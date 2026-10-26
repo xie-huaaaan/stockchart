@@ -1,10 +1,13 @@
-"""素材切分脚本：从 assets/row1~3.png 提取各条腿，输出到 src/stockchart/assets/。
+"""720p 原始素材切分脚本：从 assets/row1~3.png 提取各条腿，供参考与兜底。
+
+库内素材现在是透明 SVG（`tools/split_master.py` 生成），本脚本只产出设计尺寸
+位图参考，不再写进 `src/stockchart/assets/`。
 
 用法：uv run python tools/split_legs.py
 输出：
-  src/stockchart/assets/leg_01.png … leg_26.png
-  src/stockchart/assets/legs.json
-  src/stockchart/assets/preview.png  （带编号的预览图，供人工核对）
+  assets/legs_720/leg_01.png … leg_26.png
+  assets/legs_720/legs.json
+  out/preview_720.png  （带编号的预览图，供人工核对）
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from scipy import ndimage
 
 ROOT = Path(__file__).parent.parent
 ASSETS_SRC = ROOT / "assets"
-ASSETS_DST = ROOT / "src" / "stockchart" / "assets"
+ASSETS_DST = ROOT / "assets" / "legs_720"
 
 # 按面积过滤杂点的阈值（像素面积）
 MIN_AREA = 2000
@@ -172,7 +175,7 @@ def main() -> None:
     print(f"\nMetadata written → {json_path}  ({len(metadata)} legs)")
 
     # 预览图
-    _make_preview(all_legs, metadata, ROOT / "out" / "preview.png")
+    _make_preview(all_legs, metadata, ROOT / "out" / "preview_720.png")
 
 
 def _make_preview(
