@@ -229,6 +229,16 @@ def _skia_image(arr: NDArray[np.uint8]) -> skia.Image:
     return skia.Image.fromarray(np.ascontiguousarray(arr[:, :, [2, 1, 0, 3]]))
 
 
+# 输出放大时的位图采样：默认的最近邻会把每个像素复制成方块，放大后是硬边马赛克
+_SAMPLING_UPSCALE = skia.SamplingOptions(skia.FilterMode.kLinear)
+_SAMPLING_NATIVE = skia.SamplingOptions()
+
+
+def _image_sampling(scale: float) -> skia.SamplingOptions:
+    """1:1 输出用最近邻（零损失），放大时用线性插值，避免方块感和振铃。"""
+    return _SAMPLING_NATIVE if abs(scale - 1.0) < 1e-9 else _SAMPLING_UPSCALE
+
+
 def _nice_ticks(domain: tuple[float, float], *, max_ticks: int = 7) -> list[float]:
     """按 1/2/2.5/5×10^k 的整步长取刻度，取能放进 max_ticks 个的最小步长。
 
@@ -670,7 +680,7 @@ class BarPlot:
             background=self._background,
         )
         canvas.skia_canvas().scale(scale, scale)
-        self._draw(canvas, layout)
+        self._draw(canvas, layout, scale=scale)
         return canvas
 
     def save(self, path: str | Path, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Path:
@@ -822,13 +832,13 @@ class BarPlot:
             return "below"
         return "content"
 
-    def _draw(self, canvas: Canvas, layout: _Layout) -> None:
+    def _draw(self, canvas: Canvas, layout: _Layout, *, scale: float = 1.0) -> None:
         self._draw_grid(canvas, layout)
         self._draw_baseline(canvas, layout)
-        self._draw_bars(canvas, layout)
+        self._draw_bars(canvas, layout, scale=scale)
         self._draw_y_axis(canvas, layout)
         self._draw_title(canvas, layout)
-        self._draw_legend(canvas, layout)
+        self._draw_legend(canvas, layout, scale=scale)
         self._draw_x_labels(canvas, layout)
         self._draw_value_labels(canvas, layout)
 
@@ -872,15 +882,16 @@ class BarPlot:
             seed=self._baseline_seed,
         )
 
-    def _draw_bars(self, canvas: Canvas, layout: _Layout) -> None:
+    def _draw_bars(self, canvas: Canvas, layout: _Layout, *, scale: float = 1.0) -> None:
         sc = canvas.skia_canvas()
+        sampling = _image_sampling(scale)
         for bar in self._bars:
             stocked = render_stocking(bar.leg, bar.style, round(bar.height_px), seed=bar.seed)
             arr = stocked.image if bar.side == "up" else np.flipud(stocked.image)
             img = _skia_image(arr)
             px = layout.plot_left + bar.x - stocked.foot_center_x
             py = layout.baseline_y - stocked.height if bar.side == "up" else layout.baseline_y
-            sc.drawImage(img, px, py)
+            sc.drawImage(img, px, py, sampling, None)
 
     def _draw_y_axis(self, canvas: Canvas, layout: _Layout) -> None:
         axis = self._y_axis
@@ -943,7 +954,7 @@ class BarPlot:
             anchor=("left", "top"),
         )
 
-    def _draw_legend(self, canvas: Canvas, layout: _Layout) -> None:
+    def _draw_legend(self, canvas: Canvas, layout: _Layout, *, scale: float = 1.0) -> None:
         rec = self._legend
         if rec is None:
             return
@@ -965,7 +976,7 @@ class BarPlot:
             for i in row:
                 label, style = rec.items[i]
                 swatch = _skia_image(_render_swatch(style, DEFAULT_LEGEND_SWATCH, rec.seed + i))
-                sc.drawImage(swatch, x, y)
+                sc.drawImage(swatch, x, y, _image_sampling(scale), None)
                 rect = skia.Rect.MakeXYWH(x, y, DEFAULT_LEGEND_SWATCH, DEFAULT_LEGEND_SWATCH)
                 rrect = skia.RRect.MakeRectXY(rect, DEFAULT_SWATCH_RADIUS, DEFAULT_SWATCH_RADIUS)
                 sc.drawRRect(
