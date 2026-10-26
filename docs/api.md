@@ -4,7 +4,7 @@
 
 ## 全局约定
 
-- **坐标单位**一律是素材像素（腿素材高 720）；最终输出的放大倍数是独立的 `scale` 参数。
+- **坐标单位**一律是设计像素（腿高 720 的设计坐标系）；最终输出的放大倍数是独立的 `scale` 参数。
 - **随机性**：选腿、丝袜纹理、手绘抖动全部由 `seed` 控制，同参数同 seed 渲染结果完全一致。
 - **裸腿**即"丝袜高度为 0"，没有单独的开关。
 - 上层只通过下层的公开接口工作：
@@ -40,7 +40,7 @@ class Canvas:
         *,
         background: Color = DEFAULT_BACKGROUND,
     ) -> None:
-        """构造空白画布并填充背景色。尺寸单位为素材像素。"""
+        """构造空白画布并填充背景色。尺寸单位为设计像素。"""
 
     def save(self, path: str | Path) -> Path:
         """写出 PNG 文件。"""
@@ -136,7 +136,7 @@ def load_leg(
 
 袜子 = 袜身种类（`Fabric`）+ 上沿（`TopEdge`）+ 光影（`Shading`）。三者都是
 `dataclass(slots=True, frozen=True, kw_only=True)`，非法参数在构造时抛 `ValueError`。
-长度单位均为素材像素，指腿正面处的尺寸（两侧按圆柱透视自动压缩）。
+长度单位均为设计像素，指腿正面处的尺寸（两侧按圆柱透视自动压缩）。
 颜色为 `Color`；带 alpha 分量时，alpha 乘到对应的 opacity 上。
 
 ```python
@@ -241,14 +241,14 @@ def render_stocking(
     Args:
         leg: 待渲染的腿素材。
         style: 丝袜样式，可从 STYLES 预设取得。
-        height_px: 丝袜上沿到脚端的像素数（素材像素）。小于等于 0 时为裸腿
+        height_px: 丝袜上沿到脚端的像素数（设计像素）。小于等于 0 时为裸腿
             （`Shading.skin` 大于 0 时裸腿仍按皮肤光影渲染，否则原样返回）；
             不小于 leg.height 时整腿全盖。
         seed: 纹理类随机效果的随机源。
         scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
             光影都是该分辨率的真细节，不是把成品图放大；素材先按比例重采样。
-            返回的 Leg 尺寸为素材像素 × scale，足底中心/足宽同步放大，
-            图层按 1:1 贴图即可得到 scale 倍的输出。
+            返回的 Leg 图像为「设计像素 × scale」（`pixels_per_unit == scale`），
+            足底中心/足宽等元数据仍是设计像素；图层按 1:1 贴图即得到 scale 倍输出。
 
     Returns:
         新的 Leg：像素已替换，设计坐标元数据与素材一致；`scale != 1` 时
@@ -350,7 +350,7 @@ class Scale:
 
 ```python
 class BarPlot:
-    """自由柱状图：以 X 轴为基线，腿的位置与丝袜高度全部由调用者按素材像素指定。"""
+    """自由柱状图：以 X 轴为基线，腿的位置与丝袜高度全部由调用者按设计像素指定。"""
 
     def __init__(
         self,
@@ -380,7 +380,7 @@ class BarPlot:
         """在 x 处贴一条腿：x 是足底中心的目标位置（腿宽不一，按脚对齐才均匀）。
 
         Args:
-            height_px: 丝袜高度（素材像素）。小于等于 0 为裸腿。
+            height_px: 丝袜高度（设计像素）。小于等于 0 为裸腿。
             leg: 腿素材；side="down" 时素材竖直翻转、脚贴基线朝下。
             style: StockingStyle 实例或 STYLES 预设名。
         """
@@ -436,7 +436,7 @@ class BarPlot:
         """
 
     def render(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Canvas:
-        """渲染。scale 为输出放大倍数（抗锯齿），不影响素材像素坐标。"""
+        """渲染。scale 为输出像素密度，不影响设计像素坐标。"""
 
     def save(self, path: str | Path, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Path:
         """渲染并直接写出 PNG。"""
@@ -618,6 +618,6 @@ def mirror_bar(
 ## 与丝袜渲染算法实现的协作边界
 
 - `render_stocking()` 的签名与语义是硬契约：从脚端向上、`height_px <= 0` 返回裸腿、
-  超过腿高全盖、`seed` 可复现、返回同尺寸新 Leg。
+  超过腿高全盖、`seed` 可复现、返回图像密度为 `scale` 的新 Leg（设计坐标元数据不变）。
 - `StockingStyle` 及其组成类型的字段、预设名见上文“丝袜样式”；视觉算法见
   docs/design.md“丝袜渲染”。其余各层只透传该对象。
