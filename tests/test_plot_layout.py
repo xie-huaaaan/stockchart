@@ -5,6 +5,7 @@
 
 import itertools
 
+import numpy as np
 import pytest
 from tests.test_plot_core import make_leg
 
@@ -163,3 +164,24 @@ class TestAddPairedBars:
         pair = (leg_w(150, "left"), leg_w(150, "right"))
         with pytest.raises(ValueError):
             p.add_paired_bars([(1.0, 2.0), (3.0, 4.0)], pairs=[pair])
+
+
+class TestBarPlacement:
+    """贴图定位回归：腿必须以整腿高度贴基线，而不是以袜高。"""
+
+    def test_up_leg_foot_sits_on_baseline(self) -> None:
+        p = BarPlot(400, extent_up=760, extent_down=0)
+        p.add_bar(200, 200, leg_w(150))
+        layout = p._layout()
+        # 腿顶 = 基线 − 整腿高；腿底 = 基线
+        assert layout.baseline_y - 720 == pytest.approx(layout.baseline_y - p._bars[0].leg.height)
+
+    def test_render_draws_leg_above_baseline_only(self) -> None:
+        p = BarPlot(400, extent_up=760, extent_down=0)
+        p.add_bar(200, 200, leg_w(150))
+        arr = p.render(scale=1).to_numpy()
+        layout = p._layout()
+        ink = np.abs(arr[:, :, :3].astype(int) - np.array([250, 248, 243])).sum(axis=2) > 30
+        rows = np.where(ink.any(axis=1))[0]
+        # 墨迹最低点不应超过基线（腿脚贴基线，画布底部只有边距与标签区）
+        assert rows.max() < layout.baseline_y + 60

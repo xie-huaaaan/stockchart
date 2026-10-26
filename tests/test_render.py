@@ -197,14 +197,16 @@ class TestSkinShading:
 
     def test_skin_zero_leaves_bare_leg_untouched(self) -> None:
         leg = make_synthetic_leg(720, 160)
-        out = render_stocking(leg, STYLES["black_sheer"], 400, seed=1)
+        style = replace(STYLES["black_sheer"], shading=Shading(skin=0.0))
+        out = render_stocking(leg, style, 400, seed=1)
         top = leg.height - 400
         # 袜口以上 20px 之外应与素材完全一致
         assert (out.image[: top - 20] == leg.image[: top - 20]).all()
 
     def test_skin_zero_returns_bare_leg_as_is(self) -> None:
         leg = make_synthetic_leg(720, 160)
-        out = render_stocking(leg, STYLES["black_sheer"], 0, seed=1)
+        style = replace(STYLES["black_sheer"], shading=Shading(skin=0.0))
+        out = render_stocking(leg, style, 0, seed=1)
         assert (out.image == leg.image).all()
 
     def test_skin_shades_bare_leg(self) -> None:
@@ -312,11 +314,14 @@ class TestRenderStocking:
         return make_synthetic_leg()
 
     def test_zero_height_returns_original(self, leg: "stockchart.Leg") -> None:
-        result = render_stocking(leg, STYLES["black_sheer"], 0)
+        # skin=0 时裸腿原样返回；skin>0 会打皮肤光影（见 TestSkinShading）
+        style = replace(STYLES["black_sheer"], shading=Shading(skin=0.0))
+        result = render_stocking(leg, style, 0)
         np.testing.assert_array_equal(result.image, leg.image)
 
     def test_negative_height_returns_original(self, leg: "stockchart.Leg") -> None:
-        result = render_stocking(leg, STYLES["black_sheer"], -10)
+        style = replace(STYLES["black_sheer"], shading=Shading(skin=0.0))
+        result = render_stocking(leg, style, -10)
         np.testing.assert_array_equal(result.image, leg.image)
 
     def test_output_shape_preserved(self, leg: "stockchart.Leg") -> None:

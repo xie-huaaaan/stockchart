@@ -892,7 +892,8 @@ class BarPlot:
             )
             arr = stocked.image if bar.side == "up" else np.flipud(stocked.image)
             px = layout.plot_left + bar.x - bar.leg.foot_center_x
-            py = layout.baseline_y - bar.height_px if bar.side == "up" else layout.baseline_y
+            # 贴图按整腿高度定位（不是袜高）：脚贴基线，腿向上展开
+            py = layout.baseline_y - bar.leg.height if bar.side == "up" else layout.baseline_y
             sc.save()
             sc.translate(px, py)
             sc.scale(1.0 / scale, 1.0 / scale)
