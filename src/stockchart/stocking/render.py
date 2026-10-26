@@ -859,6 +859,37 @@ def _fabric_main_color(fabric: Fabric) -> NDArray[np.float64]:
     return np.array([0.1, 0.1, 0.1])
 
 
+def _soft_cover(y: NDArray[np.float64], edge: NDArray[np.float64]) -> NDArray[np.float64]:
+    """行的 y 坐标相对 edge 的覆盖率：edge 以上为 0、以下为 1，边界处 1px 过渡。
+
+    二值判定会让斜向边界形成 1px 阶梯；按覆盖率取值等价于一次简单的抗锯齿。
+    """
+    return np.clip(y - edge + 0.5, 0.0, 1.0)
+
+
+def _smooth_wobble(
+    rng: np.random.Generator,
+    n: int,
+    amplitude: float,
+) -> NDArray[np.float64]:
+    """低频起伏的抖动曲线，振幅 ±amplitude。
+
+    逐列独立取噪声会让边线每列各跳 1–2px，看起来是"毛刺"而非手绘线；对白噪声
+    平滑两次再归一化，得到相邻列连续变化的缓慢漂移。
+    """
+    if amplitude <= 0 or n == 0:
+        return np.zeros(n)
+    raw = rng.normal(0.0, 1.0, size=n)
+    width = min(9, n)
+    kernel = np.ones(width) / width
+    for _ in range(2):
+        raw = np.convolve(raw, kernel, mode="same")
+    peak = float(np.abs(raw).max())
+    if peak < 1e-9:
+        return np.zeros(n)
+    return raw / peak * amplitude
+
+
 def _draw_edge_line(
     img: NDArray[np.float64],
     alpha: NDArray[np.float64],
@@ -867,17 +898,18 @@ def _draw_edge_line(
     rng: np.random.Generator,
     color: tuple[float, float, float] = (0.1, 0.1, 0.1),
 ) -> NDArray[np.float64]:
-    """沿基准曲线 y_base 画一条手绘边线（逐列 ±wobble 抖动，约 2px 粗）。"""
+    """沿基准曲线 y_base 画一条手绘边线：低频抖动 + 按覆盖率混合的软笔触。
+
+    线宽约 1.5px，边缘由覆盖率自然过渡，避免逐列取整在斜向处产生的锯齿。
+    """
     H, W = img.shape[0], img.shape[1]
     color_arr = np.array(color, dtype=np.float64)
-    wobble = rng.normal(0, max(sh.wobble, 0.01), size=W).round().astype(np.int_)
-    for x in range(W):
-        yb = round(y_base[x])
-        for dy in range(-1, 2):
-            yy = yb + int(wobble[x]) + dy
-            if 0 <= yy < H and alpha[yy, x] > 0.05:
-                t = 0.65 if dy == 0 else 0.25
-                img[yy, x, :3] = (1.0 - t) * img[yy, x, :3] + t * color_arr
+    wobble = _smooth_wobble(rng, W, sh.wobble)
+    rows = np.arange(H, dtype=np.float64)[:, np.newaxis]
+    dist = rows - (y_base + wobble)[np.newaxis, :]
+    cov = np.clip(1.0 - np.abs(dist) / 1.4, 0.0, 1.0) * (alpha > 0.05)
+    t = (0.7 * cov)[..., np.newaxis]
+    img[..., :3] = img[..., :3] * (1.0 - t) + color_arr * t
     return img
 
 
@@ -910,14 +942,15 @@ def _draw_welt(
     top_arc = y0 + dip2  # 条带上沿（弧线）
     bot_arc = y0 + h + dip2  # 条带下沿（弧线）
 
-    band = (ys >= top_arc) & (ys < bot_arc) & (alpha > 0.05)
-    img[band, :3] = img[band, :3] * (1.0 - welt_a) + welt_rgb * welt_a
+    in_leg = alpha > 0.05
+    band = _soft_cover(ys, top_arc) * (1.0 - _soft_cover(ys, bot_arc)) * in_leg
+    t = (welt_a * band)[..., np.newaxis]
+    img[..., :3] = img[..., :3] * (1.0 - t) + welt_rgb * t
 
-    # 勒痕：条带上沿之上一条细暗线
+    # 勒痕：条带上沿之上一条细暗线（按覆盖率软过渡，避免逐列取整出锯齿）
     if top.pinch > 0:
-        pinch_y = np.floor(top_arc).astype(int) - 1  # (H, W)
-        pinch = (ys == pinch_y) & (alpha > 0.05)
-        img[pinch, :3] *= 1.0 - top.pinch * 0.3
+        line = np.clip(1.0 - np.abs(ys - (top_arc - 1.5)) / 1.4, 0.0, 1.0) * in_leg
+        img[..., :3] *= (1.0 - top.pinch * 0.3 * line)[..., np.newaxis]
 
     img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng, color=tuple(welt_rgb))  # type: ignore[arg-type]
     return img
@@ -952,9 +985,9 @@ def _draw_lace(
     soft_dist = y_mat - (wave_bot[np.newaxis, :] - 0.5)
     weight = np.clip(1.0 - soft_dist / 1.5 + 1.0 / 3.0, 0.0, 1.0)
 
-    # 上边界：随袜口弧线 y0 + dip；且只在腿内
+    # 上边界：随袜口弧线 y0 + dip；且只在腿内（1px 软过渡，避免阶梯）
     dip2 = dip if dip is not None else np.zeros((H, W))
-    in_zone = (y_mat >= y0 + dip2) & (alpha > 0.05)
+    in_zone = _soft_cover(y_mat, y0 + dip2) * (alpha > 0.05)
 
     # 孔点：波峰处的软圆盘，局部提高蕾丝的透明度（透出皮肤）
     hole_map = np.zeros((H, W), dtype=np.float64)
