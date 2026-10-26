@@ -1,5 +1,6 @@
 """基础集成测试：覆盖 L0 素材层与 L1 渲染原语。"""
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -185,6 +186,36 @@ class TestStockingStyleValidation:
     def test_shading_cel_steps_invalid(self) -> None:
         with pytest.raises(ValueError):
             Shading(cel_steps=5)
+
+    def test_shading_skin_negative(self) -> None:
+        with pytest.raises(ValueError):
+            Shading(skin=-0.1)
+
+
+class TestSkinShading:
+    """皮肤光影：skin=0 不动皮肤，skin>0 时袜口以上与裸腿都受影响。"""
+
+    def test_skin_zero_leaves_bare_leg_untouched(self) -> None:
+        leg = make_synthetic_leg(720, 160)
+        out = render_stocking(leg, STYLES["black_sheer"], 400, seed=1)
+        top = leg.height - 400
+        # 袜口以上 20px 之外应与素材完全一致
+        assert (out.image[: top - 20] == leg.image[: top - 20]).all()
+
+    def test_skin_zero_returns_bare_leg_as_is(self) -> None:
+        leg = make_synthetic_leg(720, 160)
+        out = render_stocking(leg, STYLES["black_sheer"], 0, seed=1)
+        assert (out.image == leg.image).all()
+
+    def test_skin_shades_bare_leg(self) -> None:
+        leg = make_synthetic_leg(720, 160)
+        style = replace(STYLES["black_sheer"], shading=Shading(skin=0.5))
+        out = render_stocking(leg, style, 0, seed=1)
+        diff = np.abs(out.image.astype(int) - leg.image.astype(int))[:, :, :3]
+        assert diff.max() > 20
+        # 左侧缘（边缘阴影）与高光带（u≈-0.35）都要变
+        assert diff[:, leg.width // 2 - 32].max() > 0
+        assert diff[:, leg.width // 2 - 11].max() > 0
 
 
 # ---------------------------------------------------------------------------

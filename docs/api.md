@@ -189,6 +189,8 @@ type TopEdge = Bare | Welt | Lace | Fade
 | `cel_steps` | 0 | 0 平滑渐变；2、3 为动漫式分阶色块 |
 | `ink` | 1.0 | 素材描边透出的强度（深色袜上自动变深） |
 | `wobble` | 0.6 | 新增线条（袜口、蕾丝边）的手绘抖动幅度（像素），由 seed 控制 |
+| `skin` | 0 | 袜口以上裸露皮肤的光影强度（相对袜子上的强度）：0 只作用于袜子，1 与袜子同等；裸腿同样参与 |
+| `skin_shadow_color` | (206,168,158,200) | 皮肤上的阴影色。袜子用偏冷的 `shadow_color`，皮肤用冷紫会显脏，故单独取偏暖的肤色阴影 |
 
 ```python
 STYLES: Mapping[str, StockingStyle]
@@ -232,7 +234,8 @@ def render_stocking(
     Args:
         leg: 待渲染的腿素材。
         style: 丝袜样式，可从 STYLES 预设取得。
-        height_px: 丝袜上沿到脚端的像素数。小于等于 0 时返回原图（裸腿）；
+        height_px: 丝袜上沿到脚端的像素数。小于等于 0 时为裸腿（`Shading.skin`
+            大于 0 时裸腿仍按皮肤光影渲染，否则原样返回）；
             不小于 leg.height 时整腿全盖。
         seed: 纹理类随机效果的随机源。
 

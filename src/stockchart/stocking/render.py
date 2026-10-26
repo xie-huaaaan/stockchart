@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -60,7 +61,10 @@ def render_stocking(
         新的 Leg：像素已替换，元数据与原素材一致。
     """
     if height_px <= 0:
-        return leg
+        if style.shading.skin <= 0:
+            return leg
+        # 裸腿也要参与皮肤光影，否则同一张图里裸腿比穿袜腿少一层受光
+        return _shade_bare_leg(leg, style)
 
     height_px = min(height_px, leg.height)
     rng = np.random.default_rng(seed if seed is not None else 0)
@@ -122,13 +126,47 @@ def render_stocking(
         fade_ramp = np.clip((ys_grid - top_arc) / max(style.top.length, 1.0), 0.0, 1.0)
         fabric_layer[..., 3] *= fade_ramp
 
-    # 叠加光影（同样沿弧线裁剪，避免袜口弧线之上出现裸腿阴影）
-    shading_layer = _render_shading(style.shading, src, alpha_mask, col_profile, y_start, H, W)
-    shading_layer[ys_grid < top_arc] = 0.0
-    if fade_ramp is not None:
-        # 渐隐区中阴影与高光同步变淡，避免"袜子已消失、阴影仍在"的灰雾
-        shading_layer[..., 3] *= fade_ramp
-        shading_layer[..., 2] *= fade_ramp
+    # 光影：袜身用全强度与冷色阴影；袜口以上的裸皮按 Shading.skin 强度并换成
+    # 暖色阴影（冷紫落在皮肤上会显脏）。两层按覆盖率加权合并后一次应用。
+    shading_layer = _render_shading(style.shading, src, alpha_mask, col_profile, 0, H, W)
+    skin = style.shading.skin
+    above = ys_grid < top_arc
+    if fade_ramp is None:
+        w_sock = np.where(above, 0.0, 1.0)
+        w_skin = np.where(above, skin, 0.0)
+    else:
+        # 渐隐区里袜子逐渐消失：光影由 sock 全强度过渡到裸皮的 skin 强度，
+        # 避免袜口处出现一条阴影断层
+        w_sock = np.where(above, 0.0, fade_ramp)
+        w_skin = np.where(above, 1.0, 1.0 - fade_ramp) * skin
+    if skin > 0:
+        skin_layer = _render_shading(
+            replace(style.shading, shadow_color=style.shading.skin_shadow_color),
+            src,
+            alpha_mask,
+            col_profile,
+            0,
+            H,
+            W,
+        )
+        a_sock = shading_layer[..., 3:4] * w_sock[..., np.newaxis]
+        a_skin = skin_layer[..., 3:4] * w_skin[..., np.newaxis]
+        total = np.clip(a_sock + a_skin, 0.0, 1.0)
+        safe = np.maximum(a_sock + a_skin, 1e-6)
+        shading_layer[..., :3] = (
+            shading_layer[..., :3] * a_sock + skin_layer[..., :3] * a_skin
+        ) / safe
+        shading_layer[..., 3:4] = total
+        hl = np.clip(
+            shading_layer[..., 2:3] * w_sock[..., np.newaxis]
+            + skin_layer[..., 2:3] * w_skin[..., np.newaxis],
+            0.0,
+            1.0,
+        )
+        shading_layer[..., 2:3] = hl
+    else:
+        shading_layer[..., 3] *= w_sock
+        shading_layer[..., 2] *= w_sock
 
     # 合成：将腿皮肤与袜子融合（光影后置，使上沿条带同样受光）
     result = _composite(src, fabric_layer, alpha_mask, y_start)
@@ -167,8 +205,6 @@ def render_stocking(
     )
 
     out = (np.clip(result, 0.0, 1.0) * 255.0).astype(np.uint8)
-
-    from dataclasses import replace
 
     return replace(leg, image=out)
 
@@ -773,6 +809,22 @@ def _composite(
 
     result[..., :3] = blended_rgb * mask + leg_rgb * (1.0 - mask)
     return result
+
+
+def _shade_bare_leg(leg: Leg, style: StockingStyle) -> Leg:
+    """给裸腿整体打上皮肤光影（不画袜子）。"""
+    H, W = leg.height, leg.width
+    src = leg.image.astype(np.float64) / 255.0
+    alpha = src[..., 3]
+    prof = _column_profile(alpha)
+    sh = style.shading
+    layer = _render_shading(
+        replace(sh, shadow_color=sh.skin_shadow_color), src, alpha, prof, 0, H, W
+    )
+    layer[..., 3] *= sh.skin
+    layer[..., 2] *= sh.skin
+    out = _apply_shading(src.copy(), layer)
+    return replace(leg, image=(np.clip(out, 0.0, 1.0) * 255.0).astype(np.uint8))
 
 
 def _apply_shading(

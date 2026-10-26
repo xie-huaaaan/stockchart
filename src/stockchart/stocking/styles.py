@@ -245,6 +245,10 @@ class Shading:
     cel_steps: 0 为平滑渐变；2 或 3 为动漫分阶色块。
     ink: 素材描边透出的强度（深色袜上渲染器自动换用更深的线色）。
     wobble: 新增线条（袜口、蕾丝边）的手绘抖动幅度（像素），由 seed 控制。
+    skin: 袜口以上裸露皮肤的光影强度（相对袜子上的强度）：0 只作用于袜子，
+        1 与袜子同等。大于 0 时裸腿也有圆柱体积感。
+    skin_shadow_color: 皮肤上的阴影色。合成纤维用偏冷的 shadow_color 好看，
+        但皮肤用冷紫会显脏，默认改用偏暖的肤色阴影。
     """
 
     curve: float = 0.12
@@ -256,9 +260,12 @@ class Shading:
     cel_steps: int = 0
     ink: float = 1.0
     wobble: float = 0.6
+    skin: float = 0.0
+    skin_shadow_color: Color = (206, 168, 158, 200)
 
     def __post_init__(self) -> None:
         check_color(self.shadow_color, "Shading.shadow_color")
+        check_color(self.skin_shadow_color, "Shading.skin_shadow_color")
         for name, val in (
             ("curve", self.curve),
             ("rim_shadow", self.rim_shadow),
@@ -266,6 +273,7 @@ class Shading:
             ("highlight_width", self.highlight_width),
             ("ink", self.ink),
             ("wobble", self.wobble),
+            ("skin", self.skin),
         ):
             if val < 0.0:
                 raise ValueError(f"Shading.{name} 须 >= 0，得到 {val}")
