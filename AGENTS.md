@@ -8,16 +8,17 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 - ✅ L0 素材层（`legs.py`/`library.py`/`src/stockchart/assets/`）与 L1 丝袜渲染原语
   （`stocking/`：`render_stocking`、`StockingStyle` 及 19 个 `STYLES` 预设）完成并经用户评审；
 - ✅ L1 文字与线条（`canvas.py`/`text.py`/`sketch.py`）、L2 `Scale`/`BarPlot`（`plot.py`）、
-  L3 `add_bars` 系列与 L4 `bar`/`mirror_bar`（`topline.py`）完成；单测 162 项；
-  视觉观感（间距、刻度、标签、图例、光影）已评审通过；
+  L3 `add_bars` 系列与 L4 `bar`/`mirror_bar`（`topline.py`）完成；单测 213 项；
+  视觉观感（间距、刻度、标签、图例、光影、标题、轴名）已评审通过；
 - ✅ 绘制细节补齐：坐标轴默认直线（`axis_style="clean"`，手绘抖动可选）、
   x 标签过长自动倾斜避让、图例长标签自动折行/省略、默认组间距 120；
 - ✅ 渲染倍率原生：`render_stocking(scale=)` 在目标像素空间生成袜身纹理与光影，
   `BarPlot.render(scale=)` 位图按 1:1 贴图；内置素材只存**透明 SVG**
   （`src/stockchart/assets/leg_XX.svg`），渲染时按目标倍率栅格化，不再存位图；
-- ⬜ 待做：公开 API 整理——`functools.singledispatch` 支持 pandas 等常用数据结构
-  （不硬依赖这些库）、参数收敛（下层透传参数改用 `**kwargs` 打包）、文档同步。
-  用户明确表示：现阶段以渲染效果为先，API 允许较大调整；
+- ✅ 公开 API 整理：`normalize_data`（`functools.singledispatch`）支持序列 / numpy /
+  dict / pandas 风格表对象与自定义注册（不 import pandas）；L4 透传参数收进
+  `ChartOptions`（`**options: Unpack[ChartOptions]`）；标题默认居中，新增
+  `title` / `xlabel` / `ylabel` 与 L2 的 `add_x_axis_name` / `add_y_axis_name`；
 - 评审产物在 `out/`（gitignore），`tools/render_styles_review.py`、
   `tools/render_matrix_review.py`、`tools/render_plot_review.py` 可随时重出全部对比图。
 
@@ -42,6 +43,18 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 - **长标签用主流库的避让方式**：x 标签默认 `rotation="auto"`，相邻标签相压时
   逐级尝试 45°/60°/75°/90° 并补足画布边距；图例标签超过行宽自动折行（最多 3 行，
   仍放不下末行省略），不靠无限加宽画布。`rotation=0` 可关闭倾斜。
+- **L4 数据输入走 `normalize_data`**：`functools.singledispatch` 处理序列 / numpy /
+  `Mapping`，pandas 表对象按 `index` / `columns` / `to_numpy()` 结构识别，
+  **运行时不 import pandas**。`dict` 标量值→键作 x 标签，等长序列值→键作系列名；
+  显式 `labels` / `series_labels` 覆盖推断值；自定义类型用 `register_data_type`。
+- **L4 透传参数用 `ChartOptions` 打包**：只把图表语义参数留在签名；
+  `axis_style` / `background` / `grid` / `ticks` / `x_label_pos` / `x_label_rotation` /
+  `title_align` / 字号 / `legend_*` / `bar_gap` / `group_gap` 走 `**options`，
+  内部路由到 `BarPlot` / `add_*`，未知键报 `TypeError`。旧关键字写法仍可用。
+- **标题默认居中**：`add_title` 在绘图区上方居中（52px），`align="left"` 可左对齐；
+  比画布宽时对称扩宽，不折行不裁字。轴名 30px：x 轴名横排居中在标签之下，
+  y 轴名逐字竖排在刻度数字左侧。`add_y_axis` 不再接收 `label`，名称统一用
+  `add_y_axis_name`。
 
 ## 环境与命令
 
@@ -118,9 +131,14 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 - 文字走 skia，字体选择见 docs/design.md"字体"一节：逐字符回退，保证中文可显示；
   找不到字形时用"豆腐块"而不是抛异常。单行绘制原语 `draw_text(rotation=)` 绕
   锚点旋转；多行由 `wrap_text` 与调用方排版（图例）。
-- 坐标轴样式由 `BarPlot(axis_style=)` 决定，L4 同名参数透传；默认 `"clean"`。
+- 坐标轴样式由 `BarPlot(axis_style=)` 决定，L4 经 `ChartOptions` 传入；默认 `"clean"`。
 - x 标签在相邻位置放不下时自动倾斜（角度随位置在基线上/下取正负），用旋转后的
   包围盒计算上下/左右边距；图例长标签在可用宽度内折行。
+- 标题默认在绘图区上方居中（`DEFAULT_TITLE_SIZE=52`），轴名 `DEFAULT_AXIS_NAME_SIZE=30`；
+  标题 / 轴名比画布宽时对称扩宽并保留左右边距，不折行、不裁字。y 轴名逐字竖排。
+- L4 的数据归一与选项透传：`normalize_data`（`singledispatch`）负责所有输入格式，
+  `ChartOptions`（`TypedDict` + `Unpack`）负责下层参数；新增透传参数时同步三处：
+  `ChartOptions`、`_OPTION_KEYS`、docs/api.md 的选项表。
 - 输出格式：PNG 文件，以及内存中的 numpy 数组 / PIL Image。不做 SVG/PDF（理由见"已定决策"）。
 
 ## 版本管理（Git）

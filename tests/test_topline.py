@@ -3,9 +3,13 @@
 
 """L4 一行出图测试：映射规则、成对选腿、图例、数值标签与镜像。"""
 
-import pytest
+from typing import cast
 
-from stockchart import STYLES, bar, mirror_bar
+import numpy as np
+import pytest
+from tests.test_data import FakeFrame
+
+from stockchart import STYLES, ChartOptions, PlotData, bar, mirror_bar
 
 
 class TestBarMapping:
@@ -139,7 +143,7 @@ class TestBarLayout:
 
     def test_title_and_axis_present(self) -> None:
         p = bar([1.0, 2.0], title="标题", seed=1)
-        assert p._title == "标题"
+        assert p._title is not None and p._title.text == "标题"
         assert p._y_axis is not None
 
     def test_render_smoke(self) -> None:
@@ -161,6 +165,107 @@ class TestBarLayout:
             seed=1,
         ).render()
         assert (c1.to_numpy() == c2.to_numpy()).all()
+
+
+class TestDataInference:
+    def test_dict_scalars_become_labels(self) -> None:
+        p = bar({"一月": 3.0, "二月": 5.0}, seed=1)
+        assert p._x_labels is not None
+        assert p._x_labels.labels == ["一月", "二月"]
+
+    def test_dataframe_like_infers_labels_and_legend(self) -> None:
+        frame = FakeFrame(
+            [[1.0, 2.0], [3.0, 4.0]],
+            index=("一", "二"),
+            columns=("甲", "乙"),
+        )
+        p = bar(frame, seed=1)
+        assert p._x_labels is not None and p._x_labels.labels == ["一", "二"]
+        assert p._legend is not None
+        assert [label for label, _ in p._legend.items] == ["甲", "乙"]
+
+    def test_explicit_labels_override_inferred(self) -> None:
+        p = bar({"a": 1.0, "b": 2.0}, labels=["甲", "乙"], seed=1)
+        assert p._x_labels is not None and p._x_labels.labels == ["甲", "乙"]
+
+    def test_plotdata_input(self) -> None:
+        data = PlotData(values=((1.0,), (2.0,)), is_1d=True, labels=("a", "b"))
+        p = bar(data, seed=1)
+        assert p._x_labels is not None and p._x_labels.labels == ["a", "b"]
+
+    def test_numpy_input(self) -> None:
+        p = bar(np.array([1.0, 2.0]), seed=1)
+        assert len(p._bars) == 2
+        assert p._x_labels is None
+
+
+class TestChartOptions:
+    def test_axis_style_and_grid(self) -> None:
+        p = bar([1.0, 2.0], grid=True, axis_style="handdrawn", seed=1)
+        assert p._axis_style == "handdrawn"
+        assert p._y_axis is not None and p._y_axis.grid
+
+    def test_background(self) -> None:
+        p = bar([1.0, 2.0], background=(1, 2, 3), seed=1)
+        assert p._background == (1, 2, 3)
+
+    def test_title_and_axis_names(self) -> None:
+        p = bar(
+            [1.0, 2.0],
+            title="标题",
+            xlabel="月份",
+            ylabel="人数",
+            title_align="left",
+            title_size_px=40,
+            axis_name_size_px=20,
+            seed=1,
+        )
+        assert p._title is not None
+        assert p._title.align == "left" and p._title.size_px == 40
+        assert p._x_axis_name is not None and p._x_axis_name.size_px == 20
+        assert p._y_axis_name is not None and p._y_axis_name.text == "人数"
+
+    def test_legend_options(self) -> None:
+        p = bar(
+            [[1.0, 2.0]],
+            series_labels=["a", "b"],
+            legend_loc="bottom",
+            legend_ncol=2,
+            seed=1,
+        )
+        assert p._legend is not None
+        assert p._legend.loc == "bottom" and p._legend.ncol == 2
+
+    def test_ticks_option(self) -> None:
+        p = bar([1.0, 2.0], ticks=[0.0, 1.0, 2.0], seed=1)
+        assert p._y_axis is not None
+        assert p._y_axis.ticks == [0.0, 1.0, 2.0]
+
+    def test_bar_gap_option(self) -> None:
+        p = bar([[1.0, 2.0], [3.0, 4.0]], bar_gap=10, seed=1)
+        first, second = p._bars[0], p._bars[1]
+        gap = (second.x - second.leg.foot_center_x) - (
+            first.x - first.leg.foot_center_x + first.leg.width
+        )
+        assert gap == pytest.approx(10)
+
+    def test_group_gap_option(self) -> None:
+        p = bar([[1.0], [3.0]], group_gap=200, seed=1)
+        first, second = p._bars
+        gap = (second.x - second.leg.foot_center_x) - (
+            first.x - first.leg.foot_center_x + first.leg.width
+        )
+        assert gap == pytest.approx(200)
+
+    def test_x_label_pos_option(self) -> None:
+        p = mirror_bar([1.0, -1.0], labels=["甲", "乙"], x_label_pos="below", seed=1)
+        layout = p._layout()
+        assert layout.x_label_y is not None
+        assert layout.x_label_y > layout.baseline_y
+
+    def test_unknown_option_raises(self) -> None:
+        with pytest.raises(TypeError, match="未知参数"):
+            bar([1.0], **cast(ChartOptions, {"bogus": 1}))
 
 
 class TestMirrorBar:

@@ -160,7 +160,8 @@ def main() -> None:
     plot.add_bar(1650, 400, lib.get("leg_26"), style="fishnet_black", side="down")
     # 有一根朝下腿时默认锚定会退到最低点之下，这里显式贴基线写标签
     plot.add_x_labels(["A", "B", "C", "D"], xs=xs, pos="below")
-    plot.add_y_axis(Scale((0, 720), (0, 760)), label="自定义", grid=True)
+    plot.add_y_axis(Scale((0, 720), (0, 760)), grid=True)
+    plot.add_y_axis_name("自定义")
     plot.add_legend([("黑丝", "black_sheer"), ("网袜", "fishnet_black")])
     save(plot, "09_l2_free.png")
 
@@ -189,7 +190,8 @@ def main() -> None:
     for i, x in enumerate(xs11):
         p11.add_bar(x, 300 + 60 * i, LIB.get(f"leg_{i * 4 + 1:02d}"), style="gray_sheer")
     p11.add_x_labels(long_labels, xs=xs11)
-    p11.add_y_axis(Scale((0, 600), (0, 760)), label="数量")
+    p11.add_y_axis(Scale((0, 600), (0, 760)))
+    p11.add_y_axis_name("数量")
     p11.add_title("长 x 标签自动倾斜")
     save(p11, "11_long_x_labels.png")
 
@@ -222,6 +224,49 @@ def main() -> None:
             seed=13,
         ),
         "13_axis_handdrawn.png",
+    )
+
+    # 14 居中大标题 + x / y 轴名称
+    save(
+        bar(
+            [320, 480, 250, 560, 410],
+            labels=["一月", "二月", "三月", "四月", "五月"],
+            title="月度统计",
+            xlabel="月份",
+            ylabel="人数",
+            style="gray_sheer",
+            value_labels=True,
+            seed=14,
+        ),
+        "14_title_axes.png",
+    )
+
+    # 15 字典输入：标量值的键自动成为 x 标签
+    save(
+        bar(
+            {"一月": 320, "二月": 480, "三月": 250, "四月": 560, "五月": 410},
+            title="字典输入：键自动成为标签",
+            style="stripe_blue_white",
+            value_labels=True,
+            seed=15,
+        ),
+        "15_dict_input.png",
+    )
+
+    # 16 参数透传：图例置底、网格、标题左对齐
+    save(
+        bar(
+            [[3, 4], [5, 2], [4, 6]],
+            labels=["一月", "二月", "三月"],
+            series_labels=["甲", "乙"],
+            title="参数透传：图例置底 + 网格",
+            style=["black_sheer", "white_sheer"],
+            legend_loc="bottom",
+            grid=True,
+            title_align="left",
+            seed=16,
+        ),
+        "16_options.png",
     )
 
 

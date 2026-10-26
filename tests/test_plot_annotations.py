@@ -7,11 +7,12 @@ import numpy as np
 import pytest
 from tests.test_plot_core import BG, make_leg
 
-from stockchart import BarPlot, Scale
+from stockchart import BarPlot, Scale, measure_text
 from stockchart.defaults import (
     DEFAULT_LABEL_LINE_FACTOR,
     DEFAULT_LEGEND_MAX_LINES,
     DEFAULT_LEGEND_SWATCH,
+    DEFAULT_PLOT_LEFT_PAD,
     DEFAULT_X_LABEL_SIZE,
 )
 
@@ -215,12 +216,38 @@ class TestAxisStyle:
 
 
 class TestTitleAndLegend:
-    def test_title_at_top_left(self) -> None:
+    def test_title_centered_by_default(self) -> None:
         p = BarPlot(600)
         p.add_title("测试标题")
+        layout = p._layout()
+        assert p._title is not None
+        assert layout.title_x == pytest.approx(layout.plot_left + 300)
+
+    def test_title_left_align(self) -> None:
+        p = BarPlot(600)
+        p.add_title("测试标题", align="left")
+        assert p._layout().title_x == pytest.approx(p._layout().plot_left)
+
+    def test_title_alignment_validated(self) -> None:
+        with pytest.raises(ValueError):
+            BarPlot(600).add_title("标题", align="middle")  # type: ignore[arg-type]
+
+    def test_title_size_is_recorded(self) -> None:
+        p = BarPlot(600).add_title("标题", size_px=40)
+        assert p._title is not None and p._title.size_px == 40
+
+    def test_long_title_widens_canvas_without_clipping(self) -> None:
+        p = BarPlot(300)
+        p.add_title("很长的标题" * 20)
+        layout = p._layout()
+        assert p._title is not None
+        text_w = measure_text(p._title.text, size_px=p._title.size_px)
+        assert layout.final_w >= text_w + 2 * DEFAULT_PLOT_LEFT_PAD
+        assert layout.title_x - text_w / 2 == pytest.approx(DEFAULT_PLOT_LEFT_PAD)
         arr = p.render(scale=1).to_numpy()
-        m = inked(arr)
-        assert m[:120, :400].any()
+        cols = np.where(inked(arr).any(axis=0))[0]
+        assert cols.min() > 0
+        assert cols.max() < arr.shape[1] - 1
 
     def test_legend_adds_height_and_draws_items(self) -> None:
         base = BarPlot(600).add_bar(300, 0, make_leg()).render(scale=1).height_px
@@ -285,6 +312,36 @@ class TestTitleAndLegend:
         idx_rows, _, _, lines = p._legend_layout(p._legend)
         assert [len(r) for r in idx_rows] == [2, 2]
         assert all(len(line_set) > 1 for line_set in lines)
+
+
+class TestAxisNames:
+    def test_x_axis_name_adds_bottom_space_and_centers(self) -> None:
+        base = BarPlot(600).add_bar(300, 100, make_leg())
+        base_h = base._layout().final_h
+        p = BarPlot(600).add_bar(300, 100, make_leg()).add_x_axis_name("月份")
+        layout = p._layout()
+        assert layout.x_name_y is not None
+        assert layout.final_h > base_h
+        assert layout.x_name_x == pytest.approx(layout.plot_left + 300)
+
+    def test_y_axis_name_widens_left_margin(self) -> None:
+        scale = Scale((0.0, 10.0), (0.0, 700.0))
+        base_left = BarPlot(600).add_y_axis(scale)._layout().plot_left
+        p = BarPlot(600).add_y_axis(scale).add_y_axis_name("数量")
+        layout = p._layout()
+        assert layout.plot_left > base_left
+        assert layout.y_name_x > 0
+        assert layout.baseline_y - 700 < layout.y_name_y < layout.baseline_y
+
+    def test_axis_name_sizes(self) -> None:
+        p = BarPlot(600).add_x_axis_name("月份", size_px=20).add_y_axis_name("数量", size_px=22)
+        assert p._x_axis_name is not None and p._x_axis_name.size_px == 20
+        assert p._y_axis_name is not None and p._y_axis_name.size_px == 22
+
+    def test_y_axis_no_longer_takes_label(self) -> None:
+        p = BarPlot(600)
+        with pytest.raises(TypeError):
+            p.add_y_axis(Scale((0.0, 10.0), (0.0, 700.0)), label="数量")  # type: ignore
 
 
 class TestBaseline:

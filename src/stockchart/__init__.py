@@ -4,9 +4,15 @@ __version__ = "0.1.0.dev0"
 
 from stockchart.canvas import Canvas
 from stockchart.color import Color
+from stockchart.data import (
+    DataInput,
+    PlotData,
+    normalize_data,
+    register_data_type,
+)
 from stockchart.legs import Leg
 from stockchart.library import LegLibrary, load_leg
-from stockchart.plot import AxisStyle, BarPlot, Scale, XLabelRotation
+from stockchart.plot import AxisStyle, BarPlot, Scale, TitleAlign, XLabelRotation
 from stockchart.sketch import sketch_axis, sketch_line
 from stockchart.stocking import (
     STYLES,
@@ -27,7 +33,7 @@ from stockchart.stocking import (
     render_stocking,
 )
 from stockchart.text import FontSpec, TextAnchor, draw_text, measure_text
-from stockchart.topline import bar, mirror_bar
+from stockchart.topline import ChartOptions, bar, mirror_bar
 
 __all__ = [
     "STYLES",
@@ -35,7 +41,9 @@ __all__ = [
     "BarPlot",
     "Bare",
     "Canvas",
+    "ChartOptions",
     "Color",
+    "DataInput",
     "Dotted",
     "Fade",
     "Fishnet",
@@ -44,6 +52,7 @@ __all__ = [
     "Leg",
     "LegLibrary",
     "Plain",
+    "PlotData",
     "Ribbed",
     "Scale",
     "Shading",
@@ -53,6 +62,7 @@ __all__ = [
     "StyleLike",
     "StyleSeq",
     "TextAnchor",
+    "TitleAlign",
     "Welt",
     "XLabelRotation",
     "bar",
@@ -60,6 +70,8 @@ __all__ = [
     "load_leg",
     "measure_text",
     "mirror_bar",
+    "normalize_data",
+    "register_data_type",
     "render_stocking",
     "sketch_axis",
     "sketch_line",

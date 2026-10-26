@@ -74,8 +74,20 @@ DEFAULT_X_LABEL_ITEM_GAP = 12
 DEFAULT_X_LABEL_ROTATIONS: tuple[float, ...] = (0.0, 45.0, 60.0, 75.0, 90.0)
 """标签过长时依次尝试的旋转角度（度）；0 为水平。"""
 
-DEFAULT_TITLE_SIZE = 44
-"""左上角标题字号。"""
+DEFAULT_TITLE_SIZE = 52
+"""整图标题字号。"""
+
+DEFAULT_TITLE_ALIGN: Literal["center", "left"] = "center"
+"""标题默认对齐方式：绘图区上方居中。"""
+
+DEFAULT_AXIS_NAME_SIZE = 30
+"""x / y 轴名称字号。"""
+
+DEFAULT_AXIS_NAME_GAP = 12
+"""轴名称与刻度数字（x 轴为标签）之间的间距。"""
+
+DEFAULT_AXIS_NAME_LINE_FACTOR = 1.25
+"""轴名称行高系数（字号 × 系数 ≈ 占位高度）。"""
 
 # ---------------------------------------------------------------------------
 # 布局间距
@@ -104,9 +116,6 @@ DEFAULT_BOTTOM_PAD = 20
 
 DEFAULT_X_LABEL_GAP = 24
 """x 标签与上方内容（腿尖 / 轴末端）的间距。"""
-
-DEFAULT_TITLE_INSET_X = 36
-"""标题距画布左缘的缩进。"""
 
 DEFAULT_TITLE_INSET_Y = 30
 """标题距画布顶缘的缩进。"""

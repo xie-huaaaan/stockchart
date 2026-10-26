@@ -18,6 +18,9 @@ from PIL import Image as PilImage
 from stockchart.canvas import Canvas, skia_color
 from stockchart.color import Color
 from stockchart.defaults import (
+    DEFAULT_AXIS_NAME_GAP,
+    DEFAULT_AXIS_NAME_LINE_FACTOR,
+    DEFAULT_AXIS_NAME_SIZE,
     DEFAULT_AXIS_STYLE,
     DEFAULT_BACKGROUND,
     DEFAULT_BAR_GAP,
@@ -43,10 +46,11 @@ from stockchart.defaults import (
     DEFAULT_STOCKING_STYLE,
     DEFAULT_SWATCH_RADIUS,
     DEFAULT_SWATCH_STROKE,
+    DEFAULT_TEXT_COLOR,
     DEFAULT_TICK_LABEL_GAP,
     DEFAULT_TICK_LABEL_SIZE,
     DEFAULT_TICK_SIZE,
-    DEFAULT_TITLE_INSET_X,
+    DEFAULT_TITLE_ALIGN,
     DEFAULT_TITLE_INSET_Y,
     DEFAULT_TITLE_LINE_FACTOR,
     DEFAULT_TITLE_SIZE,
@@ -82,6 +86,7 @@ type XLabelPos = Literal["content", "auto", "above", "below"]
 type StyleCycle = Literal["group", "sequence"]
 type AxisStyle = Literal["clean", "handdrawn"]
 type XLabelRotation = float | Literal["auto"]
+type TitleAlign = Literal["center", "left"]
 
 
 def _resolve_style(style: StyleLike) -> StockingStyle:
@@ -187,9 +192,27 @@ class _YAxisRecord:
 
     scale: Scale
     ticks: list[float]
-    label: str | None
     grid: bool
     seed: int
+
+
+@dataclass(slots=True)
+class _TitleRecord:
+    """整图标题的绘制意图；align 决定相对绘图区居中还是靠左。"""
+
+    text: str
+    align: TitleAlign = DEFAULT_TITLE_ALIGN
+    size_px: float = DEFAULT_TITLE_SIZE
+    color: Color = DEFAULT_TEXT_COLOR
+
+
+@dataclass(slots=True)
+class _AxisNameRecord:
+    """轴名称的绘制意图；y 轴名称逐字竖排，x 轴名称水平居中。"""
+
+    text: str
+    size_px: float = DEFAULT_AXIS_NAME_SIZE
+    color: Color = DEFAULT_TEXT_COLOR
 
 
 @dataclass(slots=True)
@@ -223,8 +246,13 @@ class _Layout:
     baseline_y: float  # 基线的画布 y
     content_bottom: float  # 全部腿与轴内容的最低点（x 标签锚此之下）
     axis_x: float = 0.0  # y 轴干线的画布 x
-    y_label_x: float = 0.0  # y 轴标题（纵向排列）中心的画布 x
-    y_up_len: float = 0.0  # y 轴干线向上长度（标题纵向居中用）
+    y_name_x: float = 0.0  # y 轴名称（纵向排列）中心的画布 x
+    y_name_y: float = 0.0  # y 轴名称中心的画布 y
+    y_up_len: float = 0.0  # y 轴干线向上长度（名称纵向居中用）
+    title_x: float = 0.0  # 标题绘制锚点的画布 x
+    title_y: float = 0.0  # 标题绘制锚点的画布 y
+    x_name_x: float = 0.0  # x 轴名称中心的画布 x
+    x_name_y: float | None = None  # x 轴名称绘制锚点的画布 y
     legend_top_y: float = 0.0  # 顶部图例首行的画布 y
     x_label_y: float | None = None  # x 标签锚点的画布 y
     x_label_baseline: bool = False  # True: 标签底边锚定（写在基线之上）
@@ -368,7 +396,9 @@ class BarPlot:
         self._l3_cursor = 0.0  # L3 方法的续排光标（最后一条腿的右缘）
         self._y_axis: _YAxisRecord | None = None
         self._x_labels: _XLabelsRecord | None = None
-        self._title: str | None = None
+        self._title: _TitleRecord | None = None
+        self._x_axis_name: _AxisNameRecord | None = None
+        self._y_axis_name: _AxisNameRecord | None = None
         self._legend: _LegendRecord | None = None
         # 基线的抖动 seed 在构造期固定，保证多次 render 结果一致
         self._baseline_seed = self._rng.getrandbits(32)
@@ -417,7 +447,6 @@ class BarPlot:
         scale: Scale,
         *,
         ticks: Sequence[float] | None = None,
-        label: str | None = None,
         grid: bool = False,
     ) -> BarPlot:
         """添加 y 轴（含刻度数字）。ticks 缺省由 scale.domain 均匀取值生成。
@@ -425,15 +454,25 @@ class BarPlot:
         轴与网格的线条样式由构造参数 axis_style 决定（默认直线）。刻度按
         scale 映射到基线上下两侧：domain 含负值时干线向下延伸、下方刻度
         照常绘制，箭头仍在最上端。grid=True 时沿各刻度画横向虚线（浅色，
-        压在腿与袜之下）。label 纵向排列在刻度数字左侧。
+        压在腿与袜之下）。轴名称用 add_y_axis_name() 单独添加。
         """
         self._y_axis = _YAxisRecord(
             scale=scale,
             ticks=[float(v) for v in (ticks if ticks is not None else _nice_ticks(scale.domain))],
-            label=label,
             grid=grid,
             seed=self._rng.getrandbits(32),
         )
+        return self
+
+    def add_y_axis_name(
+        self,
+        text: str,
+        *,
+        size_px: float = DEFAULT_AXIS_NAME_SIZE,
+        color: Color = DEFAULT_TEXT_COLOR,
+    ) -> BarPlot:
+        """添加 y 轴名称：逐字竖排在刻度数字左侧，纵向以轴范围居中。"""
+        self._y_axis_name = _AxisNameRecord(text=text, size_px=size_px, color=color)
         return self
 
     def add_x_labels(
@@ -473,9 +512,29 @@ class BarPlot:
         )
         return self
 
-    def add_title(self, text: str) -> BarPlot:
-        """添加左上角标题。"""
-        self._title = text
+    def add_x_axis_name(
+        self,
+        text: str,
+        *,
+        size_px: float = DEFAULT_AXIS_NAME_SIZE,
+        color: Color = DEFAULT_TEXT_COLOR,
+    ) -> BarPlot:
+        """添加 x 轴名称：横向居中写在 x 标签之下（底部图例之上）。"""
+        self._x_axis_name = _AxisNameRecord(text=text, size_px=size_px, color=color)
+        return self
+
+    def add_title(
+        self,
+        text: str,
+        *,
+        align: TitleAlign = DEFAULT_TITLE_ALIGN,
+        size_px: float = DEFAULT_TITLE_SIZE,
+        color: Color = DEFAULT_TEXT_COLOR,
+    ) -> BarPlot:
+        """添加整图标题；align 缺省在绘图区上方水平居中。"""
+        if align not in ("center", "left"):
+            raise ValueError(f"align 须为 'center' 或 'left'，得到 {align!r}")
+        self._title = _TitleRecord(text=text, align=align, size_px=size_px, color=color)
         return self
 
     def add_legend(
@@ -897,14 +956,21 @@ class BarPlot:
         eff_up, eff_down = self._effective_extents()
         axis = self._y_axis
 
-        # y 轴左侧占位：[画布留白][y 轴标题(纵向)][刻度数字][间距][刻度线][干线]
+        # y 轴左侧占位：[画布留白][y 轴名称(纵向)][刻度数字][间距][刻度线][干线]
         down_len = 0.0
         axis_x = 0.0
-        y_label_x = 0.0
         plot_left = float(DEFAULT_PLOT_LEFT_PAD)
+        y_name_x = 0.0
+        tick_px: list[float] = []
         if axis is not None:
-            t_px = [axis.scale.to_px(v) for v in axis.ticks]
-            down_len = max([0.0, *(-p for p in t_px if p < 0)])
+            tick_px = [axis.scale.to_px(v) for v in axis.ticks]
+            down_len = max([0.0, *(-p for p in tick_px if p < 0)])
+        left = float(DEFAULT_PLOT_LEFT_PAD)
+        if self._y_axis_name is not None:
+            name_w = self._y_axis_name.size_px
+            y_name_x = left + name_w / 2
+            left += name_w + DEFAULT_AXIS_NAME_GAP
+        if axis is not None:
             label_w = max(
                 (
                     measure_text(_format_tick(v), size_px=DEFAULT_TICK_LABEL_SIZE)
@@ -912,12 +978,10 @@ class BarPlot:
                 ),
                 default=0.0,
             )
-            head = DEFAULT_PLOT_LEFT_PAD
-            if axis.label is not None:
-                head += DEFAULT_TICK_LABEL_SIZE + DEFAULT_TICK_LABEL_GAP
-            axis_x = head + label_w + DEFAULT_TICK_LABEL_GAP + DEFAULT_TICK_SIZE
-            y_label_x = head / 2
+            axis_x = left + label_w + DEFAULT_TICK_LABEL_GAP + DEFAULT_TICK_SIZE
             plot_left = axis_x
+        elif self._y_axis_name is not None:
+            plot_left = left
 
         x_pos: Literal["above", "below", "content"] | None = None
         x_angle = 0.0
@@ -932,7 +996,7 @@ class BarPlot:
         top_band = 0.0
         legend_top_y = 0.0
         if self._title is not None:
-            top_band = DEFAULT_TITLE_INSET_Y + DEFAULT_TITLE_SIZE * DEFAULT_TITLE_LINE_FACTOR
+            top_band = DEFAULT_TITLE_INSET_Y + self._title.size_px * DEFAULT_TITLE_LINE_FACTOR
         if self._legend is not None and self._legend.loc == "top":
             _, _, legend_h, _ = self._legend_layout(self._legend)
             legend_top_y = top_band if self._title is not None else DEFAULT_LEGEND_MARGIN
@@ -960,6 +1024,11 @@ class BarPlot:
                 x_label_y = content_bottom + DEFAULT_X_LABEL_GAP
                 bottom = x_label_y + x_height
 
+        x_name_y: float | None = None
+        if self._x_axis_name is not None:
+            x_name_y = bottom + DEFAULT_AXIS_NAME_GAP
+            bottom = x_name_y + self._x_axis_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
+
         legend_bottom_y: float | None = None
         if self._legend is not None and self._legend.loc == "bottom":
             legend_bottom_y = bottom + DEFAULT_LEGEND_MARGIN
@@ -970,9 +1039,47 @@ class BarPlot:
         plot_left += max(0.0, x_left - plot_left)
         plot_right = plot_left + self._width_px
         final_w = plot_right + max(DEFAULT_PLOT_RIGHT_PAD, x_right)
-        y_up_len = 0.0
-        if axis is not None:
-            y_up_len = max([0.0, eff_up] + [axis.scale.to_px(v) for v in axis.ticks])
+
+        # 标题与 x 轴名称比画布宽时对称扩宽：左溢出整体右移绘图区，右溢出补画布
+        centered = [plot_left + self._width_px / 2] if self._x_axis_name is not None else []
+        if self._title is not None:
+            title_w = measure_text(self._title.text, size_px=self._title.size_px)
+            if self._title.align == "center":
+                title_x = plot_left + self._width_px / 2
+                title_center = title_x
+            else:
+                title_x = plot_left
+                title_center = title_x + title_w / 2
+            centered.append(title_center)
+        else:
+            title_w = 0.0
+            title_x = plot_left
+        text_widths = (
+            [measure_text(self._x_axis_name.text, size_px=self._x_axis_name.size_px)]
+            if self._x_axis_name is not None
+            else []
+        )
+        if self._title is not None:
+            text_widths.append(title_w)
+        if text_widths:
+            # 标题 / x 轴名称与画布左右缘至少留一个标准边距
+            lefts = [c - w / 2 for w, c in zip(text_widths, centered, strict=True)]
+            rights = [c + w / 2 for w, c in zip(text_widths, centered, strict=True)]
+            extra_left = max(0.0, DEFAULT_PLOT_LEFT_PAD - min(lefts))
+            extra_right = max(0.0, max(rights) + DEFAULT_PLOT_LEFT_PAD - final_w)
+        else:
+            extra_left = extra_right = 0.0
+        shift = max(0.0, extra_left)
+        plot_left += shift
+        plot_right += shift
+        axis_x += shift
+        y_name_x += shift
+        title_x += shift
+        final_w += shift + max(0.0, extra_right)
+        x_name_x = plot_left + self._width_px / 2
+
+        y_up_len = max([0.0, eff_up, *tick_px])
+        y_name_y = baseline + (max(eff_down, down_len) - y_up_len) / 2
         return _Layout(
             final_w=final_w,
             final_h=final_h,
@@ -981,8 +1088,13 @@ class BarPlot:
             baseline_y=baseline,
             content_bottom=content_bottom,
             axis_x=axis_x,
-            y_label_x=y_label_x,
+            y_name_x=y_name_x,
+            y_name_y=y_name_y,
             y_up_len=y_up_len,
+            title_x=title_x,
+            title_y=DEFAULT_TITLE_INSET_Y,
+            x_name_x=x_name_x,
+            x_name_y=x_name_y,
             legend_top_y=legend_top_y,
             x_label_y=x_label_y,
             x_label_baseline=x_label_baseline,
@@ -1010,6 +1122,7 @@ class BarPlot:
         self._draw_baseline(canvas, layout)
         self._draw_bars(canvas, layout, scale=scale)
         self._draw_y_axis(canvas, layout)
+        self._draw_axis_names(canvas, layout)
         self._draw_title(canvas, layout)
         self._draw_legend(canvas, layout, scale=scale)
         self._draw_x_labels(canvas, layout)
@@ -1109,32 +1222,46 @@ class BarPlot:
                 wobble=DEFAULT_WOBBLE if self._axis_style == "handdrawn" else 0.0,
                 seed=rng.getrandbits(32),
             )
-        if axis.label is not None:
-            # 轴标题纵向排列（契合中文书写习惯），在轴干线上下之间居中
-            chars = list(axis.label)
-            total = len(chars) * DEFAULT_TICK_LABEL_SIZE * 1.15
-            y = layout.baseline_y - (layout.y_up_len + total) / 2
-            for ch in chars:
+
+    def _draw_axis_names(self, canvas: Canvas, layout: _Layout) -> None:
+        y_name = self._y_axis_name
+        if y_name is not None and y_name.text:
+            # 轴名称纵向排列（契合中文书写习惯），在轴干线上下之间居中
+            cell = y_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
+            start = layout.y_name_y - len(y_name.text) * cell / 2
+            for i, ch in enumerate(y_name.text):
                 draw_text(
                     canvas,
                     ch,
-                    layout.y_label_x,
-                    y,
-                    size_px=DEFAULT_TICK_LABEL_SIZE,
-                    anchor=("center", "top"),
+                    layout.y_name_x,
+                    start + (i + 0.5) * cell,
+                    size_px=y_name.size_px,
+                    color=y_name.color,
+                    anchor=("center", "middle"),
                 )
-                y += DEFAULT_TICK_LABEL_SIZE * 1.15
+        x_name = self._x_axis_name
+        if x_name is not None and layout.x_name_y is not None:
+            draw_text(
+                canvas,
+                x_name.text,
+                layout.x_name_x,
+                layout.x_name_y,
+                size_px=x_name.size_px,
+                color=x_name.color,
+                anchor=("center", "top"),
+            )
 
     def _draw_title(self, canvas: Canvas, layout: _Layout) -> None:
         if self._title is None:
             return
         draw_text(
             canvas,
-            self._title,
-            DEFAULT_TITLE_INSET_X,
-            DEFAULT_TITLE_INSET_Y,
-            size_px=DEFAULT_TITLE_SIZE,
-            anchor=("left", "top"),
+            self._title.text,
+            layout.title_x,
+            layout.title_y,
+            size_px=self._title.size_px,
+            color=self._title.color,
+            anchor=("center" if self._title.align == "center" else "left", "top"),
         )
 
     def _draw_legend(self, canvas: Canvas, layout: _Layout, *, scale: float = 1.0) -> None:

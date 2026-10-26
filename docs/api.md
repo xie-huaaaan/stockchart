@@ -285,11 +285,13 @@ def draw_text(
     color: Color = DEFAULT_TEXT_COLOR,
     font: FontSpec | None = None,
     anchor: TextAnchor = ("left", "baseline"),
+    rotation: float = 0.0,
 ) -> None:
     """画一段文字。逐字符字体回退保证中文可显示；缺字形画"豆腐块"，不抛异常。
 
     font 为家族名列表或字体文件路径；缺省走内置回退链（见 docs/design.md"字体"）。
-    anchor 等参数的取值细节随实现微调，语义不变。
+    anchor 等参数的取值细节随实现微调，语义不变。rotation 为绕 (x, y) 的顺时针
+    旋转角度（度），0 不旋转；文字先按 anchor 定位，再整体旋转。
     """
 
 
@@ -405,7 +407,6 @@ class BarPlot:
         scale: Scale,
         *,
         ticks: Sequence[float] | None = None,
-        label: str | None = None,
         grid: bool = False,
     ) -> BarPlot:
         """添加 y 轴（含刻度数字）。ticks 缺省由 scale.domain 按整步长生成。
@@ -413,7 +414,7 @@ class BarPlot:
         轴线与网格样式由构造参数 axis_style 决定。刻度按 scale 映射到基线
         上下两侧：domain 含负值时干线向下延伸、下方刻度照常绘制，箭头仍在
         最上端。grid=True 时沿各刻度画横向虚线（浅色，压在腿与袜之下）。
-        label 纵向排列在刻度数字左侧，即 y 轴名称。
+        轴名称用 add_y_axis_name() 单独添加。
         """
 
     def add_x_labels(
@@ -440,8 +441,44 @@ class BarPlot:
         xs 缺省沿宽度均分；与 add_bars 系列方法配合时自动对齐组中心。
         """
 
-    def add_title(self, text: str) -> BarPlot:
-        """添加左上角标题（单行，不居中）。"""
+    def add_title(
+        self,
+        text: str,
+        *,
+        align: Literal["center", "left"] = "center",
+        size_px: float = DEFAULT_TITLE_SIZE,
+        color: Color = DEFAULT_TEXT_COLOR,
+    ) -> BarPlot:
+        """添加整图标题（单行）。
+
+        默认在绘图区上方水平居中（中心对齐柱子所占范围，而不是画布）；
+        align="left" 靠绘图区左缘。标题比画布宽时自动对称扩宽画布，不折行、
+        不裁字。标题占据的顶部高度自动计入布局，图例仍画在标题下方。
+        """
+
+    def add_x_axis_name(
+        self,
+        text: str,
+        *,
+        size_px: float = DEFAULT_AXIS_NAME_SIZE,
+        color: Color = DEFAULT_TEXT_COLOR,
+    ) -> BarPlot:
+        """添加 x 轴名称：横向居中写在 x 标签之下（底部图例之上）。
+
+        没有 x 标签时直接写在内容最低点之下。名称过长时扩宽画布，不裁字。
+        """
+
+    def add_y_axis_name(
+        self,
+        text: str,
+        *,
+        size_px: float = DEFAULT_AXIS_NAME_SIZE,
+        color: Color = DEFAULT_TEXT_COLOR,
+    ) -> BarPlot:
+        """添加 y 轴名称：逐字竖排（中文书写习惯）在刻度数字左侧。
+
+        纵向以 y 轴上下延展范围居中；占用左侧边距，不影响绘图区坐标。
+        """
 
     def add_legend(
         self,
@@ -531,26 +568,132 @@ def add_paired_bars(
 **间距语义**：`bar_gap` / `group_gap` 均指相邻腿**边缘之间**的空隙（腿宽 144–181 不等，
 按边缘留白视觉才均匀），不是足底中心距。
 
+## 数据输入（L4）
+
+`bar` / `mirror_bar` 的 `data` 先经 `normalize_data` 归一为 `PlotData`，再进入高度映射。
+支持以下形式：
+
+| 输入 | 解释 |
+| --- | --- |
+| 一维 `list` / `tuple` / 任意 `Sequence` | 单系列，每组 1 个值 |
+| 二维序列 `(组数, 系列数)` | 分组数据 |
+| `numpy.ndarray`（1D / 2D） | 同上；更高维度抛 `ValueError` |
+| `dict` / `Mapping`，值为标量 | 键作 x 轴组标签，单系列 |
+| `dict` / `Mapping`，值为等长序列 | 键作系列名（自动生成图例），行数由序列长度决定 |
+| pandas 风格表对象 | 带 `index` + `to_numpy()`：有 `columns` 视为 DataFrame（index → x 标签、columns → 系列名），否则视为 Series（index → x 标签） |
+| `PlotData` | 已归一化数据，原样使用 |
+
+pandas **不是**运行时依赖、也不会被 import：DataFrame / Series 通过结构
+（`index` / `columns` / `to_numpy()`）识别，未安装 pandas 时其余功能不受影响。
+显式传入的 `labels` / `series_labels` 覆盖数据推断出的标签。空数据、空组、
+行不齐、非数值都会抛 `ValueError`。
+
+`DataInput` 是对上述形式的类型别名（表对象用结构协议描述，不硬依赖具体库）：
+
+```python
+type DataInput = (
+    Sequence[float]
+    | Sequence[Sequence[float]]
+    | Mapping[str, float | Sequence[float]]
+    | np.ndarray
+    | DataFrameLike  # 带 columns / index / to_numpy()
+    | SeriesLike  # 带 index / to_numpy()
+    | PlotData
+)
+```
+
+```python
+@dataclass(slots=True, frozen=True)
+class PlotData:
+    """归一后的数据：(组数, 系列数) 浮点矩阵 + 可选标签。
+
+    Attributes:
+        values: 每组的各系列数值，行数即组数、列数即系列数；行不能为空且等长。
+        is_1d: 输入是否为一维（决定样式循环默认值等）。
+        labels: 每组一个 x 轴标签；None 表示由调用方或默认均分决定。
+        series_labels: 每系列一个名字；None 表示不出图例。
+    """
+
+    values: tuple[tuple[float, ...], ...]
+    is_1d: bool
+    labels: tuple[str, ...] | None = None
+    series_labels: tuple[str, ...] | None = None
+
+
+@singledispatch
+def normalize_data(data: object) -> PlotData:
+    """把各种数据格式归一为 PlotData；未识别的类型抛 TypeError。"""
+
+
+def register_data_type[T](cls: type[T], handler: Callable[[T], PlotData]) -> None:
+    """为自定义数据类型注册归一化函数（等价于 normalize_data.register）。"""
+```
+
+## L4 参数透传
+
+`bar` / `mirror_bar` 只保留图表语义参数；当前层不消耗、需要传给 `BarPlot` 或
+`add_*` 的选项通过 `**options` 接收。选项集中定义在 `ChartOptions`：
+
+```python
+class ChartOptions(TypedDict, total=False):
+    """L4 透传给下层的可选参数；键名与 L2 接口保持一致。"""
+
+    axis_style: Literal["clean", "handdrawn"]
+    background: Color
+    bar_gap: float
+    group_gap: float
+    grid: bool
+    ticks: Sequence[float] | None
+    x_label_pos: Literal["content", "auto", "above", "below"]
+    x_label_rotation: float | Literal["auto"]
+    title_align: Literal["center", "left"]
+    title_size_px: float
+    axis_name_size_px: float
+    legend_loc: Literal["top", "bottom"]
+    legend_ncol: int | None
+```
+
+| 选项 | 默认 | 去向 |
+| --- | --- | --- |
+| `axis_style` | `"clean"` | `BarPlot(axis_style=)` |
+| `background` | `DEFAULT_BACKGROUND` | `BarPlot(background=)` |
+| `bar_gap` | `DEFAULT_BAR_GAP`（28） | 组内腿间距 |
+| `group_gap` | 一维 28 / 二维 120 | 组间距 |
+| `grid` | `False` | `add_y_axis(grid=)` |
+| `ticks` | `None`（自动整步长刻度） | `add_y_axis(ticks=)` |
+| `x_label_pos` | `bar`→`"content"`，`mirror_bar`→`"auto"` | `add_x_labels(pos=)` |
+| `x_label_rotation` | `"auto"` | `add_x_labels(rotation=)` |
+| `title_align` | `"center"` | `add_title(align=)` |
+| `title_size_px` | `DEFAULT_TITLE_SIZE`（52） | `add_title(size_px=)` |
+| `axis_name_size_px` | `DEFAULT_AXIS_NAME_SIZE`（30） | 两个轴名字号 |
+| `legend_loc` | `"top"` | `add_legend(loc=)` |
+| `legend_ncol` | `None`（自动） | `add_legend(ncol=)` |
+
+未知键在运行时报 `TypeError` 并列出可用选项；静态类型由 `TypedDict` 检查。
+`axis_style` / `grid` / `x_label_pos` 等旧关键字仍可照常传入，只是不再出现在
+函数签名里。
+
 ## L4 一行出图
 
 ```python
 def bar(
-    data: Sequence[float] | Sequence[Sequence[float]],
+    data: DataInput,
     *,
     labels: Sequence[str] | None = None,
     series_labels: Sequence[str] | None = None,
     title: str | None = None,
+    xlabel: str | None = None,
+    ylabel: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
     cycle: Literal["auto", "group", "sequence"] = "auto",
     paired: bool = True,
     value_labels: bool = False,
-    grid: bool = False,
     max_fill: float = 0.8,
     min_fill: float = 0.1,
     y_extent: int = DEFAULT_Y_EXTENT,
     width_px: int | None = None,
-    axis_style: Literal["clean", "handdrawn"] = "clean",
     seed: int | None = None,
+    **options: Unpack[ChartOptions],
 ) -> BarPlot:
     """全朝上的柱状图：自动完成数据 → 丝袜高度映射、选腿与布局，
     返回布局完毕的 BarPlot（可直接 .save() / .render()，也可继续手工微调）。
@@ -562,10 +705,16 @@ def bar(
     第几根腿），前者区分"组"。
 
     Args:
-        data: 一维为单序列；二维为 (组数, 系列数) 的分组数据。
-        labels: 每组（无分组时每根柱）一个标签。
+        data: 支持一维/二维序列、numpy 数组、dict、pandas 风格表对象与
+            PlotData；DataFrame 的 index/columns 会自动成为 x 标签与系列名。
+            完整列表见上文“数据输入”。
+        labels: 每组（无分组时每根柱）一个标签；缺省用数据里推断的标签。
         series_labels: 每系列一个名字，传入即自动生成图例（marker 为各系列
-            样式的织物色块）。仅二维数据可用，一维数据传入抛 ValueError。
+            样式的织物色块）；缺省用数据里推断的系列名。仅二维数据可用，
+            一维数据传入抛 ValueError。
+        title: 整图标题，默认在绘图区上方水平居中；title_align="left" 可改左对齐。
+        xlabel: x 轴名称，写在 x 标签下方。
+        ylabel: y 轴名称，逐字竖排在刻度数字左侧。
         style: 单个样式，或样式列表——循环方式由 cycle 决定。
         cycle: 样式列表的循环方式："group" 按组内位置（组内第 i 根用
             styles[i % len]，列表长度等于系列数时即"每系列一个样式"）；
@@ -576,13 +725,13 @@ def bar(
         paired: 仅当数据恰好 2 系列时生效（默认 True）：每组使用同一对素材，
             系列 0 左腿、系列 1 右腿；其余系列数时忽略此参数。
         value_labels: True 时在袜口上方手写数值。
-        grid: True 时沿 y 轴各刻度画横向虚线（浅色，压在腿与袜之下）。
         max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
         y_extent: 基线上方预留的像素高度。
         width_px: 画布宽；缺省按腿数、间距与标签宽度自适应；图例在固定
             宽度内自动折行。
-        axis_style: 坐标轴样式，"clean"（默认）为直线，"handdrawn" 为手绘抖动。
+        options: 透传给下层的可选项，见 `ChartOptions` 表（grid、axis_style、
+            legend_loc、bar_gap 等）。
 
     数据 → 丝袜高度（基线对应的数据值默认 0）:
         - 全部数据为 0: 全部裸腿。
@@ -594,42 +743,46 @@ def bar(
 
 
 def mirror_bar(
-    data: Sequence[float] | Sequence[Sequence[float]],
+    data: DataInput,
     *,
     mode: Literal["single", "both"] = "single",
     labels: Sequence[str] | None = None,
     series_labels: Sequence[str] | None = None,
     title: str | None = None,
+    xlabel: str | None = None,
+    ylabel: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
     cycle: Literal["auto", "group", "sequence"] = "auto",
     paired: bool = True,
     value_labels: bool = False,
-    grid: bool = False,
     max_abs_fill: float = 0.8,
-    x_label_pos: Literal["content", "auto", "above", "below"] = "auto",
     y_extent: int = DEFAULT_Y_EXTENT,
     width_px: int | None = None,
-    axis_style: Literal["clean", "handdrawn"] = "clean",
     seed: int | None = None,
+    **options: Unpack[ChartOptions],
 ) -> BarPlot:
     """正负镜像柱状图：正值画基线上方腿，负值画下方翻转腿（脚贴基线）。
 
     Args:
+        data: 语义同 bar()，支持完全相同的数据格式。
         mode: "single" 只画数据侧的腿；"both" 上下都画，数据侧穿丝袜、
             另一侧裸腿。
-        labels: 每组（无分组时每根柱）一个标签。
+        labels: 每组（无分组时每根柱）一个标签；缺省用数据里推断的标签。
         series_labels: 语义同 bar()。
+        title: 整图标题，默认居中。
+        xlabel: x 轴名称。
+        ylabel: y 轴名称。
         style: 语义同 bar()。
         cycle: 语义同 bar()。
         paired: 语义同 bar()。
         value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
-        grid: 语义同 bar()。
         max_abs_fill: 最大绝对值映射到 y_extent 的比例（默认 0.8）。
-        x_label_pos: x 标签位置（语义见 add_x_labels 的 pos）。镜像图常有一侧
-            全空，默认 "auto" 会把标签贴到没有腿的一侧的基线旁（如全负数据
-            标签在基线上方）；两侧都有腿（正负混合或 mode="both"）时退回
-            "content"，画在全部内容最低点之下。
-        axis_style: 语义同 bar()。
+        y_extent: 基线上方预留的像素高度。
+        width_px: 画布宽；缺省自适应。
+        options: 语义同 bar()。x_label_pos 默认 "auto"：镜像图常有一侧全空，
+            会把标签贴到没有腿的一侧的基线旁（如全负数据标签在基线上方）；
+            两侧都有腿（正负混合或 mode="both"）时退回 "content"，画在全部
+            内容最低点之下。
 
     规则:
         - 比例 = max_abs_fill × y_extent / max|v|，正负同比例。
@@ -642,8 +795,9 @@ def mirror_bar(
 
 所有 `DEFAULT_*` 常量集中放在 `src/stockchart/defaults.py`：`DEFAULT_Y_EXTENT`（760）、
 `DEFAULT_BAR_GAP`（28）、`DEFAULT_GROUP_GAP`（120）、`DEFAULT_OUTPUT_SCALE`、背景色、墨色、
-文字色、`DEFAULT_AXIS_STYLE`（clean）、抖动幅度、字号（刻度 / x 标签 / 标题 / 图例 /
-数值标签）、x 标签避让角度、图例折行行数与行高、图例色块尺寸与间距、网格线颜色等。
+文字色、`DEFAULT_AXIS_STYLE`（clean）、抖动幅度、字号（刻度 26 / x 标签 30 / 标题 52 /
+轴名 30 / 图例 28 / 数值标签 26）、`DEFAULT_TITLE_ALIGN`（center）、轴名间距与行高、
+x 标签避让角度、图例折行行数与行高、图例色块尺寸与间距、网格线颜色等。
 绘制代码里不自带魔法数字，调参改一处。
 
 ## 与丝袜渲染算法实现的协作边界

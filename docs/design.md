@@ -149,7 +149,14 @@
   画布下方（或基线上方）按旋转后的包围盒增加高度，左右也补足伸出绘图区的
   部分，文字不会被裁。传 `rotation=0` 关闭自动倾斜，传固定角度则始终倾斜。
   这是主流绘图库（matplotlib / seaborn）处理密集刻度的常规做法：保留完整
-  文字，而不是截断或无限加宽画布。L4 没有单独暴露该参数，默认自动生效。
+  文字，而不是截断或无限加宽画布。L4 通过 `ChartOptions` 的
+  `x_label_rotation` 可覆盖默认行为。
+- **标题与轴名**：`add_title` 默认在**绘图区**（柱子所占范围）上方水平居中，
+  `align="left"` 靠绘图区左缘；标题比画布宽时对称扩宽画布，不折行、不裁字。
+  `add_x_axis_name` 横向居中标在 x 标签之下（底部图例之上）；
+  `add_y_axis_name` 逐字竖排在刻度数字左侧，以 y 轴上下延展范围居中。
+  字号：标题 52、轴名 30（刻度 26 / x 标签 30）。L4 的 `title` / `xlabel` /
+  `ylabel` 直接映射到这三个方法。
 
 ## 图例
 
@@ -220,6 +227,22 @@
 - L3 布局封装：`BarPlot.add_bars / add_grouped_bars / add_paired_bars`
 - L4 一行出图：`bar()`、`mirror_bar()`（`paired` 参数控制成对选腿，仅恰好 2 系列时生效）
 
+## 数据输入与参数透传
+
+- L4 的 `data` 先经 `normalize_data`（`functools.singledispatch`）归一为
+  `PlotData`：一维/二维序列、numpy 数组、`dict` / `Mapping`（标量值→键作
+  x 标签，等长序列值→键作系列名并自动出图例）、pandas 风格表对象
+  （按 `index` / `columns` / `to_numpy()` 结构识别，**不 import pandas**）、
+  已归一化的 `PlotData`。自定义类型用 `register_data_type` 注册，显式传入的
+  `labels` / `series_labels` 覆盖数据推断值。
+- L4 只保留图表语义参数；`axis_style`、`background`、`grid`、`ticks`、
+  `x_label_pos`、`x_label_rotation`、`title_align` / `title_size_px`、
+  `axis_name_size_px`、`legend_loc` / `legend_ncol`、`bar_gap` / `group_gap`
+  收进 `ChartOptions`，以 `**options` 传入并在内部路由到 `BarPlot` / `add_*`。
+  未知键运行时报 `TypeError`（拼错的参数不会被静默忽略）。旧的
+  `bar(..., grid=True)` / `axis_style="handdrawn"` 等写法仍然可用，只是不再
+  出现在签名里。
+
 ## 坐标轴样式
 
 - **默认直线（clean）**：坐标轴、箭头、刻度与网格用无抖动的直线绘制。
@@ -227,9 +250,12 @@
 - **手绘抖动（handdrawn）**：`axis_style="handdrawn"` 时用确定性噪声对折线
   做细分抖动，由 `seed` 控制；轴线、箭头、刻度线一并抖动，网格线用更轻的
   振幅。参考图那种"手画"的质感仍可在需要时开启。
-- 样式在 `BarPlot` 构造时指定，L4 的 `bar` / `mirror_bar` 用同名参数透传。
-  `sketch_axis` 仍是纯渲染原语：起点 + 方向 + 长度 + 像素刻度偏移，不感知
-  Scale；刻度值 → 像素的换算由 L2 的 `add_y_axis` 完成（含负值向下延伸）。
+- 样式在 `BarPlot` 构造时指定，L4 的 `bar` / `mirror_bar` 通过
+  `ChartOptions` 的 `axis_style` 键传入。`sketch_axis` 仍是纯渲染原语：
+  起点 + 方向 + 长度 + 像素刻度偏移，不感知 Scale；刻度值 → 像素的换算由
+  L2 的 `add_y_axis` 完成（含负值向下延伸）。
+- 轴名称与轴分离：`add_y_axis` 只管刻度与网格，名称用 `add_y_axis_name`；
+  x 轴名称用 `add_x_axis_name`。这样没有轴（自由排版）时也能单独写名称。
 
 ## 开发顺序
 
@@ -245,7 +271,8 @@
    素材（`tools/split_master.py`：超分母图切分 → 追踪 → clipPath → SVG）；
 7. ✅ 绘制细节：坐标轴默认直线（手绘风可选）、x 标签过长自动倾斜、图例长标签
    自动折行、默认组间距调大；
-8. ⬜ 公开 API 整理：`singledispatch` 支持 pandas 等数据格式、参数收敛与文档同步。
+8. ✅ 公开 API 整理：`normalize_data`（`singledispatch`）支持 pandas 等数据格式、
+   L4 透传参数收进 `ChartOptions`、标题默认居中与 x / y 轴名、文档同步。
 
 ## 已定事项
 
@@ -261,6 +288,12 @@
   可用 `rotation` 固定角度或关闭；
 - **坐标轴默认直线**（`axis_style="clean"`）；手绘抖动需显式
   `axis_style="handdrawn"`；
+- **标题默认居中**（52px），x 轴名横向居中、y 轴名逐字竖排（30px）；
+  L4 的 `title` / `xlabel` / `ylabel` 直接可用；
+- **数据输入归一**：`normalize_data` + `register_data_type`；pandas 只按结构
+  识别，不作为运行时依赖；
+- **L4 参数分层**：图表语义参数留在签名，透传参数收进 `ChartOptions`
+  并由 `**options` 接收；
 - **组间距默认 120**（原 96），分组边界更清晰；
 - 输出只有 PNG，不做 SVG/PDF；SVG 只作为内置腿素材的存储格式，对外仍只出 PNG，
   理由见"素材与输出"；
