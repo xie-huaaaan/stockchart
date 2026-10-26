@@ -10,6 +10,7 @@ import pytest
 from tests.test_plot_core import make_leg
 
 from stockchart import STYLES, BarPlot, Leg
+from stockchart.defaults import DEFAULT_GROUP_GAP
 
 
 def leg_w(w: int, side: str = "left") -> Leg:
@@ -66,7 +67,7 @@ class TestAddBars:
         bars = p._bars
         # 第二段首缘与第一段末缘之间隔 group_gap
         left_3 = bars[2].x - bars[2].leg.foot_center_x
-        assert left_3 - first_end == pytest.approx(96)  # DEFAULT_GROUP_GAP
+        assert left_3 - first_end == pytest.approx(DEFAULT_GROUP_GAP)
         assert len(p._group_centers) == 2
 
 

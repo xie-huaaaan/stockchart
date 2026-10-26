@@ -135,6 +135,7 @@ def draw_text(
     color: Color = DEFAULT_TEXT_COLOR,
     font: FontSpec | None = None,
     anchor: TextAnchor = ("left", "baseline"),
+    rotation: float = 0.0,
 ) -> None:
     """画一段单行文字。
 
@@ -142,6 +143,7 @@ def draw_text(
     font 为家族名列表或字体文件路径；缺省走内置回退链（docs/design.md"字体"）。
     anchor 指定 (x, y) 对应文字包围盒的哪一处（水平 left/center/right、
     垂直 top/middle/baseline/bottom）。不处理换行，文本按单行绘制。
+    rotation 为绕 (x, y) 顺时针旋转的角度（度），用于旋转的轴标签等。
     """
     if not text:
         return
@@ -151,6 +153,16 @@ def draw_text(
     x0, y0 = _anchor_point(x, y, width, base.getMetrics(), anchor)
     paint = skia.Paint(AntiAlias=True, Color=skia_color(color))
     sc = canvas.skia_canvas()
+    if rotation:
+        sc.save()
+        sc.translate(x, y)
+        sc.rotate(rotation)
+        cursor, baseline = x0 - x, y0 - y
+        for ch, f, adv in runs:
+            sc.drawString(ch, cursor, baseline, f, paint)
+            cursor += adv
+        sc.restore()
+        return
     cursor = x0
     for ch, f, adv in runs:
         sc.drawString(ch, cursor, y0, f, paint)
@@ -168,3 +180,100 @@ def measure_text(
         return 0.0
     base = skia.Font(_resolve_typeface(font), size_px)
     return sum(adv for _, _, adv in _layout_runs(text, base))
+
+
+def measure_text_height(
+    text: str,
+    *,
+    size_px: float,
+    font: FontSpec | None = None,
+) -> float:
+    """测量单行文字的字面高度（升部到降部，像素）。空串按当前字号估算。"""
+    base = skia.Font(_resolve_typeface(font), size_px)
+    metrics = base.getMetrics()
+    return float(metrics.fDescent - metrics.fAscent)
+
+
+_EMPTY_ELLIPSIS = "\u2026"
+# 优先在这些字符之后断行：空白与常见中英文标点
+_BREAK_AFTER = frozenset(" \t,，、;；:：/\\|-—")
+
+
+def _run_width(text: str, base: skia.Font) -> float:
+    """按给定字体（含逐字符回退）测量宽度。"""
+    return sum(_measure_chars(ch, base) for ch in text)
+
+
+def _truncate_to_width(text: str, max_width: float, base: skia.Font) -> str:
+    """把文本截到 max_width 内并加省略号；max_width 不足时只留省略号。"""
+    if _run_width(text, base) <= max_width:
+        return text
+    ell = _EMPTY_ELLIPSIS
+    avail = max_width - _run_width(ell, base)
+    if avail <= 0:
+        return ell
+    kept: list[str] = []
+    width = 0.0
+    for ch in text:
+        adv = _measure_chars(ch, base)
+        if width + adv > avail:
+            break
+        kept.append(ch)
+        width += adv
+    return "".join(kept).rstrip() + ell
+
+
+def wrap_text(
+    text: str,
+    *,
+    max_width: float,
+    size_px: float,
+    font: FontSpec | None = None,
+    max_lines: int | None = None,
+) -> list[str]:
+    """按像素宽度把单行文本折成多行（贪心、优先在空白/标点后断行）。
+
+    中文可按字断行；英文单词过长时仍会断开。超过 max_lines 时末行加省略号，
+    保证任何一行都不超过 max_width（单个字形本身超宽时除外）。空串返回 [""]。
+    """
+    if not text:
+        return [""]
+    base = skia.Font(_resolve_typeface(font), size_px)
+    widths = [_measure_chars(ch, base) for ch in text]
+    lines: list[str] = []
+    start = 0
+    while start < len(text):
+        width = 0.0
+        end = start
+        while end < len(text) and width + widths[end] <= max_width:
+            width += widths[end]
+            end += 1
+        if end == start:  # 单字超宽：至少前进一个字符，末行再截断
+            end = start + 1
+        if end < len(text):
+            # 在当前行里找最后一个可断点，避免英文单词被切得太碎
+            for cut in range(end, start, -1):
+                if text[cut - 1] in _BREAK_AFTER:
+                    end = cut
+                    break
+        lines.append(text[start:end].rstrip())
+        start = end
+        while start < len(text) and text[start] == " ":
+            start += 1
+        if max_lines is not None and len(lines) == max_lines:
+            if start < len(text):
+                lines[-1] = _truncate_to_width(lines[-1] + text[start:], max_width, base).rstrip()
+            break
+    for i, line in enumerate(lines):
+        if measure_text(line, size_px=size_px, font=font) > max_width:
+            lines[i] = _truncate_to_width(line, max_width, base)
+    return lines or [""]
+
+
+def _measure_chars(ch: str, base: skia.Font) -> float:
+    """单个字符的绘制宽度（含字体回退）。"""
+    if base.unicharToGlyph(ord(ch)) == 0:
+        tf = _fallback_typeface(ch)
+        if tf is not None:
+            return skia.Font(tf, base.getSize()).measureText(ch)
+    return base.measureText(ch)

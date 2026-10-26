@@ -6,7 +6,7 @@ from stockchart.canvas import Canvas
 from stockchart.color import Color
 from stockchart.legs import Leg
 from stockchart.library import LegLibrary, load_leg
-from stockchart.plot import BarPlot, Scale
+from stockchart.plot import AxisStyle, BarPlot, Scale, XLabelRotation
 from stockchart.sketch import sketch_axis, sketch_line
 from stockchart.stocking import (
     STYLES,
@@ -31,6 +31,7 @@ from stockchart.topline import bar, mirror_bar
 
 __all__ = [
     "STYLES",
+    "AxisStyle",
     "BarPlot",
     "Bare",
     "Canvas",
@@ -53,6 +54,7 @@ __all__ = [
     "StyleSeq",
     "TextAnchor",
     "Welt",
+    "XLabelRotation",
     "bar",
     "draw_text",
     "load_leg",

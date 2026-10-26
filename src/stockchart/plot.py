@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 import random
 from collections.abc import Callable, Sequence
@@ -17,6 +18,7 @@ from PIL import Image as PilImage
 from stockchart.canvas import Canvas, skia_color
 from stockchart.color import Color
 from stockchart.defaults import (
+    DEFAULT_AXIS_STYLE,
     DEFAULT_BACKGROUND,
     DEFAULT_BAR_GAP,
     DEFAULT_BOTTOM_PAD,
@@ -27,7 +29,9 @@ from stockchart.defaults import (
     DEFAULT_INK_COLOR,
     DEFAULT_LABEL_LINE_FACTOR,
     DEFAULT_LEGEND_ITEM_GAP,
+    DEFAULT_LEGEND_LINE_FACTOR,
     DEFAULT_LEGEND_MARGIN,
+    DEFAULT_LEGEND_MAX_LINES,
     DEFAULT_LEGEND_ROW_GAP,
     DEFAULT_LEGEND_SWATCH,
     DEFAULT_LEGEND_TEXT_GAP,
@@ -50,6 +54,8 @@ from stockchart.defaults import (
     DEFAULT_VALUE_LABEL_SIZE,
     DEFAULT_WOBBLE,
     DEFAULT_X_LABEL_GAP,
+    DEFAULT_X_LABEL_ITEM_GAP,
+    DEFAULT_X_LABEL_ROTATIONS,
     DEFAULT_X_LABEL_SIZE,
     DEFAULT_Y_EXTENT,
 )
@@ -63,12 +69,19 @@ from stockchart.stocking import (
     StyleSeq,
     render_stocking,
 )
-from stockchart.text import TextAnchor, draw_text, measure_text
+from stockchart.text import (
+    TextAnchor,
+    draw_text,
+    measure_text,
+    wrap_text,
+)
 
 type BarSide = Literal["up", "down"]
 type LegendLoc = Literal["top", "bottom"]
 type XLabelPos = Literal["content", "auto", "above", "below"]
 type StyleCycle = Literal["group", "sequence"]
+type AxisStyle = Literal["clean", "handdrawn"]
+type XLabelRotation = float | Literal["auto"]
 
 
 def _resolve_style(style: StyleLike) -> StockingStyle:
@@ -186,6 +199,7 @@ class _XLabelsRecord:
     labels: list[str]
     xs: list[float] | None
     pos: XLabelPos = "content"
+    rotation: XLabelRotation = "auto"
 
 
 @dataclass(slots=True)
@@ -214,6 +228,8 @@ class _Layout:
     legend_top_y: float = 0.0  # 顶部图例首行的画布 y
     x_label_y: float | None = None  # x 标签锚点的画布 y
     x_label_baseline: bool = False  # True: 标签底边锚定（写在基线之上）
+    x_label_angle: float = 0.0  # 已解析的旋转角：正角顺时针，基线下标签取负角
+    x_label_height: float = 0.0  # 标签块垂直占位（旋转后的投影高度）
     legend_bottom_y: float | None = None
 
 
@@ -327,19 +343,25 @@ class BarPlot:
         extent_up: int = DEFAULT_Y_EXTENT,
         extent_down: int = 0,
         background: Color = DEFAULT_BACKGROUND,
+        axis_style: AxisStyle = DEFAULT_AXIS_STYLE,
         seed: int | None = None,
     ) -> None:
         """构造绘图区。
 
         extent_up / extent_down 为基线上、下各预留的像素高度；基线下方不留
         空间时基线贴住内容底部（x 标签等边距仍会另行留出）。
+        axis_style 决定坐标轴与网格线是直线（"clean"，默认）还是手绘抖动
+        （"handdrawn"）。
         """
         if width_px <= 0:
             raise ValueError(f"width_px 须为正数，得到 {width_px}")
+        if axis_style not in ("clean", "handdrawn"):
+            raise ValueError(f"axis_style 须为 'clean' 或 'handdrawn'，得到 {axis_style!r}")
         self._width_px = width_px
         self._extent_up = extent_up
         self._extent_down = extent_down
         self._background = background
+        self._axis_style = axis_style
         self._rng = random.Random(DEFAULT_SEED if seed is None else seed)
         self._bars: list[_BarRecord] = []
         self._group_centers: list[float] = []
@@ -398,11 +420,12 @@ class BarPlot:
         label: str | None = None,
         grid: bool = False,
     ) -> BarPlot:
-        """添加 y 轴（手绘风，含刻度数字）。ticks 缺省由 scale.domain 均匀取值生成。
+        """添加 y 轴（含刻度数字）。ticks 缺省由 scale.domain 均匀取值生成。
 
-        刻度按 scale 映射到基线上下两侧：domain 含负值时干线向下延伸、
-        下方刻度照常绘制，箭头仍在最上端。grid=True 时沿各刻度画横向
-        手绘虚线（浅色，压在腿与袜之下）。label 纵向排列在刻度数字左侧。
+        轴与网格的线条样式由构造参数 axis_style 决定（默认直线）。刻度按
+        scale 映射到基线上下两侧：domain 含负值时干线向下延伸、下方刻度
+        照常绘制，箭头仍在最上端。grid=True 时沿各刻度画横向虚线（浅色，
+        压在腿与袜之下）。label 纵向排列在刻度数字左侧。
         """
         self._y_axis = _YAxisRecord(
             scale=scale,
@@ -419,14 +442,19 @@ class BarPlot:
         *,
         xs: Sequence[float] | None = None,
         pos: XLabelPos = "content",
+        rotation: XLabelRotation = "auto",
     ) -> BarPlot:
-        """添加 x 轴标签，pos 决定标签位置。
+        """添加 x 轴标签，pos 决定标签位置，rotation 决定是否旋转。
 
         "content"（默认）画在全部内容最低点之下（含朝下腿与 y 轴向下延伸的
         部分），与基线解耦，没有下方内容时自然贴着基线下方；"auto" 紧贴
         基线、选没有柱子的一侧（下方无腿→基线下方，上方无腿→基线上方，
         两侧都有腿→退回 "content"）；"above" / "below" 强制写在基线上方 /
         下方，该侧有腿时会与腿重叠。
+
+        rotation="auto"（默认）在相邻标签会互相压住时依次尝试 45°/60°/75°/
+        90° 倾斜，选第一个不重叠的角度；传 0 禁用旋转，传固定角度（0–90）
+        则始终按该角度倾斜。旋转方向随标签在基线上/下自动决定。
 
         xs 为绘图区坐标（足底中心基准），缺省时优先使用 add_bars 系列
         方法记录的组中心，否则沿绘图区宽度均分。
@@ -435,10 +463,13 @@ class BarPlot:
             raise ValueError(f"pos 须为 'content'/'auto'/'above'/'below'，得到 {pos!r}")
         if xs is not None and len(xs) != len(labels):
             raise ValueError(f"xs 与 labels 长度不一致：{len(xs)} != {len(labels)}")
+        if rotation != "auto" and not 0 <= float(rotation) <= 90:
+            raise ValueError(f"rotation 须为 'auto' 或 0–90 的角度，得到 {rotation!r}")
         self._x_labels = _XLabelsRecord(
             labels=list(labels),
             xs=[float(v) for v in xs] if xs is not None else None,
             pos=pos,
+            rotation=rotation,
         )
         return self
 
@@ -705,18 +736,51 @@ class BarPlot:
         eff_down = max(float(self._extent_down), float(max(down_legs, default=0)))
         return eff_up, eff_down
 
-    def _legend_rows(self, rec: _LegendRecord) -> tuple[list[list[int]], float]:
-        """图例分行的项下标与带高（不含外边距）。"""
-        widths = [
-            DEFAULT_LEGEND_SWATCH
-            + DEFAULT_LEGEND_TEXT_GAP
-            + measure_text(label, size_px=DEFAULT_LEGEND_TEXT_SIZE)
+    def _legend_layout(
+        self, rec: _LegendRecord
+    ) -> tuple[list[list[int]], list[float], float, list[list[str]]]:
+        """图例分行结果：(行内项下标, 各行高, 带高, 每项折行文本)。
+
+        单个标签超过一行宽时按词/字换行（最多 DEFAULT_LEGEND_MAX_LINES 行，
+        仍放不下则末行省略）；ncol 指定时按等宽列折行，避免列错位。
+        """
+        line_h = DEFAULT_LEGEND_TEXT_SIZE * DEFAULT_LEGEND_LINE_FACTOR
+        if rec.ncol is not None:
+            col_w = max(
+                DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_TEXT_GAP + 1.0,
+                (self._width_px - (rec.ncol - 1) * DEFAULT_LEGEND_ITEM_GAP) / rec.ncol,
+            )
+            label_max = max(1.0, col_w - DEFAULT_LEGEND_SWATCH - DEFAULT_LEGEND_TEXT_GAP)
+        else:
+            col_w = 0.0
+            label_max = max(1.0, self._width_px - DEFAULT_LEGEND_SWATCH - DEFAULT_LEGEND_TEXT_GAP)
+        lines_all = [
+            wrap_text(
+                label,
+                max_width=label_max,
+                size_px=DEFAULT_LEGEND_TEXT_SIZE,
+                max_lines=DEFAULT_LEGEND_MAX_LINES,
+            )
             for label, _ in rec.items
         ]
+        widths: list[float] = []
+        heights: list[float] = []
+        for lines in lines_all:
+            text_w = max(
+                (measure_text(line, size_px=DEFAULT_LEGEND_TEXT_SIZE) for line in lines),
+                default=0.0,
+            )
+            width = DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_TEXT_GAP + text_w
+            widths.append(width if rec.ncol is None else col_w)
+            heights.append(max(DEFAULT_LEGEND_SWATCH, len(lines) * line_h))
+
         idx_rows: list[list[int]] = []
+        row_heights: list[float] = []
         if rec.ncol is not None:
             for start in range(0, len(widths), rec.ncol):
-                idx_rows.append(list(range(start, min(start + rec.ncol, len(widths)))))
+                row = list(range(start, min(start + rec.ncol, len(widths))))
+                idx_rows.append(row)
+                row_heights.append(max(heights[i] for i in row))
         else:
             row: list[int] = []
             row_w = 0.0
@@ -724,17 +788,110 @@ class BarPlot:
                 extra = w if not row else DEFAULT_LEGEND_ITEM_GAP + w
                 if row and row_w + extra > self._width_px:
                     idx_rows.append(row)
+                    row_heights.append(max(heights[j] for j in row))
                     row, row_w = [i], w
                 else:
                     row.append(i)
                     row_w += extra
             if row:
                 idx_rows.append(row)
-        band_h = 0.0
-        if idx_rows:
-            n = len(idx_rows)
-            band_h = n * DEFAULT_LEGEND_SWATCH + (n - 1) * DEFAULT_LEGEND_ROW_GAP
-        return idx_rows, band_h
+                row_heights.append(max(heights[j] for j in row))
+        band_h = sum(row_heights) + (len(row_heights) - 1) * DEFAULT_LEGEND_ROW_GAP
+        return idx_rows, row_heights, band_h, lines_all
+
+    def _x_label_xs(self) -> list[float]:
+        """X 标签锚点在绘图区坐标里的位置。"""
+        rec = self._x_labels
+        assert rec is not None  # 调用点已保证
+        if rec.xs is not None:
+            return rec.xs
+        if len(rec.labels) == len(self._group_centers):
+            return self._group_centers
+        n = len(rec.labels)
+        return [(i + 0.5) * self._width_px / n for i in range(n)]
+
+    @staticmethod
+    def _x_label_line_height() -> float:
+        """X 标签单行占位高度（旋转包围盒计算用）。"""
+        return DEFAULT_X_LABEL_SIZE * DEFAULT_LABEL_LINE_FACTOR
+
+    def _x_labels_fit_horizontal(self, xs: Sequence[float], widths: Sequence[float]) -> bool:
+        """水平排布时相邻标签是否互不重叠。"""
+        order = sorted(range(len(xs)), key=lambda i: xs[i])
+        return all(
+            xs[b] - xs[a] >= (widths[a] + widths[b]) / 2 + DEFAULT_X_LABEL_ITEM_GAP
+            for a, b in itertools.pairwise(order)
+        )
+
+    def _x_labels_fit_rotated(
+        self, xs: Sequence[float], widths: Sequence[float], angle: float, line_h: float
+    ) -> bool:
+        """旋转 angle 度后相邻标签是否互不重叠。"""
+        c = math.cos(math.radians(angle))
+        s = math.sin(math.radians(angle))
+        order = sorted(range(len(xs)), key=lambda i: xs[i])
+        return all(
+            xs[b] - xs[a] >= widths[b] * c + line_h * s + DEFAULT_X_LABEL_ITEM_GAP
+            for a, b in itertools.pairwise(order)
+        )
+
+    def _x_label_fit(self, *, above: bool) -> tuple[float, float, float, float]:
+        """解析 x 标签的旋转角与占位。
+
+        返回 (带符号角度, 垂直占位高, 向左溢出, 向右溢出)。角度为
+        "auto" 时逐级尝试 DEFAULT_X_LABEL_ROTATIONS，取第一个不重叠的；
+        都放不下时用最大角度。标签在基线下方取负角、上方取正角。
+        """
+        rec = self._x_labels
+        assert rec is not None  # 调用点已保证
+        xs = self._x_label_xs()
+        widths = [measure_text(label, size_px=DEFAULT_X_LABEL_SIZE) for label in rec.labels]
+        line_h = self._x_label_line_height()
+        if rec.rotation == "auto":
+            angle = DEFAULT_X_LABEL_ROTATIONS[-1]
+            for candidate in DEFAULT_X_LABEL_ROTATIONS:
+                if candidate == 0.0:
+                    fits = self._x_labels_fit_horizontal(xs, widths)
+                else:
+                    fits = self._x_labels_fit_rotated(xs, widths, candidate, line_h)
+                if fits:
+                    angle = candidate
+                    break
+        else:
+            angle = float(rec.rotation)
+
+        if angle == 0.0:
+            height = line_h
+            left = max((w / 2 - x for w, x in zip(widths, xs, strict=True)), default=0.0)
+            right = max(
+                (w / 2 - (self._width_px - x) for w, x in zip(widths, xs, strict=True)),
+                default=0.0,
+            )
+            return 0.0, height, max(0.0, left), max(0.0, right)
+
+        c = math.cos(math.radians(angle))
+        s = math.sin(math.radians(angle))
+        height = max((w * s + line_h * c for w in widths), default=line_h)
+        if angle >= 89.999:
+            # 竖排时按旋转后的字面高度居中，左右各占半行高
+            left = max((line_h / 2 - x for x in xs), default=0.0)
+            right = max((line_h / 2 - (self._width_px - x) for x in xs), default=0.0)
+        elif above:
+            # 上方标签向左上展开：左边多出字面高度，右边不越界
+            left = max(
+                (w * c + line_h * s - x for w, x in zip(widths, xs, strict=True)),
+                default=0.0,
+            )
+            right = 0.0
+        else:
+            # 下方标签向左下展开：左边占文字宽，右边多出字面高度
+            left = max((w * c - x for w, x in zip(widths, xs, strict=True)), default=0.0)
+            right = max(
+                (line_h * s - (self._width_px - x) for x in xs),
+                default=0.0,
+            )
+        signed = angle if above else -angle
+        return signed, height, max(0.0, left), max(0.0, right)
 
     def _layout(self) -> _Layout:
         eff_up, eff_down = self._effective_extents()
@@ -762,17 +919,29 @@ class BarPlot:
             y_label_x = head / 2
             plot_left = axis_x
 
-        # 顶部带：标题 + 顶部图例
+        x_pos: Literal["above", "below", "content"] | None = None
+        x_angle = 0.0
+        x_height = 0.0
+        x_left = 0.0
+        x_right = 0.0
+        if self._x_labels is not None and self._x_labels.labels:
+            x_pos = self._resolve_x_label_pos()
+            x_angle, x_height, x_left, x_right = self._x_label_fit(above=(x_pos == "above"))
+
+        # 顶部带：标题 + 顶部图例；标签写在基线上方时若超出预留高度，补足顶部空间
         top_band = 0.0
         legend_top_y = 0.0
         if self._title is not None:
             top_band = DEFAULT_TITLE_INSET_Y + DEFAULT_TITLE_SIZE * DEFAULT_TITLE_LINE_FACTOR
         if self._legend is not None and self._legend.loc == "top":
-            _, legend_h = self._legend_rows(self._legend)
+            _, _, legend_h, _ = self._legend_layout(self._legend)
             legend_top_y = top_band if self._title is not None else DEFAULT_LEGEND_MARGIN
             top_band = legend_top_y + legend_h + DEFAULT_LEGEND_MARGIN
         elif self._legend is None and self._title is None:
             top_band = 0.0
+        if x_pos == "above":
+            # 为旋转后的标签留出顶部空间，并保留与画布顶缘的呼吸间距
+            top_band += max(0.0, x_height + 2 * DEFAULT_X_LABEL_GAP - eff_up)
 
         baseline = top_band + eff_up
         content_bottom = baseline + max(eff_down, down_len)
@@ -780,27 +949,27 @@ class BarPlot:
         x_label_y: float | None = None
         x_label_baseline = False
         bottom = content_bottom
-        if self._x_labels is not None and self._x_labels.labels:
-            pos = self._resolve_x_label_pos()
-            if pos == "above":
+        if x_pos is not None:
+            if x_pos == "above":
                 x_label_y = baseline - DEFAULT_X_LABEL_GAP
                 x_label_baseline = True
-            elif pos == "below":
+            elif x_pos == "below":
                 x_label_y = baseline + DEFAULT_X_LABEL_GAP
-                label_h = DEFAULT_X_LABEL_SIZE * DEFAULT_LABEL_LINE_FACTOR
-                bottom = max(bottom, x_label_y + label_h)
+                bottom = max(bottom, x_label_y + x_height)
             else:
                 x_label_y = content_bottom + DEFAULT_X_LABEL_GAP
-                bottom = x_label_y + DEFAULT_X_LABEL_SIZE * DEFAULT_LABEL_LINE_FACTOR
+                bottom = x_label_y + x_height
 
         legend_bottom_y: float | None = None
         if self._legend is not None and self._legend.loc == "bottom":
             legend_bottom_y = bottom + DEFAULT_LEGEND_MARGIN
-            bottom = legend_bottom_y + self._legend_rows(self._legend)[1]
+            bottom = legend_bottom_y + self._legend_layout(self._legend)[2]
 
         final_h = bottom + DEFAULT_BOTTOM_PAD
+        # 旋转标签可能伸出绘图区左右缘：补画布边距，避免文字被裁
+        plot_left += max(0.0, x_left - plot_left)
         plot_right = plot_left + self._width_px
-        final_w = plot_right + DEFAULT_PLOT_RIGHT_PAD
+        final_w = plot_right + max(DEFAULT_PLOT_RIGHT_PAD, x_right)
         y_up_len = 0.0
         if axis is not None:
             y_up_len = max([0.0, eff_up] + [axis.scale.to_px(v) for v in axis.ticks])
@@ -817,6 +986,8 @@ class BarPlot:
             legend_top_y=legend_top_y,
             x_label_y=x_label_y,
             x_label_baseline=x_label_baseline,
+            x_label_angle=x_angle,
+            x_label_height=x_height,
             legend_bottom_y=legend_bottom_y,
         )
 
@@ -850,6 +1021,7 @@ class BarPlot:
             return
         rng = random.Random(axis.seed)
         dash, gap = DEFAULT_GRID_DASH
+        wobble = DEFAULT_WOBBLE * 0.3 if self._axis_style == "handdrawn" else 0.0
         for v in axis.ticks:
             px = axis.scale.to_px(v)
             if abs(px) < 1e-6:
@@ -866,7 +1038,7 @@ class BarPlot:
                     y,
                     color=DEFAULT_GRID_COLOR,
                     width_px=DEFAULT_GRID_WIDTH,
-                    wobble=DEFAULT_WOBBLE * 0.3,  # 网格线抖动比主线条轻
+                    wobble=wobble,
                     seed=rng.getrandbits(32),
                 )
                 x = seg + gap
@@ -881,6 +1053,7 @@ class BarPlot:
             length=self._width_px,
             ticks=[],
             arrow=True,
+            wobble=DEFAULT_WOBBLE if self._axis_style == "handdrawn" else 0.0,
             seed=self._baseline_seed,
         )
 
@@ -921,6 +1094,7 @@ class BarPlot:
             length=up_len,
             ticks=up_items,
             arrow=True,
+            wobble=DEFAULT_WOBBLE if self._axis_style == "handdrawn" else 0.0,
             seed=rng.getrandbits(32),
         )
         if down_len > 0:
@@ -932,6 +1106,7 @@ class BarPlot:
                 length=down_len,
                 ticks=down_items,
                 arrow=False,
+                wobble=DEFAULT_WOBBLE if self._axis_style == "handdrawn" else 0.0,
                 seed=rng.getrandbits(32),
             )
         if axis.label is not None:
@@ -966,32 +1141,51 @@ class BarPlot:
         rec = self._legend
         if rec is None:
             return
-        idx_rows, _ = self._legend_rows(rec)
+        idx_rows, row_heights, _, lines_all = self._legend_layout(rec)
         if rec.loc == "top":
             y = layout.legend_top_y
         else:
             assert layout.legend_bottom_y is not None  # _layout 保证已填
             y = layout.legend_bottom_y
         sc = canvas.skia_canvas()
-        for row in idx_rows:
-            row_w = sum(
-                DEFAULT_LEGEND_SWATCH
-                + DEFAULT_LEGEND_TEXT_GAP
-                + measure_text(rec.items[i][0], size_px=DEFAULT_LEGEND_TEXT_SIZE)
-                for i in row
-            ) + DEFAULT_LEGEND_ITEM_GAP * (len(row) - 1)
-            x = layout.plot_left + (self._width_px - row_w) / 2
+        line_h = DEFAULT_LEGEND_TEXT_SIZE * DEFAULT_LEGEND_LINE_FACTOR
+        col_w = 0.0
+        if rec.ncol is not None:
+            col_w = max(
+                DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_TEXT_GAP + 1.0,
+                (self._width_px - (rec.ncol - 1) * DEFAULT_LEGEND_ITEM_GAP) / rec.ncol,
+            )
+        for row, row_h in zip(idx_rows, row_heights, strict=True):
+            widths: list[float] = []
             for i in row:
-                label, style = rec.items[i]
+                text_w = max(
+                    (measure_text(line, size_px=DEFAULT_LEGEND_TEXT_SIZE) for line in lines_all[i]),
+                    default=0.0,
+                )
+                widths.append(
+                    col_w
+                    if rec.ncol is not None
+                    else DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_TEXT_GAP + text_w
+                )
+            row_w = sum(widths) + DEFAULT_LEGEND_ITEM_GAP * (len(row) - 1)
+            x = layout.plot_left + (0.0 if rec.ncol is not None else (self._width_px - row_w) / 2)
+            for i, item_w in zip(row, widths, strict=True):
+                label_lines = lines_all[i]
+                swatch_y = y + (row_h - DEFAULT_LEGEND_SWATCH) / 2
                 swatch = _skia_image(
-                    _render_swatch(style, DEFAULT_LEGEND_SWATCH, rec.seed + i, scale=scale)
+                    _render_swatch(
+                        rec.items[i][1],
+                        DEFAULT_LEGEND_SWATCH,
+                        rec.seed + i,
+                        scale=scale,
+                    )
                 )
                 sc.save()
-                sc.translate(x, y)
+                sc.translate(x, swatch_y)
                 sc.scale(1.0 / scale, 1.0 / scale)
                 sc.drawImage(swatch, 0.0, 0.0, _SAMPLING_NATIVE, None)
                 sc.restore()
-                rect = skia.Rect.MakeXYWH(x, y, DEFAULT_LEGEND_SWATCH, DEFAULT_LEGEND_SWATCH)
+                rect = skia.Rect.MakeXYWH(x, swatch_y, DEFAULT_LEGEND_SWATCH, DEFAULT_LEGEND_SWATCH)
                 rrect = skia.RRect.MakeRectXY(rect, DEFAULT_SWATCH_RADIUS, DEFAULT_SWATCH_RADIUS)
                 sc.drawRRect(
                     rrect,
@@ -1002,42 +1196,53 @@ class BarPlot:
                         StrokeWidth=DEFAULT_SWATCH_STROKE,
                     ),
                 )
-                draw_text(
-                    canvas,
-                    label,
-                    x + DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_TEXT_GAP,
-                    y + DEFAULT_LEGEND_SWATCH / 2,
-                    size_px=DEFAULT_LEGEND_TEXT_SIZE,
-                    anchor=("left", "middle"),
-                )
-                x += (
-                    DEFAULT_LEGEND_SWATCH
-                    + DEFAULT_LEGEND_TEXT_GAP
-                    + measure_text(label, size_px=DEFAULT_LEGEND_TEXT_SIZE)
-                    + DEFAULT_LEGEND_ITEM_GAP
-                )
-            y += DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_ROW_GAP
+                text_h = len(label_lines) * line_h
+                text_top = y + (row_h - text_h) / 2
+                for j, line in enumerate(label_lines):
+                    draw_text(
+                        canvas,
+                        line,
+                        x + DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_TEXT_GAP,
+                        text_top + (j + 0.5) * line_h,
+                        size_px=DEFAULT_LEGEND_TEXT_SIZE,
+                        anchor=("left", "middle"),
+                    )
+                x += item_w + DEFAULT_LEGEND_ITEM_GAP
+            y += row_h + DEFAULT_LEGEND_ROW_GAP
 
     def _draw_x_labels(self, canvas: Canvas, layout: _Layout) -> None:
         rec = self._x_labels
         if rec is None or layout.x_label_y is None:
             return
-        if rec.xs is not None:
-            xs = rec.xs
-        elif len(rec.labels) == len(self._group_centers):
-            xs = self._group_centers
-        else:
-            n = len(rec.labels)
-            xs = [(i + 0.5) * self._width_px / n for i in range(n)]
-        anchor: TextAnchor = ("center", "bottom" if layout.x_label_baseline else "top")
+        xs = self._x_label_xs()
+        above = layout.x_label_baseline
+        angle = layout.x_label_angle
+        line_h = self._x_label_line_height()
         for label, x in zip(rec.labels, xs, strict=True):
+            px = layout.plot_left + x
+            if angle == 0.0:
+                anchor: TextAnchor = ("center", "bottom" if above else "top")
+                draw_text(
+                    canvas,
+                    label,
+                    px,
+                    layout.x_label_y,
+                    size_px=DEFAULT_X_LABEL_SIZE,
+                    anchor=anchor,
+                )
+                continue
+            # 竖排时把旋转后的文字块在锚点处左右居中
+            pivot = px
+            if abs(angle) >= 89.999:
+                pivot += line_h / 2 if angle > 0 else -line_h / 2
             draw_text(
                 canvas,
                 label,
-                layout.plot_left + x,
+                pivot,
                 layout.x_label_y,
                 size_px=DEFAULT_X_LABEL_SIZE,
-                anchor=anchor,
+                anchor=("right", "bottom" if above else "top"),
+                rotation=angle,
             )
 
     def _draw_value_labels(self, canvas: Canvas, layout: _Layout) -> None:

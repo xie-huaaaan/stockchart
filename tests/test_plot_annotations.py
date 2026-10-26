@@ -8,8 +8,21 @@ import pytest
 from tests.test_plot_core import BG, make_leg
 
 from stockchart import BarPlot, Scale
+from stockchart.defaults import (
+    DEFAULT_LABEL_LINE_FACTOR,
+    DEFAULT_LEGEND_MAX_LINES,
+    DEFAULT_LEGEND_SWATCH,
+    DEFAULT_X_LABEL_SIZE,
+)
 
 INK = np.array((72, 72, 72), dtype=int)
+
+LONG_LABELS = [
+    "超长的第一个月份标签",
+    "超长的第二个月份标签",
+    "超长的第三个月份标签",
+    "超长的第四个月份标签",
+]
 
 
 def inked(arr: np.ndarray) -> np.ndarray:
@@ -143,6 +156,64 @@ class TestAddXLabels:
             p.add_x_labels(["甲"], pos="middle")  # type: ignore[arg-type]
 
 
+class TestXLabelRotation:
+    def test_auto_rotates_when_adjacent_labels_overlap(self) -> None:
+        p = BarPlot(700)
+        p.add_x_labels(LONG_LABELS, xs=[100, 250, 400, 550])
+        layout = p._layout()
+        assert abs(layout.x_label_angle) > 0
+        assert layout.x_label_height > DEFAULT_X_LABEL_SIZE * DEFAULT_LABEL_LINE_FACTOR
+
+    def test_rotation_zero_disables_auto(self) -> None:
+        p = BarPlot(700)
+        p.add_x_labels(LONG_LABELS, xs=[100, 250, 400, 550], rotation=0)
+        assert p._layout().x_label_angle == 0
+
+    def test_explicit_angle_is_used(self) -> None:
+        p = BarPlot(600)
+        p.add_x_labels(["甲", "乙"], xs=[100, 300], rotation=45)
+        # 标签在基线下方 → 负角
+        assert p._layout().x_label_angle == pytest.approx(-45)
+
+    def test_auto_does_not_rotate_when_labels_fit(self) -> None:
+        p = BarPlot(600)
+        p.add_x_labels(["甲", "乙"], xs=[150, 450])
+        assert p._layout().x_label_angle == 0
+
+    def test_rotated_labels_get_canvas_margin(self) -> None:
+        p = BarPlot(500)
+        p.add_x_labels(["标签甲很长很长", "标签乙很长很长"], xs=[10, 120])
+        layout = p._layout()
+        # 旋转后左侧伸出绘图区，plot_left 被推开，文字不会被画布左缘裁掉
+        assert layout.plot_left > 28
+        arr = p.render(scale=1).to_numpy()
+        cols = np.where(inked(arr).any(axis=0))[0]
+        assert cols.min() > 0
+
+    def test_invalid_rotation(self) -> None:
+        p = BarPlot(600)
+        with pytest.raises(ValueError):
+            p.add_x_labels(["甲"], rotation=120)
+
+
+class TestAxisStyle:
+    def test_default_is_clean(self) -> None:
+        assert BarPlot(600)._axis_style == "clean"
+
+    def test_handdrawn_differs_from_clean(self) -> None:
+        def build(style: str) -> np.ndarray:
+            p = BarPlot(500, extent_up=400, axis_style=style, seed=1)  # type: ignore[arg-type]
+            p.add_bar(250, 200, make_leg())
+            p.add_y_axis(Scale((0.0, 10.0), (0.0, 300.0)), ticks=[0, 10], grid=True)
+            return p.render(scale=1).to_numpy()
+
+        assert not np.array_equal(build("clean"), build("handdrawn"))
+
+    def test_invalid_style(self) -> None:
+        with pytest.raises(ValueError):
+            BarPlot(600, axis_style="wavy")  # type: ignore[arg-type]
+
+
 class TestTitleAndLegend:
     def test_title_at_top_left(self) -> None:
         p = BarPlot(600)
@@ -186,6 +257,34 @@ class TestTitleAndLegend:
             p.add_legend([("a", "black_sheer")], ncol=0)
         with pytest.raises(ValueError):
             p.add_legend([("a", "black_sheer")], loc="middle")  # type: ignore[arg-type]
+
+    def test_long_legend_label_wraps_to_multiple_lines(self) -> None:
+        p = BarPlot(500)
+        p.add_legend([("很长的系列名称" * 12, "black_sheer")])
+        assert p._legend is not None
+        _, row_heights, band_h, lines = p._legend_layout(p._legend)
+        assert len(lines[0]) > 1
+        assert row_heights[0] > DEFAULT_LEGEND_SWATCH
+        assert band_h == pytest.approx(row_heights[0])
+
+    def test_legend_label_stops_at_max_lines_with_ellipsis(self) -> None:
+        p = BarPlot(300)
+        p.add_legend([("超长系列" * 100, "black_sheer")])
+        assert p._legend is not None
+        _, _, _, lines = p._legend_layout(p._legend)
+        assert len(lines[0]) == DEFAULT_LEGEND_MAX_LINES
+        assert lines[0][-1].endswith("\u2026")
+
+    def test_ncol_long_labels_fit_columns(self) -> None:
+        p = BarPlot(600)
+        p.add_legend(
+            [(f"很长的系列名称{i}" * 8, "black_sheer") for i in range(4)],
+            ncol=2,
+        )
+        assert p._legend is not None
+        idx_rows, _, _, lines = p._legend_layout(p._legend)
+        assert [len(r) for r in idx_rows] == [2, 2]
+        assert all(len(line_set) > 1 for line_set in lines)
 
 
 class TestBaseline:

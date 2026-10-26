@@ -372,12 +372,14 @@ class BarPlot:
         extent_up: int = DEFAULT_Y_EXTENT,
         extent_down: int = 0,
         background: Color = DEFAULT_BACKGROUND,
+        axis_style: Literal["clean", "handdrawn"] = "clean",
         seed: int | None = None,
     ) -> None:
         """构造绘图区（轴与标签的边距在内部另行留出）。
 
-        extent_up / extent_down 为基线上、下各预留的像素高度；
-        基线固定在 y = extent_down，即下方不留空间时基线贴底。
+        extent_up / extent_down 为基线上、下各预留的像素高度；腿超出预留
+        高度时自动扩张。`axis_style="clean"`（默认）画直线坐标轴与网格，
+        `"handdrawn"` 改由 seed 控制的手绘抖动。
         """
 
     def add_bar(
@@ -406,11 +408,12 @@ class BarPlot:
         label: str | None = None,
         grid: bool = False,
     ) -> BarPlot:
-        """添加 y 轴（手绘风，含刻度数字）。ticks 缺省由 scale.domain 均匀取值生成。
+        """添加 y 轴（含刻度数字）。ticks 缺省由 scale.domain 按整步长生成。
 
-        刻度按 scale 映射到基线上下两侧：domain 含负值时干线向下延伸、
-        下方刻度照常绘制，箭头仍在最上端。grid=True 时沿各刻度画横向
-        手绘虚线（浅色，压在腿与袜之下）。
+        轴线与网格样式由构造参数 axis_style 决定。刻度按 scale 映射到基线
+        上下两侧：domain 含负值时干线向下延伸、下方刻度照常绘制，箭头仍在
+        最上端。grid=True 时沿各刻度画横向虚线（浅色，压在腿与袜之下）。
+        label 纵向排列在刻度数字左侧，即 y 轴名称。
         """
 
     def add_x_labels(
@@ -419,8 +422,9 @@ class BarPlot:
         *,
         xs: Sequence[float] | None = None,
         pos: Literal["content", "auto", "above", "below"] = "content",
+        rotation: float | Literal["auto"] = "auto",
     ) -> BarPlot:
-        """添加 x 轴标签。pos 决定标签写在哪儿：
+        """添加 x 轴标签。pos 决定标签写在哪儿，rotation 决定是否倾斜：
 
         - "content"（默认）：全部内容最低点之下（含朝下腿与 y 轴向下延伸的
           部分），与基线解耦——没有下方内容时自然贴着基线下方；
@@ -428,11 +432,16 @@ class BarPlot:
           腿→基线下方，两侧都有腿→退回 "content"）；
         - "above" / "below"：强制写在基线上方 / 下方，该侧有腿时会与腿重叠。
 
+        rotation="auto"（默认）在相邻标签会互相压住时依次尝试 45°/60°/
+        75°/90°，取第一个不重叠的角度；传 0 禁止旋转，传固定角度（0–90）
+        始终按该角度倾斜。旋转方向随标签在基线上/下自动决定，画布也会
+        补足对应的上/下与左右边距。
+
         xs 缺省沿宽度均分；与 add_bars 系列方法配合时自动对齐组中心。
         """
 
     def add_title(self, text: str) -> BarPlot:
-        """添加左上角标题。"""
+        """添加左上角标题（单行，不居中）。"""
 
     def add_legend(
         self,
@@ -444,8 +453,10 @@ class BarPlot:
         """添加图例：每项为织物纹理色块 + 文字，色块取该样式袜身中部的织物。
 
         loc="top"（默认）画在标题下方、绘图区上方，"bottom" 画在最底部；
-        ncol 为一行几项，缺省自动：单行放得下就单行，否则均匀换行。
-        图例占据的高度自动计入布局。
+        ncol 为一行几项，缺省自动：单行放得下就单行，否则按宽度换行。
+        ncol 指定时各列等宽。单个标签超过一行可用宽度时自动折成多行
+        （最多 3 行，仍放不下则末行省略），ncol 下按列宽折行，避免列错位。
+        图例占据的高度与折行后的行高自动计入布局。
         """
 
     def render(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Canvas:
@@ -538,13 +549,15 @@ def bar(
     min_fill: float = 0.1,
     y_extent: int = DEFAULT_Y_EXTENT,
     width_px: int | None = None,
+    axis_style: Literal["clean", "handdrawn"] = "clean",
     seed: int | None = None,
 ) -> BarPlot:
     """全朝上的柱状图：自动完成数据 → 丝袜高度映射、选腿与布局，
     返回布局完毕的 BarPlot（可直接 .save() / .render()，也可继续手工微调）。
 
-    自动绘制手绘风 y 轴与基线；labels 传入时 x 标签自动与各组对齐；
-    画布宽缺省时按腿、间距与标签宽度自适应。
+    自动绘制 y 轴与基线（默认直线，axis_style="handdrawn" 改为手绘抖动）；
+    labels 传入时 x 标签自动与各组对齐，过长时自动倾斜避让；画布宽缺省时
+    按腿、间距与标签宽度自适应。图例标签超过画布宽时自动折行。
     labels 传给 x 标签，series_labels 传给图例——后者区分"系列"（每组的
     第几根腿），前者区分"组"。
 
@@ -563,11 +576,13 @@ def bar(
         paired: 仅当数据恰好 2 系列时生效（默认 True）：每组使用同一对素材，
             系列 0 左腿、系列 1 右腿；其余系列数时忽略此参数。
         value_labels: True 时在袜口上方手写数值。
-        grid: True 时沿 y 轴各刻度画横向手绘虚线（浅色，压在腿与袜之下）。
+        grid: True 时沿 y 轴各刻度画横向虚线（浅色，压在腿与袜之下）。
         max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
         y_extent: 基线上方预留的像素高度。
-        width_px: 画布宽；缺省按腿数、间距、标签与图例自适应。
+        width_px: 画布宽；缺省按腿数、间距与标签宽度自适应；图例在固定
+            宽度内自动折行。
+        axis_style: 坐标轴样式，"clean"（默认）为直线，"handdrawn" 为手绘抖动。
 
     数据 → 丝袜高度（基线对应的数据值默认 0）:
         - 全部数据为 0: 全部裸腿。
@@ -594,6 +609,7 @@ def mirror_bar(
     x_label_pos: Literal["content", "auto", "above", "below"] = "auto",
     y_extent: int = DEFAULT_Y_EXTENT,
     width_px: int | None = None,
+    axis_style: Literal["clean", "handdrawn"] = "clean",
     seed: int | None = None,
 ) -> BarPlot:
     """正负镜像柱状图：正值画基线上方腿，负值画下方翻转腿（脚贴基线）。
@@ -613,6 +629,7 @@ def mirror_bar(
             全空，默认 "auto" 会把标签贴到没有腿的一侧的基线旁（如全负数据
             标签在基线上方）；两侧都有腿（正负混合或 mode="both"）时退回
             "content"，画在全部内容最低点之下。
+        axis_style: 语义同 bar()。
 
     规则:
         - 比例 = max_abs_fill × y_extent / max|v|，正负同比例。
@@ -624,9 +641,10 @@ def mirror_bar(
 ## 默认值集中定义
 
 所有 `DEFAULT_*` 常量集中放在 `src/stockchart/defaults.py`：`DEFAULT_Y_EXTENT`（760）、
-`DEFAULT_BAR_GAP`、`DEFAULT_GROUP_GAP`、`DEFAULT_OUTPUT_SCALE`、背景色、墨色、文字色、
-抖动幅度、字号（刻度 / x 标签 / 标题 / 图例 / 数值标签）、图例色块尺寸与间距、
-网格线颜色等。绘制代码里不自带魔法数字，调参改一处。
+`DEFAULT_BAR_GAP`（28）、`DEFAULT_GROUP_GAP`（120）、`DEFAULT_OUTPUT_SCALE`、背景色、墨色、
+文字色、`DEFAULT_AXIS_STYLE`（clean）、抖动幅度、字号（刻度 / x 标签 / 标题 / 图例 /
+数值标签）、x 标签避让角度、图例折行行数与行高、图例色块尺寸与间距、网格线颜色等。
+绘制代码里不自带魔法数字，调参改一处。
 
 ## 与丝袜渲染算法实现的协作边界
 

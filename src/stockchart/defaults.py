@@ -3,6 +3,8 @@
 单位除注明外均为素材像素；颜色为 0–255 的 RGB / RGBA 元组。
 """
 
+from typing import Literal
+
 # ---------------------------------------------------------------------------
 # 样式与随机
 # ---------------------------------------------------------------------------
@@ -31,7 +33,10 @@ DEFAULT_BACKGROUND: tuple[int, int, int] = (250, 248, 243)
 # ---------------------------------------------------------------------------
 
 DEFAULT_INK_COLOR: tuple[int, int, int] = (72, 72, 72)
-"""手绘线条（轴、刻度）的墨色，接近素材的灰色描边。"""
+"""坐标轴与刻度的墨色，接近素材的灰色描边。"""
+
+DEFAULT_AXIS_STYLE: Literal["clean", "handdrawn"] = "clean"
+"""坐标轴默认样式：直线（clean）或确定性的手绘抖动（handdrawn）。"""
 
 DEFAULT_TEXT_COLOR: tuple[int, int, int] = (58, 58, 58)
 """文字颜色。"""
@@ -63,6 +68,12 @@ DEFAULT_SKETCH_SEGMENT_PX = 28
 DEFAULT_X_LABEL_SIZE = 30
 """x 轴标签字号。"""
 
+DEFAULT_X_LABEL_ITEM_GAP = 12
+"""相邻 x 标签之间至少留出的水平空隙（避让判定用）。"""
+
+DEFAULT_X_LABEL_ROTATIONS: tuple[float, ...] = (0.0, 45.0, 60.0, 75.0, 90.0)
+"""标签过长时依次尝试的旋转角度（度）；0 为水平。"""
+
 DEFAULT_TITLE_SIZE = 44
 """左上角标题字号。"""
 
@@ -79,7 +90,7 @@ DEFAULT_MAX_FILL = 0.8
 DEFAULT_MIN_FILL = 0.1
 """含负值时值域压缩的下界比例（L4 bar）。"""
 
-DEFAULT_GROUP_GAP = 96
+DEFAULT_GROUP_GAP = 120
 """相邻组边缘之间的空隙。"""
 
 DEFAULT_PLOT_LEFT_PAD = 28
@@ -118,6 +129,12 @@ DEFAULT_LEGEND_ITEM_GAP = 36
 
 DEFAULT_LEGEND_ROW_GAP = 18
 """图例多行时的行距。"""
+
+DEFAULT_LEGEND_LINE_FACTOR = 1.25
+"""图例文字行高系数（长标签换行时用）。"""
+
+DEFAULT_LEGEND_MAX_LINES = 3
+"""单个图例标签最多换几行；仍放不下时末行加省略号。"""
 
 DEFAULT_LEGEND_MARGIN = 20
 """图例带与相邻内容（标题 / 绘图区）的间距。"""

@@ -15,6 +15,7 @@ from stockchart import (
     sketch_axis,
     sketch_line,
 )
+from stockchart.text import wrap_text
 
 BG: Color = (250, 248, 243)
 
@@ -102,6 +103,38 @@ class TestDrawText:
         # 逐字符回退的布局契约：整串宽度 = 各字符宽度之和
         assert measure_text("wwww", size_px=30) == pytest.approx(4 * measure_text("w", size_px=30))
         assert measure_text("脱粉量", size_px=30) > 0
+
+    def test_rotation_makes_text_vertical(self) -> None:
+        c = blank()
+        draw_text(c, "ABC", 150, 100, size_px=30, anchor=("right", "top"), rotation=-90)
+        m = ink_mask(c)
+        assert m.any()
+        ys, xs = np.where(m)
+        assert np.ptp(ys) > np.ptp(xs)  # 竖排：高度明显大于宽度
+
+    def test_rotation_is_deterministic(self) -> None:
+        c1, c2 = blank(), blank()
+        for c in (c1, c2):
+            draw_text(c, "脱粉量", 150, 100, size_px=30, anchor=("right", "top"), rotation=-45)
+        assert (pixels(c1) == pixels(c2)).all()
+
+
+class TestWrapText:
+    def test_wraps_within_width(self) -> None:
+        text = "一二三四五六七八九十"
+        lines = wrap_text(text, max_width=60, size_px=20)
+        assert len(lines) > 1
+        assert "".join(lines) == text
+        assert all(measure_text(line, size_px=20) <= 60 for line in lines)
+
+    def test_max_lines_adds_ellipsis(self) -> None:
+        lines = wrap_text("一" * 100, max_width=40, size_px=20, max_lines=2)
+        assert len(lines) == 2
+        assert lines[-1].endswith("\u2026")
+        assert all(measure_text(line, size_px=20) <= 40 for line in lines)
+
+    def test_empty_text(self) -> None:
+        assert wrap_text("", max_width=100, size_px=20) == [""]
 
 
 class TestSketchLine:

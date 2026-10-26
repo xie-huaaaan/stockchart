@@ -17,6 +17,7 @@ from typing import Literal
 import numpy as np
 
 from stockchart.defaults import (
+    DEFAULT_AXIS_STYLE,
     DEFAULT_BAR_GAP,
     DEFAULT_GROUP_GAP,
     DEFAULT_MAX_FILL,
@@ -29,6 +30,7 @@ from stockchart.defaults import (
 from stockchart.legs import Leg
 from stockchart.library import LegLibrary
 from stockchart.plot import (
+    AxisStyle,
     BarPlot,
     BarSide,
     Scale,
@@ -131,6 +133,7 @@ def _assemble(
     extent_up: int,
     extent_down: int,
     x_label_pos: XLabelPos = "content",
+    axis_style: AxisStyle = DEFAULT_AXIS_STYLE,
     seed: int | None,
 ) -> tuple[BarPlot, list[list[list[_BarRecord]]]]:
     """按槽位建图并摆好腿，返回 (BarPlot, 与 specs 同构的柱记录)。"""
@@ -140,7 +143,13 @@ def _assemble(
         if width_px is not None
         else round(2 * _EDGE_PAD + sum(slots_px) + (len(specs) - 1) * slot_gap)
     )
-    plot = BarPlot(width, extent_up=extent_up, extent_down=extent_down, seed=seed)
+    plot = BarPlot(
+        width,
+        extent_up=extent_up,
+        extent_down=extent_down,
+        axis_style=axis_style,
+        seed=seed,
+    )
     records = plot._add_columns(
         specs,
         bar_gap=bar_gap,
@@ -188,14 +197,16 @@ def bar(
     min_fill: float = DEFAULT_MIN_FILL,
     y_extent: int = DEFAULT_Y_EXTENT,
     width_px: int | None = None,
+    axis_style: AxisStyle = DEFAULT_AXIS_STYLE,
     seed: int | None = None,
 ) -> BarPlot:
     """全朝上的柱状图：自动完成数据到丝袜高度的映射、选腿与布局。
 
     返回布局完毕的 BarPlot（可直接 .save() / .render()，也可继续手工微调）。
 
-    自动绘制手绘风 y 轴与基线；labels 传入时 x 标签自动与各组对齐；
-    画布宽缺省时按腿、间距与标签宽度自适应。
+    自动绘制 y 轴与基线；labels 传入时 x 标签自动与各组对齐；画布宽缺省时
+    按腿、间距与标签宽度自适应。坐标轴默认直线，axis_style="handdrawn"
+    改为手绘抖动。
 
     Args:
         data: 一维为单序列；二维为 (组数, 系列数) 的分组数据。
@@ -216,6 +227,7 @@ def bar(
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
         y_extent: 基线上方预留的像素高度。
         width_px: 画布宽；缺省按腿数、间距与标签宽度自适应。
+        axis_style: 坐标轴样式，"clean"（默认）为直线，"handdrawn" 为手绘抖动。
 
     数据 → 丝袜高度（基线对应的数据值默认 0）:
         - 全部数据为 0: 全部裸腿。
@@ -277,6 +289,7 @@ def bar(
         width_px=width_px,
         extent_up=y_extent,
         extent_down=0,
+        axis_style=axis_style,
         seed=seed,
     )
     if value_labels:
@@ -305,6 +318,7 @@ def mirror_bar(
     x_label_pos: XLabelPos = "auto",
     y_extent: int = DEFAULT_Y_EXTENT,
     width_px: int | None = None,
+    axis_style: AxisStyle = DEFAULT_AXIS_STYLE,
     seed: int | None = None,
 ) -> BarPlot:
     """正负镜像柱状图：正值画基线上方腿，负值画下方翻转腿（脚贴基线）。
@@ -326,6 +340,7 @@ def mirror_bar(
             贴着基线、选没有腿的一侧——例如全负数据标签在基线上方，标签
             紧邻轴而不是挂在最低腿之下；正负混合或 mode="both" 时两侧都有腿，
             退回 "content" 画在全部内容最低点之下。
+        axis_style: 坐标轴样式，"clean"（默认）为直线，"handdrawn" 为手绘抖动。
 
     规则:
         - 比例 = max_abs_fill × y_extent / max|v|，正负同比例。
@@ -388,6 +403,7 @@ def mirror_bar(
         extent_up=y_extent,
         extent_down=0,
         x_label_pos=x_label_pos,
+        axis_style=axis_style,
         seed=seed,
     )
     if value_labels:

@@ -177,6 +177,53 @@ def main() -> None:
         "10_mirror_grouped.png",
     )
 
+    # 11 过长的 x 标签：固定宽度下自动倾斜避让
+    p11 = BarPlot(1200, seed=11)
+    xs11 = [150.0, 450.0, 750.0, 1050.0]
+    long_labels = [
+        "超长的第一个月份标签",
+        "超长的第二个月份标签",
+        "超长的第三个月份标签",
+        "超长的第四个月份标签",
+    ]
+    for i, x in enumerate(xs11):
+        p11.add_bar(x, 300 + 60 * i, LIB.get(f"leg_{i * 4 + 1:02d}"), style="gray_sheer")
+    p11.add_x_labels(long_labels, xs=xs11)
+    p11.add_y_axis(Scale((0, 600), (0, 760)), label="数量")
+    p11.add_title("长 x 标签自动倾斜")
+    save(p11, "11_long_x_labels.png")
+
+    # 12 过长的图例标签：自动换行（最多三行，仍放不下则省略）
+    save(
+        bar(
+            [[3, 4], [5, 2], [4, 6]],
+            labels=["一月", "二月", "三月"],
+            series_labels=[
+                "一个非常非常非常非常非常非常非常非常非常非常非常非常非常长的系列名称"
+                "（后半段继续很长很长很长很长很长很长很长很长）",
+                "另一个同样很长但略短一些的系列名称",
+            ],
+            title="长图例标签自动换行",
+            style=["black_sheer", "white_sheer"],
+            seed=12,
+        ),
+        "12_long_legend.png",
+    )
+
+    # 13 手绘风坐标轴（默认 clean，仅显式开启时抖动）
+    save(
+        bar(
+            [320, 480, 250, 560, 410],
+            labels=["一月", "二月", "三月", "四月", "五月"],
+            title="手绘风坐标轴（可选）",
+            style="gray_sheer",
+            value_labels=True,
+            axis_style="handdrawn",
+            seed=13,
+        ),
+        "13_axis_handdrawn.png",
+    )
+
 
 if __name__ == "__main__":
     main()

@@ -8,8 +8,10 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 - ✅ L0 素材层（`legs.py`/`library.py`/`src/stockchart/assets/`）与 L1 丝袜渲染原语
   （`stocking/`：`render_stocking`、`StockingStyle` 及 19 个 `STYLES` 预设）完成并经用户评审；
 - ✅ L1 文字与线条（`canvas.py`/`text.py`/`sketch.py`）、L2 `Scale`/`BarPlot`（`plot.py`）、
-  L3 `add_bars` 系列与 L4 `bar`/`mirror_bar`（`topline.py`）完成；单测 145 项；
+  L3 `add_bars` 系列与 L4 `bar`/`mirror_bar`（`topline.py`）完成；单测 162 项；
   视觉观感（间距、刻度、标签、图例、光影）已评审通过；
+- ✅ 绘制细节补齐：坐标轴默认直线（`axis_style="clean"`，手绘抖动可选）、
+  x 标签过长自动倾斜避让、图例长标签自动折行/省略、默认组间距 120；
 - ✅ 渲染倍率原生：`render_stocking(scale=)` 在目标像素空间生成袜身纹理与光影，
   `BarPlot.render(scale=)` 位图按 1:1 贴图；内置素材只存**透明 SVG**
   （`src/stockchart/assets/leg_XX.svg`），渲染时按目标倍率栅格化，不再存位图；
@@ -35,6 +37,11 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
 - **skia 的 SVG clipPath 只在固有尺寸下正确**：`vector.rasterize_svg` 先按
   SVG 固有尺寸（设计 × 4）渲染，再 Lanczos 缩放到目标；不要在别处直接把
   SVG 容器缩放到目标尺寸。
+- **坐标轴默认不成手绘风**：`axis_style="clean"` 为默认（直线轴线/箭头/刻度/网格），
+  `"handdrawn"` 才启用 seed 控制的抖动。评审认为默认手绘观感不佳。
+- **长标签用主流库的避让方式**：x 标签默认 `rotation="auto"`，相邻标签相压时
+  逐级尝试 45°/60°/75°/90° 并补足画布边距；图例标签超过行宽自动折行（最多 3 行，
+  仍放不下末行省略），不靠无限加宽画布。`rotation=0` 可关闭倾斜。
 
 ## 环境与命令
 
@@ -109,7 +116,11 @@ stockchart：创意绘图库，用丝袜（stocking）的高度表示数据大�
   内置 SVG 素材按目标倍率栅格化（skia 固有尺寸渲染后缩放），外部位图按比例重采样，
   图层按设备像素 1:1 贴图。
 - 文字走 skia，字体选择见 docs/design.md"字体"一节：逐字符回退，保证中文可显示；
-  找不到字形时用"豆腐块"而不是抛异常。
+  找不到字形时用"豆腐块"而不是抛异常。单行绘制原语 `draw_text(rotation=)` 绕
+  锚点旋转；多行由 `wrap_text` 与调用方排版（图例）。
+- 坐标轴样式由 `BarPlot(axis_style=)` 决定，L4 同名参数透传；默认 `"clean"`。
+- x 标签在相邻位置放不下时自动倾斜（角度随位置在基线上/下取正负），用旋转后的
+  包围盒计算上下/左右边距；图例长标签在可用宽度内折行。
 - 输出格式：PNG 文件，以及内存中的 numpy 数组 / PIL Image。不做 SVG/PDF（理由见"已定决策"）。
 
 ## 版本管理（Git）
