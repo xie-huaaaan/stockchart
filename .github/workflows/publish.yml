@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - name: Rewrite README links to absolute URLs (PyPI has no repo context)
-        run: uv run python tools/pypi_readme.py README.md --in-place
+      - name: Compose bilingual README with absolute URLs (PyPI has no repo context)
+        run: uv run python tools/pypi_readme.py README.md README.zh-CN.md --in-place
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@release/v1
