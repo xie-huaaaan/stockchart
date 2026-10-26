@@ -69,21 +69,24 @@ def render_stocking(
     """
     if scale <= 0:
         raise ValueError(f"scale 须为正数，得到 {scale}")
-    if scale != 1.0:
-        leg = _resample_leg(leg, scale)
-        style = scale_style(style, scale)
-        height_px = round(height_px * scale)
+
+    # 图像密度统一到 scale（素材更密则降采样，更疏则升采样），元数据保持设计像素
+    leg = _resample_leg(leg, scale)
+    density = leg.pixels_per_unit
+    if density != 1.0:
+        style = scale_style(style, density)
+        height_px = round(height_px * density)
 
     if height_px <= 0:
         if style.shading.skin <= 0:
             return leg
         # 裸腿也要参与皮肤光影，否则同一张图里裸腿比穿袜腿少一层受光
-        return _shade_bare_leg(leg, style, scale)
+        return _shade_bare_leg(leg, style)
 
-    height_px = min(height_px, leg.height)
+    H, W = leg.image.shape[:2]
+    height_px = min(height_px, H)
     rng = np.random.default_rng(seed if seed is not None else 0)
 
-    H, W = leg.height, leg.width
     src = leg.image.astype(np.float64) / 255.0  # (H, W, 4) float64 [0,1]
 
     # 腿的 alpha mask（0/1 float）
@@ -137,8 +140,9 @@ def render_stocking(
     # Fade：渐隐沿弧线自袜口顶端向下 length 像素内完成（顶端透明，底端全显）
     fade_ramp: NDArray[np.float64] | None = None
     if isinstance(style.top, Fade):
-        fade_ramp = np.clip((ys_grid - top_arc) / max(style.top.length, 1.0), 0.0, 1.0)
-        fabric_layer[..., 3] *= fade_ramp
+        ramp = np.clip((ys_grid - top_arc) / max(style.top.length, 1.0), 0.0, 1.0)
+        fade_ramp = ramp
+        fabric_layer[..., 3] *= ramp
 
     # 光影：袜身用全强度与冷色阴影；袜口以上的裸皮按 Shading.skin 强度并换成
     # 暖色阴影（冷紫落在皮肤上会显脏）。两层按覆盖率加权合并后一次应用。
@@ -831,23 +835,31 @@ def _composite(
     return result
 
 
-def _resample_leg(leg: Leg, scale: float) -> Leg:
-    """按倍率重采样腿图，尺寸与足底元数据同步放大。
+def _resample_leg(leg: Leg, density: float) -> Leg:
+    """把腿图重采样到 density 个像素/设计像素；元数据仍是设计像素。
 
+    素材比目标更密时降采样（画质最好，也保证高清素材被真正利用），否则升采样。
     先乘 alpha 再插值（预乘），否则透明区的黑色会被插值拉进边缘形成暗边。
     """
-    h2 = max(1, round(leg.height * scale))
-    w2 = max(1, round(leg.width * scale))
+    if abs(leg.pixels_per_unit - density) < 1e-9:
+        return leg
+    h_img, w_img = leg.image.shape[:2]
+    h2 = max(1, round(h_img * density / leg.pixels_per_unit))
+    w2 = max(1, round(w_img * density / leg.pixels_per_unit))
     from PIL import Image
 
+    # 降采样用 Lanczos（保细节），升采样用双三次（避免振铃）
+    resample = (
+        Image.Resampling.LANCZOS if density < leg.pixels_per_unit else Image.Resampling.BICUBIC
+    )
     src = leg.image.astype(np.float64) / 255.0
     a = src[..., 3:4]
     pm = src[..., :3] * a
     rgb = Image.fromarray((np.clip(pm, 0, 1) * 255).round().astype(np.uint8)).resize(
-        (w2, h2), Image.Resampling.BICUBIC
+        (w2, h2), resample
     )
     al = Image.fromarray((np.clip(a[..., 0], 0, 1) * 255).round().astype(np.uint8)).resize(
-        (w2, h2), Image.Resampling.BICUBIC
+        (w2, h2), resample
     )
     out = np.dstack(
         [
@@ -859,16 +871,13 @@ def _resample_leg(leg: Leg, scale: float) -> Leg:
     return replace(
         leg,
         image=(np.clip(out, 0, 1) * 255).round().astype(np.uint8),
-        width=w2,
-        height=h2,
-        foot_center_x=round(leg.foot_center_x * scale),
-        foot_width=round(leg.foot_width * scale),
+        pixels_per_unit=density,
     )
 
 
-def _shade_bare_leg(leg: Leg, style: StockingStyle, scale: float = 1.0) -> Leg:
-    """给裸腿整体打上皮肤光影（不画袜子）。scale 只用于保持接口一致。"""
-    H, W = leg.height, leg.width
+def _shade_bare_leg(leg: Leg, style: StockingStyle) -> Leg:
+    """给裸腿整体打上皮肤光影（不画袜子）。"""
+    H, W = leg.image.shape[:2]
     src = leg.image.astype(np.float64) / 255.0
     alpha = src[..., 3]
     prof = _column_profile(alpha)

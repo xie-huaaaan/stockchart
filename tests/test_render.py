@@ -224,9 +224,12 @@ class TestRenderScale:
     def test_dims_and_metadata_scale(self) -> None:
         leg = make_synthetic_leg(720, 160)
         out = render_stocking(leg, STYLES["black_sheer"], 400, seed=1, scale=2)
-        assert (out.height, out.width) == (1440, 320)
-        assert out.foot_center_x == 2 * leg.foot_center_x
-        assert out.foot_width == 2 * leg.foot_width
+        # 图像按倍率加密，设计坐标（供上层布局使用）保持不变
+        assert out.image.shape[:2] == (1440, 320)
+        assert out.pixels_per_unit == 2
+        assert (out.height, out.width) == (720, 160)
+        assert out.foot_center_x == leg.foot_center_x
+        assert out.foot_width == leg.foot_width
 
     def test_bad_scale(self) -> None:
         leg = make_synthetic_leg(720, 160)
@@ -244,10 +247,23 @@ class TestRenderScale:
         # 高频条纹在降采样时会有少量差异，整体应高度一致
         assert diff.mean() < 12
 
-    def test_bare_leg_scale_doubles_size(self) -> None:
+    def test_bare_leg_scale_doubles_image(self) -> None:
         leg = make_synthetic_leg(720, 160)
         out = render_stocking(leg, STYLES["black_sheer"], 0, scale=2)
-        assert out.height == 1440
+        assert out.image.shape[:2] == (1440, 320)
+        assert out.pixels_per_unit == 2
+
+    def test_dense_asset_is_downsampled_not_upscaled(self) -> None:
+        """2 倍密素材在 1 倍输出下应降采样，设计坐标不变。"""
+        base = make_synthetic_leg(720, 160)
+        hi_img = np.asarray(Image.fromarray(base.image).resize((base.width * 2, base.height * 2)))
+        hi = replace(base, image=hi_img, pixels_per_unit=2.0)
+        out = render_stocking(hi, STYLES["black_sheer"], 400, seed=1)
+        assert out.image.shape[:2] == (720, 160)
+        assert out.pixels_per_unit == 1.0
+        # 2 倍输出则直接用素材本身，不再放大
+        out2 = render_stocking(hi, STYLES["black_sheer"], 400, seed=1, scale=2)
+        assert out2.image.shape[:2] == (1440, 320)
 
 
 # ---------------------------------------------------------------------------

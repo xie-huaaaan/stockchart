@@ -61,12 +61,17 @@ class Canvas:
 class Leg:
     """一条腿部素材：RGBA 像素与定位元数据。
 
+    宽高、足底中心、足宽等元数据一律使用**设计像素**（腿高 720 的坐标系），
+    与图像的实际密度无关；`pixels_per_unit` 描述"图像像素 / 设计像素"。
+
     Attributes:
         image: (H, W, 4) uint8；脚在图像底端、素材正放。
-        width: 像素宽。
-        height: 像素高。
-        foot_center_x: 足底中心在图内的 x 坐标，放置对齐的锚点。
-        foot_width: 足底宽度（像素）。
+        width: 设计像素宽。
+        height: 设计像素高。
+        foot_center_x: 足底中心在设计坐标系里的 x，放置对齐的锚点。
+        foot_width: 足底宽度（设计像素）。
+        pixels_per_unit: 图像像素 / 设计像素；1 为素材即设计尺寸，
+            2 表示图像是设计尺寸的两倍密（渲染时按需降采样，不重复放大）。
         leg_id: 内置素材编号（如 "leg_03"）；外部素材为 None。
         pair_id: 所属配对编号（如 "pair_02"）；外部素材为 None。
         side: "left" / "right"；外部素材为 None。
@@ -77,6 +82,7 @@ class Leg:
     height: int
     foot_center_x: int
     foot_width: int
+    pixels_per_unit: float = 1.0
     leg_id: str | None = None
     pair_id: str | None = None
     side: Literal["left", "right"] | None = None
@@ -245,11 +251,13 @@ def render_stocking(
             图层按 1:1 贴图即可得到 scale 倍的输出。
 
     Returns:
-        新的 Leg：像素已替换，元数据与原素材一致（`scale != 1` 时按倍率放大）。
+        新的 Leg：像素已替换，设计坐标元数据与素材一致；`scale != 1` 时
+        图像按倍率加密（`pixels_per_unit == scale`），供 1:1 贴图。
 
     约定：本函数是丝袜渲染算法的对外契约（算法由独立设计实现）。始终在素材
     自身坐标系内从脚端向上渲染；腿的上下翻转由上层放置时处理（翻转与渲染
-    先后等价，不在此层做）。`scale` 只是把渲染空间等比例放大，几何语义不变。
+    先后等价，不在此层做）。`scale` 只是把渲染空间等比例放大，几何语义不变；
+    素材本身比目标更密时按需降采样（高清素材不会被重复放大）。
     """
 ```
 
