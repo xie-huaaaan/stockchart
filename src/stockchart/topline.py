@@ -32,6 +32,8 @@ from stockchart.plot import (
     BarPlot,
     BarSide,
     Scale,
+    StyleCycle,
+    XLabelPos,
     _BarRecord,
     _format_tick,
     _LegSpec,
@@ -41,6 +43,7 @@ from stockchart.stocking import StyleSeq
 from stockchart.text import measure_text
 
 type NestedData = Sequence[float] | Sequence[Sequence[float]]
+type CycleMode = Literal["auto", "group", "sequence"]
 
 # 槽位两端的呼吸边距与标签加宽余量（默认值级别，不在 L4 参数中暴露）
 _EDGE_PAD = DEFAULT_BAR_GAP
@@ -127,6 +130,7 @@ def _assemble(
     width_px: int | None,
     extent_up: int,
     extent_down: int,
+    x_label_pos: XLabelPos = "content",
     seed: int | None,
 ) -> tuple[BarPlot, list[list[list[_BarRecord]]]]:
     """按槽位建图并摆好腿，返回 (BarPlot, 与 specs 同构的柱记录)。"""
@@ -145,7 +149,7 @@ def _assemble(
         lead=_EDGE_PAD,
     )
     if labels is not None:
-        plot.add_x_labels(list(labels))
+        plot.add_x_labels(list(labels), pos=x_label_pos)
     if title is not None:
         plot.add_title(title)
     return plot, records
@@ -157,6 +161,18 @@ def _check_labels(labels: Sequence[str] | None, n: int) -> Sequence[str] | None:
     return labels
 
 
+def _resolve_cycle(cycle: CycleMode, *, is_1d: bool) -> StyleCycle:
+    """解析样式循环方式：auto 一维按整体循环（组内循环会退化为全同）、二维按组内位置。"""
+    if cycle != "auto":
+        return cycle
+    return "sequence" if is_1d else "group"
+
+
+def _style_index(cycle: StyleCycle, *, g: int, s: int, series: int) -> int:
+    """某根柱在样式列表中的序号：整体循环按绘制顺序，组内循环只看系列位置。"""
+    return g * series + s if cycle == "sequence" else s
+
+
 def bar(
     data: NestedData,
     *,
@@ -164,8 +180,10 @@ def bar(
     series_labels: Sequence[str] | None = None,
     title: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
+    cycle: CycleMode = "auto",
     paired: bool = True,
     value_labels: bool = False,
+    grid: bool = False,
     max_fill: float = DEFAULT_MAX_FILL,
     min_fill: float = DEFAULT_MIN_FILL,
     y_extent: int = DEFAULT_Y_EXTENT,
@@ -184,11 +202,16 @@ def bar(
         labels: 每组（无分组时每根柱）一个标签。
         series_labels: 每系列一个名字，传入即自动生成图例（marker 为各系列
             样式的织物色块）。仅二维数据可用，一维数据传入抛 ValueError。
-        style: 单个样式，或样式列表——一维按柱序循环；二维按组内位置循环
-            （列表长度等于系列数时即"每系列一个样式"）。
+        style: 单个样式，或样式列表——循环方式由 cycle 决定。
+        cycle: "group" 按组内位置循环（组内第 i 根取 styles[i % len]），
+            "sequence" 按全部柱子的绘制顺序循环；"auto"（默认）一维取
+            "sequence"（每根柱按顺序取样式）、二维取 "group"（长度等于系列数
+            时即"每系列一个样式"）。二维数据下 "sequence" 无法与图例的系列
+            样式对应，同时传 series_labels 抛 ValueError。
         paired: 仅当数据恰好 2 系列时生效（默认 True）：每组使用同一对素材，
             系列 0 左腿、系列 1 右腿；其余系列数时忽略此参数。
         value_labels: True 时在袜口上方手写数值。
+        grid: True 时沿 y 轴各刻度画横向手绘虚线（浅色，压在腿与袜之下）。
         max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
         y_extent: 基线上方预留的像素高度。
@@ -205,6 +228,9 @@ def bar(
     if series_labels is not None and is_1d:
         raise ValueError("series_labels 仅支持二维（分组）数据；一维数据请用 labels")
     series = _series_count(rows) if not is_1d else 1
+    mode = _resolve_cycle(cycle, is_1d=is_1d)
+    if series_labels is not None and mode == "sequence":
+        raise ValueError("series_labels 需要固定的系列样式，请用 cycle='group'")
     _check_labels(labels, len(rows))
 
     rng = random.Random(DEFAULT_SEED if seed is None else seed)
@@ -237,7 +263,8 @@ def bar(
     for g, row in enumerate(rows):
         slot: list[list[_LegSpec]] = []
         for s in range(len(row)):
-            slot.append([_LegSpec(legs[g][s], heights[g][s], "up", styles[s % len(styles)])])
+            idx = _style_index(mode, g=g, s=s, series=len(row))
+            slot.append([_LegSpec(legs[g][s], heights[g][s], "up", styles[idx % len(styles)])])
         specs.append(slot)
 
     slot_gap = DEFAULT_BAR_GAP if is_1d else DEFAULT_GROUP_GAP
@@ -256,7 +283,7 @@ def bar(
         for g, row in enumerate(rows):
             for s, v in enumerate(row):
                 records[g][s][0].value_label = _format_tick(v)
-    plot.add_y_axis(scale, ticks=ticks)
+    plot.add_y_axis(scale, ticks=ticks, grid=grid)
     if series_labels is not None:
         plot.add_legend([(series_labels[s], styles[s % len(styles)]) for s in range(series)])
     return plot
@@ -270,26 +297,35 @@ def mirror_bar(
     series_labels: Sequence[str] | None = None,
     title: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
+    cycle: CycleMode = "auto",
     paired: bool = True,
     value_labels: bool = False,
+    grid: bool = False,
     max_abs_fill: float = DEFAULT_MAX_FILL,
+    x_label_pos: XLabelPos = "auto",
     y_extent: int = DEFAULT_Y_EXTENT,
     width_px: int | None = None,
     seed: int | None = None,
 ) -> BarPlot:
     """正负镜像柱状图：正值画基线上方腿，负值画下方翻转腿（脚贴基线）。
 
-    x 标签锚定在全部内容最低点之下（含朝下腿），y 轴随负刻度向下延伸。
+    y 轴随负刻度向下延伸。
 
     Args:
         mode: "single" 只画数据侧的腿；"both" 上下都画，数据侧穿丝袜、
             另一侧裸腿。
-        labels: 每组（无分组时每根柱）一个标签，画在全部内容最低点之下。
+        labels: 每组（无分组时每根柱）一个标签。
         series_labels: 语义同 bar()。
         style: 语义同 bar()。
+        cycle: 语义同 bar()。
         paired: 语义同 bar()。
         value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
+        grid: 语义同 bar()。
         max_abs_fill: 最大绝对值映射到 y_extent 的比例（默认 0.8）。
+        x_label_pos: x 标签位置（语义见 BarPlot.add_x_labels）。默认 "auto"：
+            贴着基线、选没有腿的一侧——例如全负数据标签在基线上方，标签
+            紧邻轴而不是挂在最低腿之下；正负混合或 mode="both" 时两侧都有腿，
+            退回 "content" 画在全部内容最低点之下。
 
     规则:
         - 比例 = max_abs_fill × y_extent / max|v|，正负同比例。
@@ -300,6 +336,9 @@ def mirror_bar(
     if series_labels is not None and is_1d:
         raise ValueError("series_labels 仅支持二维（分组）数据；一维数据请用 labels")
     series = _series_count(rows) if not is_1d else 1
+    mode_cycle = _resolve_cycle(cycle, is_1d=is_1d)
+    if series_labels is not None and mode_cycle == "sequence":
+        raise ValueError("series_labels 需要固定的系列样式，请用 cycle='group'")
     _check_labels(labels, len(rows))
 
     rng = random.Random(DEFAULT_SEED if seed is None else seed)
@@ -326,7 +365,8 @@ def mirror_bar(
     for g, row in enumerate(rows):
         slot: list[list[_LegSpec]] = []
         for s, v in enumerate(row):
-            st = styles[s % len(styles)]
+            idx = _style_index(mode_cycle, g=g, s=s, series=len(row))
+            st = styles[idx % len(styles)]
             h = abs(v) * ratio
             side: BarSide = "up" if v >= 0 else "down"
             # 数据侧在首位，value_labels 只标数据侧
@@ -347,13 +387,14 @@ def mirror_bar(
         width_px=width_px,
         extent_up=y_extent,
         extent_down=0,
+        x_label_pos=x_label_pos,
         seed=seed,
     )
     if value_labels:
         for g, row in enumerate(rows):
             for s, v in enumerate(row):
                 records[g][s][0].value_label = _format_tick(v)
-    plot.add_y_axis(scale, ticks=ticks)
+    plot.add_y_axis(scale, ticks=ticks, grid=grid)
     if series_labels is not None:
         plot.add_legend([(series_labels[s], styles[s % len(styles)]) for s in range(series)])
     return plot

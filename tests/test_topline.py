@@ -79,6 +79,44 @@ class TestBarLayout:
             assert bars[g * 3 + 1].style is STYLES["white_tights"]
             assert bars[g * 3 + 2].style is STYLES["black_tights"]
 
+    def test_1d_style_cycles_by_bar_default(self) -> None:
+        """一维数据默认按柱序循环：每根柱拿到自己的样式（组内循环会退化为全同）。"""
+        p = bar(
+            [1.0, 2.0, 3.0, 4.0],
+            style=["black_tights", "white_tights", "knit_cream"],
+            seed=1,
+        )
+        got = [b.style for b in p._bars]
+        assert got == [
+            STYLES["black_tights"],
+            STYLES["white_tights"],
+            STYLES["knit_cream"],
+            STYLES["black_tights"],
+        ]
+
+    def test_1d_group_cycle_keeps_first_style(self) -> None:
+        p = bar([1.0, 2.0, 3.0], style=["black_tights", "white_tights"], cycle="group", seed=1)
+        assert all(b.style is STYLES["black_tights"] for b in p._bars)
+
+    def test_2d_sequence_cycle(self) -> None:
+        p = bar(
+            [[1.0, 2.0], [3.0, 4.0]],
+            style=["black_tights", "white_tights", "knit_cream"],
+            cycle="sequence",
+            seed=1,
+        )
+        got = [b.style for b in p._bars]
+        assert got == [
+            STYLES["black_tights"],
+            STYLES["white_tights"],
+            STYLES["knit_cream"],
+            STYLES["black_tights"],
+        ]
+
+    def test_sequence_cycle_rejects_series_labels(self) -> None:
+        with pytest.raises(ValueError):
+            bar([[1.0, 2.0]], series_labels=["甲", "乙"], cycle="sequence", seed=1)
+
     def test_paired_same_pair_per_group(self) -> None:
         p = bar([[1.0, 2.0], [3.0, 4.0]], seed=1)
         bars = p._bars

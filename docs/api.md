@@ -389,9 +389,15 @@ class BarPlot:
         labels: Sequence[str],
         *,
         xs: Sequence[float] | None = None,
+        pos: Literal["content", "auto", "above", "below"] = "content",
     ) -> BarPlot:
-        """添加 x 轴标签：画在全部内容最低点之下（含朝下腿与 y 轴向下延伸的
-        部分），与基线解耦——没有下方内容时自然贴着基线下方。
+        """添加 x 轴标签。pos 决定标签写在哪儿：
+
+        - "content"（默认）：全部内容最低点之下（含朝下腿与 y 轴向下延伸的
+          部分），与基线解耦——没有下方内容时自然贴着基线下方；
+        - "auto"：紧贴基线、选没有柱子的一侧（上方无腿→基线上方，下方无
+          腿→基线下方，两侧都有腿→退回 "content"）；
+        - "above" / "below"：强制写在基线上方 / 下方，该侧有腿时会与腿重叠。
 
         xs 缺省沿宽度均分；与 add_bars 系列方法配合时自动对齐组中心。
         """
@@ -451,14 +457,16 @@ def add_grouped_bars(
     bar_gap: float = DEFAULT_BAR_GAP,
     group_gap: float = DEFAULT_GROUP_GAP,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
+    cycle: Literal["group", "sequence"] = "group",
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
     """(组数, 系列数) 的像素高度：组内用 bar_gap、组间用 group_gap，
     跨列按左、右、左、右……交替选腿。
 
-    style 为列表时按组内位置循环：组内第 i 根用 styles[i % len]。
-    列表长度等于系列数时即"每系列一个样式"，同一系列全图样式一致。
+    style 为列表时按 cycle 取用："group"（默认）按组内位置循环，组内第 i 根
+    用 styles[i % len]，列表长度等于系列数时即"每系列一个样式"；"sequence"
+    按全部柱子的绘制顺序循环（组 0 第 0 根、组 0 第 1 根、组 1 第 0 根……）。
     """
 
 
@@ -468,13 +476,15 @@ def add_paired_bars(
     *,
     group_gap: float = DEFAULT_GROUP_GAP,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
+    cycle: Literal["group", "sequence"] = "group",
     pairs: Sequence[tuple[Leg, Leg]] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
     """每组恰好 2 个值：同组使用同一对素材，系列 0 左腿、系列 1 右腿。
 
-    style 为列表时按组内位置循环（系列 0 取 styles[0]、系列 1 取
-    styles[1 % len]）。pairs 缺省时自动选取不重复的素材对。
+    style 为列表时按 cycle 取用（"group" 默认：系列 0 取 styles[0]、系列 1
+    取 styles[1 % len]；"sequence" 按全部柱子的绘制顺序循环）。
+    pairs 缺省时自动选取不重复的素材对。
     """
 ```
 
@@ -491,8 +501,10 @@ def bar(
     series_labels: Sequence[str] | None = None,
     title: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
+    cycle: Literal["auto", "group", "sequence"] = "auto",
     paired: bool = True,
     value_labels: bool = False,
+    grid: bool = False,
     max_fill: float = 0.8,
     min_fill: float = 0.1,
     y_extent: int = DEFAULT_Y_EXTENT,
@@ -512,11 +524,17 @@ def bar(
         labels: 每组（无分组时每根柱）一个标签。
         series_labels: 每系列一个名字，传入即自动生成图例（marker 为各系列
             样式的织物色块）。仅二维数据可用，一维数据传入抛 ValueError。
-        style: 单个样式，或样式列表——一维按柱序循环；二维按组内位置循环
-            （列表长度等于系列数时即"每系列一个样式"）。
+        style: 单个样式，或样式列表——循环方式由 cycle 决定。
+        cycle: 样式列表的循环方式："group" 按组内位置（组内第 i 根用
+            styles[i % len]，列表长度等于系列数时即"每系列一个样式"）；
+            "sequence" 按全部柱子的绘制顺序循环；"auto"（默认）一维数据
+            取 "sequence"（即每根柱按顺序取样式）、二维数据取 "group"。
+            二维数据下 "sequence" 与 series_labels 无法对应固定的系列样式，
+            同时传入抛 ValueError。
         paired: 仅当数据恰好 2 系列时生效（默认 True）：每组使用同一对素材，
             系列 0 左腿、系列 1 右腿；其余系列数时忽略此参数。
         value_labels: True 时在袜口上方手写数值。
+        grid: True 时沿 y 轴各刻度画横向手绘虚线（浅色，压在腿与袜之下）。
         max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
         y_extent: 基线上方预留的像素高度。
@@ -539,9 +557,12 @@ def mirror_bar(
     series_labels: Sequence[str] | None = None,
     title: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
+    cycle: Literal["auto", "group", "sequence"] = "auto",
     paired: bool = True,
     value_labels: bool = False,
+    grid: bool = False,
     max_abs_fill: float = 0.8,
+    x_label_pos: Literal["content", "auto", "above", "below"] = "auto",
     y_extent: int = DEFAULT_Y_EXTENT,
     width_px: int | None = None,
     seed: int | None = None,
@@ -551,12 +572,18 @@ def mirror_bar(
     Args:
         mode: "single" 只画数据侧的腿；"both" 上下都画，数据侧穿丝袜、
             另一侧裸腿。
-        labels: 每组（无分组时每根柱）一个标签，画在全部内容最低点之下。
+        labels: 每组（无分组时每根柱）一个标签。
         series_labels: 语义同 bar()。
         style: 语义同 bar()。
+        cycle: 语义同 bar()。
         paired: 语义同 bar()。
         value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
+        grid: 语义同 bar()。
         max_abs_fill: 最大绝对值映射到 y_extent 的比例（默认 0.8）。
+        x_label_pos: x 标签位置（语义见 add_x_labels 的 pos）。镜像图常有一侧
+            全空，默认 "auto" 会把标签贴到没有腿的一侧的基线旁（如全负数据
+            标签在基线上方）；两侧都有腿（正负混合或 mode="both"）时退回
+            "content"，画在全部内容最低点之下。
 
     规则:
         - 比例 = max_abs_fill × y_extent / max|v|，正负同比例。

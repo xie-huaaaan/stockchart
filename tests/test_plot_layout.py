@@ -83,6 +83,21 @@ class TestAddGroupedBars:
                 expect = [STYLES["black_tights"], STYLES["white_tights"], STYLES["knit_cream"]][s]
                 assert bars[g * 3 + s].style is expect
 
+    def test_style_sequence_cycles_across_all_bars(self) -> None:
+        p = BarPlot(4000, seed=2)
+        p.add_grouped_bars(
+            [[100.0, 200.0], [150.0, 250.0]],
+            style=["black_tights", "white_tights", "knit_cream"],
+            cycle="sequence",
+        )
+        got = [b.style for b in p._bars]
+        assert got == [
+            STYLES["black_tights"],
+            STYLES["white_tights"],
+            STYLES["knit_cream"],
+            STYLES["black_tights"],
+        ]
+
     def test_group_gap_between_groups(self) -> None:
         p = BarPlot(4000, seed=2)
         p.add_grouped_bars([[100.0, 100.0], [100.0, 100.0]], bar_gap=10, group_gap=80)
@@ -127,6 +142,21 @@ class TestAddPairedBars:
         p.add_paired_bars([(100.0, 200.0)], style=["black_tights", "white_tights"])
         assert p._bars[0].style is STYLES["black_tights"]
         assert p._bars[1].style is STYLES["white_tights"]
+
+    def test_style_sequence_spans_groups(self) -> None:
+        p = BarPlot(2000, seed=5)
+        p.add_paired_bars(
+            [(100.0, 200.0), (300.0, 400.0)],
+            style=["black_tights", "white_tights", "knit_cream"],
+            cycle="sequence",
+        )
+        got = [b.style for b in p._bars]
+        assert got == [
+            STYLES["black_tights"],
+            STYLES["white_tights"],
+            STYLES["knit_cream"],
+            STYLES["black_tights"],
+        ]
 
     def test_explicit_pairs_length_mismatch(self) -> None:
         p = BarPlot(2000)

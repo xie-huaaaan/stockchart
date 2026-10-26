@@ -67,6 +67,8 @@ from stockchart.text import TextAnchor, draw_text, measure_text
 
 type BarSide = Literal["up", "down"]
 type LegendLoc = Literal["top", "bottom"]
+type XLabelPos = Literal["content", "auto", "above", "below"]
+type StyleCycle = Literal["group", "sequence"]
 
 
 def _resolve_style(style: StyleLike) -> StockingStyle:
@@ -85,6 +87,15 @@ def _normalize_style_seq(style: StyleSeq) -> list[StockingStyle]:
     if not styles:
         raise ValueError("style 列表不能为空")
     return [_resolve_style(s) for s in styles]
+
+
+def _cycle_styles(styles: Sequence[StockingStyle], n: int) -> list[StockingStyle]:
+    """把样式列表按绘制顺序展开为 n 根柱各自的样式（不足则从头循环）。
+
+    调用方决定切片起点：按组内位置循环时每组取头部，按整体循环时沿展开
+    结果连续切片。
+    """
+    return [styles[i % len(styles)] for i in range(n)]
 
 
 @dataclass(slots=True, frozen=True)
@@ -174,6 +185,7 @@ class _XLabelsRecord:
 
     labels: list[str]
     xs: list[float] | None
+    pos: XLabelPos = "content"
 
 
 @dataclass(slots=True)
@@ -200,7 +212,8 @@ class _Layout:
     y_label_x: float = 0.0  # y 轴标题（纵向排列）中心的画布 x
     y_up_len: float = 0.0  # y 轴干线向上长度（标题纵向居中用）
     legend_top_y: float = 0.0  # 顶部图例首行的画布 y
-    x_label_top: float | None = None
+    x_label_y: float | None = None  # x 标签锚点的画布 y
+    x_label_baseline: bool = False  # True: 标签底边锚定（写在基线之上）
     legend_bottom_y: float | None = None
 
 
@@ -216,26 +229,44 @@ def _skia_image(arr: NDArray[np.uint8]) -> skia.Image:
     return skia.Image.fromarray(np.ascontiguousarray(arr[:, :, [2, 1, 0, 3]]))
 
 
-def _nice_ticks(domain: tuple[float, float]) -> list[float]:
-    """按 1/2/2.5/5×10^k 的整步长取刻度（约 5 个），domain 含 0 时必有 0 刻度。"""
+def _nice_ticks(domain: tuple[float, float], *, max_ticks: int = 7) -> list[float]:
+    """按 1/2/2.5/5×10^k 的整步长取刻度，取能放进 max_ticks 个的最小步长。
+
+    domain 含 0 时 0 必为步长整数倍、因而必在刻度中；负区间同样按步长取到，
+    避免含负值的值域出现"轴向下延伸但下方一个刻度都没有"的空段。
+    """
     lo, hi = domain
     span = hi - lo
     if span <= 0:
         return [lo]
-    raw = span / 4
-    mag = 10.0 ** math.floor(math.log10(raw))
-    step = 10.0 * mag
-    for mult in (1.0, 2.0, 2.5, 5.0):
-        if mult * mag >= raw - 1e-12:
-            step = mult * mag
-            break
-    start = math.ceil(lo / step - 1e-9) * step
+    mag = 10.0 ** math.floor(math.log10(span / 5))
+    candidates = [mag * m for m in (1.0, 2.0, 2.5, 5.0)]
+    candidates += [mag * 10.0 * m for m in (1.0, 2.0, 2.5, 5.0)]
     ticks: list[float] = []
-    v = start
-    while v <= hi + 1e-9:
-        ticks.append(round(v, 10))
-        v += step
+    for step in candidates:
+        start = math.ceil(lo / step - 1e-9) * step
+        ticks = []
+        v = start
+        while v <= hi + 1e-9:
+            ticks.append(round(v, 10))
+            v += step
+        if len(ticks) <= max_ticks:
+            return ticks
     return ticks or [lo]
+
+
+def _sock_top_center_x(leg: Leg, height_px: float) -> float:
+    """袜口那一行腿轮廓的水平中心（素材列坐标），供数值标签对齐袜口。
+
+    腿素材本身是倾斜的，足底中心与袜口中心不在同一竖线上；按足底中心居中
+    写数值会让标签明显偏离袜口。裸腿取腿顶端的轮廓中心。
+    """
+    h = round(height_px)
+    row = 0 if h <= 0 else max(0, min(leg.height - h, leg.height - 1))
+    cols = np.where(leg.image[row, :, 3] > 0)[0]
+    if len(cols) == 0:
+        return float(leg.foot_center_x)
+    return float((cols[0] + cols[-1]) / 2)
 
 
 # 图例色块统一用同一条固定腿渲染，取其袜身中段的织物
@@ -375,20 +406,27 @@ class BarPlot:
         labels: Sequence[str],
         *,
         xs: Sequence[float] | None = None,
+        pos: XLabelPos = "content",
     ) -> BarPlot:
-        """添加 x 轴标签。
+        """添加 x 轴标签，pos 决定标签位置。
 
-        画在全部内容最低点之下（含朝下腿与 y 轴向下延伸的部分），与基线
-        解耦——没有下方内容时自然贴着基线下方。
+        "content"（默认）画在全部内容最低点之下（含朝下腿与 y 轴向下延伸的
+        部分），与基线解耦，没有下方内容时自然贴着基线下方；"auto" 紧贴
+        基线、选没有柱子的一侧（下方无腿→基线下方，上方无腿→基线上方，
+        两侧都有腿→退回 "content"）；"above" / "below" 强制写在基线上方 /
+        下方，该侧有腿时会与腿重叠。
 
         xs 为绘图区坐标（足底中心基准），缺省时优先使用 add_bars 系列
         方法记录的组中心，否则沿绘图区宽度均分。
         """
+        if pos not in ("content", "auto", "above", "below"):
+            raise ValueError(f"pos 须为 'content'/'auto'/'above'/'below'，得到 {pos!r}")
         if xs is not None and len(xs) != len(labels):
             raise ValueError(f"xs 与 labels 长度不一致：{len(xs)} != {len(labels)}")
         self._x_labels = _XLabelsRecord(
             labels=list(labels),
             xs=[float(v) for v in xs] if xs is not None else None,
+            pos=pos,
         )
         return self
 
@@ -437,27 +475,30 @@ class BarPlot:
         heights: Sequence[float],
         *,
         bar_gap: float,
-        style_for: Callable[[int], StockingStyle],
+        styles: Sequence[StockingStyle],
         legs: Sequence[Leg],
         side_for: Callable[[int], BarSide] | None = None,
     ) -> float:
         """从光标处向右排一组腿（按边缘空隙 bar_gap），返回组中心。
 
         光标推进到本组末尾右缘；同时把组中心记录进 _group_centers。
+        styles 与 heights 等长，逐根取用。
         """
         if not heights:
             raise ValueError("heights 为空")
         if len(legs) != len(heights):
             raise ValueError(f"legs 与 heights 长度不一致：{len(legs)} != {len(heights)}")
+        if len(styles) != len(heights):
+            raise ValueError(f"styles 与 heights 长度不一致：{len(styles)} != {len(heights)}")
         cursor = self._l3_cursor
         first_left = cursor
-        for i, (h, leg) in enumerate(zip(heights, legs, strict=True)):
+        for i, (h, leg, style) in enumerate(zip(heights, legs, styles, strict=True)):
             side: BarSide = side_for(i) if side_for is not None else "up"
             self.add_bar(
                 cursor + leg.foot_center_x,
                 h,
                 leg,
-                style=style_for(i),
+                style=style,
                 side=side,
             )
             cursor += leg.width + bar_gap
@@ -489,13 +530,8 @@ class BarPlot:
         elif len(legs) != len(heights):
             raise ValueError(f"legs 与 heights_px 长度不一致：{len(legs)} != {len(heights)}")
         self._advance_cursor(DEFAULT_GROUP_GAP)
-        styles = self._style_list(style)
-        self._place_group(
-            heights,
-            bar_gap=bar_gap,
-            style_for=lambda i: styles[i % len(styles)],
-            legs=legs,
-        )
+        styles = _cycle_styles(self._style_list(style), len(heights))
+        self._place_group(heights, bar_gap=bar_gap, styles=styles, legs=legs)
         return self
 
     def add_grouped_bars(
@@ -505,6 +541,7 @@ class BarPlot:
         bar_gap: float = DEFAULT_BAR_GAP,
         group_gap: float = DEFAULT_GROUP_GAP,
         style: StyleSeq = DEFAULT_STOCKING_STYLE,
+        cycle: StyleCycle = "group",
         legs: Sequence[Leg] | None = None,
         seed: int | None = None,
     ) -> BarPlot:
@@ -512,9 +549,10 @@ class BarPlot:
 
         组内用 bar_gap、组间用 group_gap，跨列按左、右、左、右……交替选腿。
 
-        style 为列表时按组内位置循环：组内第 i 根用 styles[i % len]。
-        列表长度等于系列数时即"每系列一个样式"，同一系列全图样式一致。
-        legs 显式时按行优先展平，长度须等于总柱数。
+        style 为列表时按 cycle 取用："group"（默认）按组内位置循环，组内
+        第 i 根用 styles[i % len]，列表长度等于系列数时即"每系列一个样式"；
+        "sequence" 按全部柱子的绘制顺序循环（组 0 第 0 根、组 0 第 1 根、
+        组 1 第 0 根……）。legs 显式时按行优先展平，长度须等于总柱数。
         """
         groups = [list(g) for g in heights_px]
         if not groups:
@@ -525,16 +563,17 @@ class BarPlot:
         elif len(legs) != total:
             raise ValueError(f"legs 与总柱数不一致：{len(legs)} != {total}")
         self._advance_cursor(group_gap)
-        styles = self._style_list(style)
+        flat_styles = _cycle_styles(self._style_list(style), total)
+        series = len(groups[0])
         cursor = 0
         for group in groups:
+            if cycle == "sequence":
+                group_styles = flat_styles[cursor : cursor + len(group)]
+            else:
+                # 组内位置循环：每组都从样式列表头部起算，与系列一一对应
+                group_styles = flat_styles[:series]
             group_legs = legs[cursor : cursor + len(group)]
-            self._place_group(
-                group,
-                bar_gap=bar_gap,
-                style_for=lambda i: styles[i % len(styles)],
-                legs=group_legs,
-            )
+            self._place_group(group, bar_gap=bar_gap, styles=group_styles, legs=group_legs)
             cursor += len(group)
             self._l3_cursor += group_gap
         return self
@@ -545,14 +584,16 @@ class BarPlot:
         *,
         group_gap: float = DEFAULT_GROUP_GAP,
         style: StyleSeq = DEFAULT_STOCKING_STYLE,
+        cycle: StyleCycle = "group",
         pairs: Sequence[tuple[Leg, Leg]] | None = None,
         seed: int | None = None,
     ) -> BarPlot:
         """每组恰好 2 个值：同组使用同一对素材，系列 0 左腿、系列 1 右腿。
 
-        style 为列表时按组内位置循环（系列 0 取 styles[0]、系列 1 取
-        styles[1 % len]）。pairs 缺省时自动选取不重复的素材对；
-        显式时长度须与组数一致。组内间距用 DEFAULT_BAR_GAP。
+        style 为列表时按 cycle 取用（"group" 默认：组内第 i 根取
+        styles[i % len]；"sequence" 按全部柱子的绘制顺序循环）。pairs 缺省
+        时自动选取不重复的素材对；显式时长度须与组数一致。组内间距用
+        DEFAULT_BAR_GAP。
         """
         groups = [tuple(g) for g in heights_px]
         if not groups:
@@ -565,14 +606,10 @@ class BarPlot:
                 raise ValueError(f"pairs 与组数不一致：{len(pairs)} != {len(groups)}")
             pair_list = [tuple(p) for p in pairs]
         self._advance_cursor(group_gap)
-        styles = self._style_list(style)
-        for group, pair in zip(groups, pair_list, strict=True):
-            self._place_group(
-                group,
-                bar_gap=DEFAULT_BAR_GAP,
-                style_for=lambda i: styles[i % len(styles)],
-                legs=list(pair),
-            )
+        flat_styles = _cycle_styles(self._style_list(style), 2 * len(groups))
+        for g, (group, pair) in enumerate(zip(groups, pair_list, strict=True)):
+            styles = flat_styles[2 * g : 2 * g + 2] if cycle == "sequence" else flat_styles[:2]
+            self._place_group(group, bar_gap=DEFAULT_BAR_GAP, styles=styles, legs=list(pair))
             self._l3_cursor += group_gap
         return self
 
@@ -728,11 +765,21 @@ class BarPlot:
         baseline = top_band + eff_up
         content_bottom = baseline + max(eff_down, down_len)
 
-        x_label_top: float | None = None
+        x_label_y: float | None = None
+        x_label_baseline = False
         bottom = content_bottom
         if self._x_labels is not None and self._x_labels.labels:
-            x_label_top = content_bottom + DEFAULT_X_LABEL_GAP
-            bottom = x_label_top + DEFAULT_X_LABEL_SIZE * DEFAULT_LABEL_LINE_FACTOR
+            pos = self._resolve_x_label_pos()
+            if pos == "above":
+                x_label_y = baseline - DEFAULT_X_LABEL_GAP
+                x_label_baseline = True
+            elif pos == "below":
+                x_label_y = baseline + DEFAULT_X_LABEL_GAP
+                label_h = DEFAULT_X_LABEL_SIZE * DEFAULT_LABEL_LINE_FACTOR
+                bottom = max(bottom, x_label_y + label_h)
+            else:
+                x_label_y = content_bottom + DEFAULT_X_LABEL_GAP
+                bottom = x_label_y + DEFAULT_X_LABEL_SIZE * DEFAULT_LABEL_LINE_FACTOR
 
         legend_bottom_y: float | None = None
         if self._legend is not None and self._legend.loc == "bottom":
@@ -756,9 +803,24 @@ class BarPlot:
             y_label_x=y_label_x,
             y_up_len=y_up_len,
             legend_top_y=legend_top_y,
-            x_label_top=x_label_top,
+            x_label_y=x_label_y,
+            x_label_baseline=x_label_baseline,
             legend_bottom_y=legend_bottom_y,
         )
+
+    def _resolve_x_label_pos(self) -> Literal["above", "below", "content"]:
+        """把 pos 参数解析为具体位置；"auto" 选没有柱子的一侧。"""
+        rec = self._x_labels
+        assert rec is not None  # 调用点已保证
+        if rec.pos != "auto":
+            return rec.pos
+        has_up = any(b.side == "up" for b in self._bars)
+        has_down = any(b.side == "down" for b in self._bars)
+        if not has_up:
+            return "above"
+        if not has_down:
+            return "below"
+        return "content"
 
     def _draw(self, canvas: Canvas, layout: _Layout) -> None:
         self._draw_grid(canvas, layout)
@@ -777,7 +839,10 @@ class BarPlot:
         rng = random.Random(axis.seed)
         dash, gap = DEFAULT_GRID_DASH
         for v in axis.ticks:
-            y = layout.baseline_y - axis.scale.to_px(v)
+            px = axis.scale.to_px(v)
+            if abs(px) < 1e-6:
+                continue  # 0 刻度与基线重合，不重复画虚线
+            y = layout.baseline_y - px
             x = layout.axis_x
             while x < layout.plot_right:
                 seg = min(x + dash, layout.plot_right)
@@ -930,7 +995,7 @@ class BarPlot:
 
     def _draw_x_labels(self, canvas: Canvas, layout: _Layout) -> None:
         rec = self._x_labels
-        if rec is None or layout.x_label_top is None:
+        if rec is None or layout.x_label_y is None:
             return
         if rec.xs is not None:
             xs = rec.xs
@@ -939,14 +1004,15 @@ class BarPlot:
         else:
             n = len(rec.labels)
             xs = [(i + 0.5) * self._width_px / n for i in range(n)]
+        anchor: TextAnchor = ("center", "bottom" if layout.x_label_baseline else "top")
         for label, x in zip(rec.labels, xs, strict=True):
             draw_text(
                 canvas,
                 label,
                 layout.plot_left + x,
-                layout.x_label_top,
+                layout.x_label_y,
                 size_px=DEFAULT_X_LABEL_SIZE,
-                anchor=("center", "top"),
+                anchor=anchor,
             )
 
     def _draw_value_labels(self, canvas: Canvas, layout: _Layout) -> None:
@@ -959,10 +1025,17 @@ class BarPlot:
             else:
                 y = layout.baseline_y + bar.height_px + DEFAULT_VALUE_LABEL_GAP
                 anchor = ("center", "top")
+            # 对齐袜口中心而非足底中心：倾斜的腿两者不在同一竖线上
+            x = (
+                layout.plot_left
+                + bar.x
+                - bar.leg.foot_center_x
+                + _sock_top_center_x(bar.leg, bar.height_px)
+            )
             draw_text(
                 canvas,
                 bar.value_label,
-                layout.plot_left + bar.x,
+                x,
                 y,
                 size_px=DEFAULT_VALUE_LABEL_SIZE,
                 anchor=anchor,

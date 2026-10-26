@@ -1,3 +1,6 @@
+# 白盒测试：直接检查 BarPlot 的内部布局几何
+# pyright: reportPrivateUsage=false
+
 """L2 标注测试：add_y_axis / add_x_labels / add_title / add_legend。"""
 
 import numpy as np
@@ -79,6 +82,65 @@ class TestAddXLabels:
         rows = np.where(m.any(axis=1))[0]
         # 基线在 y=0 附近，下腿深达 ~720；标签必须出现在其下方
         assert rows.max() > 720
+
+    def test_pos_above_puts_label_above_baseline(self) -> None:
+        """pos="above"：标签紧贴基线上方，不占据画布底部。"""
+        p = BarPlot(600, extent_up=760)
+        p.add_bar(300, 200, make_leg(), side="down")
+        p.add_x_labels(["甲"], pos="above")
+        layout = p._layout()
+        baseline = layout.baseline_y
+        assert layout.x_label_y is not None
+        assert layout.x_label_y < baseline
+
+    def test_pos_below_puts_label_at_baseline(self) -> None:
+        p = BarPlot(600, extent_up=760)
+        p.add_bar(300, 200, make_leg())
+        p.add_x_labels(["甲"], pos="below")
+        layout = p._layout()
+        assert layout.x_label_y is not None
+        assert layout.x_label_y > layout.baseline_y
+
+    def test_pos_below_differs_from_content_with_down_legs(self) -> None:
+        """有朝下腿时 content 会退到腿下方，below 仍贴基线（显式覆盖的用途）。"""
+        p = BarPlot(600, extent_up=760, extent_down=720)
+        p.add_bar(300, 200, make_leg(), side="down")
+        p.add_x_labels(["甲"], pos="below")
+        below_y = p._layout().x_label_y
+        p.add_x_labels(["甲"])
+        content_y = p._layout().x_label_y
+        assert below_y is not None and content_y is not None
+        assert below_y < content_y
+
+    def test_pos_auto_picks_legless_side(self) -> None:
+        # 只有朝上腿 → 标签贴基线下方
+        p = BarPlot(600, extent_up=760)
+        p.add_bar(300, 200, make_leg())
+        p.add_x_labels(["甲"], pos="auto")
+        layout = p._layout()
+        assert layout.x_label_y is not None
+        assert layout.x_label_y > layout.baseline_y
+        # 只有朝下腿 → 标签贴基线上方
+        q = BarPlot(600, extent_up=760, extent_down=720)
+        q.add_bar(300, 200, make_leg(), side="down")
+        q.add_x_labels(["甲"], pos="auto")
+        layout_q = q._layout()
+        assert layout_q.x_label_y is not None
+        assert layout_q.x_label_y < layout_q.baseline_y
+
+    def test_pos_auto_falls_back_to_content_when_both_sides(self) -> None:
+        p = BarPlot(600, extent_up=760, extent_down=720)
+        p.add_bar(200, 200, make_leg(), side="up")
+        p.add_bar(400, 200, make_leg(), side="down")
+        p.add_x_labels(["甲"], pos="auto")
+        layout = p._layout()
+        assert layout.x_label_y is not None
+        assert layout.x_label_y > layout.content_bottom
+
+    def test_pos_invalid(self) -> None:
+        p = BarPlot(600)
+        with pytest.raises(ValueError):
+            p.add_x_labels(["甲"], pos="middle")  # type: ignore[arg-type]
 
 
 class TestTitleAndLegend:

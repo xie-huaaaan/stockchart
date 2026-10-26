@@ -59,6 +59,7 @@ def main() -> None:
             series_labels=["棉袜", "网袜", "条纹"],
             title="三种袜子的人气度",
             style=["knit_cream", "fishnet_black", "stripe_pink_white"],
+            grid=True,
             seed=3,
         ),
         "03_bar_grouped3_grid.png",
@@ -109,6 +110,19 @@ def main() -> None:
         "06_mirror_single.png",
     )
 
+    # 06b 镜像全正：没有朝下腿，x 标签自动贴到基线上方（无腿一侧）
+    save(
+        mirror_bar(
+            [4.2, 2.8, 6.1, 5.5, 3.3],
+            labels=["周一", "周二", "周三", "周四", "周五"],
+            title="全正数据：标签在上",
+            style="black_sheer",
+            value_labels=True,
+            seed=61,
+        ),
+        "06b_mirror_label_above.png",
+    )
+
     # 07 镜像 both（数据侧穿袜、对侧裸腿）
     save(
         mirror_bar(
@@ -144,7 +158,8 @@ def main() -> None:
         leg = lib.get(f"leg_{i * 5 + 1:02d}")
         plot.add_bar(x, 720 * (0.3 + 0.15 * i), leg, style="black_sheer")
     plot.add_bar(1650, 400, lib.get("leg_26"), style="fishnet_black", side="down")
-    plot.add_x_labels(["A", "B", "C", "D"], xs=xs)
+    # 有一根朝下腿时默认锚定会退到最低点之下，这里显式贴基线写标签
+    plot.add_x_labels(["A", "B", "C", "D"], xs=xs, pos="below")
     plot.add_y_axis(Scale((0, 720), (0, 760)), label="自定义", grid=True)
     plot.add_legend([("黑丝", "black_sheer"), ("网袜", "fishnet_black")])
     save(plot, "09_l2_free.png")
