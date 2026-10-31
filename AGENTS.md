@@ -34,7 +34,8 @@ L4 的下层参数通过 `ChartOptions` 透传。新会话先看 `git log --onel
 - 运行时依赖只允许 `skia-python`、`numpy`、`pillow`；新增前先问。
 - 坐标单位是设计像素（腿高 720）；输出只有 PNG，不做 SVG/PDF。
 - 内置腿素材是透明 SVG，`render_stocking(scale=)` 按目标倍率栅格化；腿编号与配对
-  一经发布不得变动。
+  一经发布不得变动。代码为 MPL-2.0，腿素材为 ARR，不得单独再分发或改作独立素材；
+  改许可声明须同步 `LICENSE`、`ASSETS-LICENSE` 与两份 README。
 - 默认值集中在 `defaults.py`；随机行为由 `seed` 控制，保证可复现。
 - pandas 只按 `index` / `columns` / `to_numpy()` 结构识别，不 import、不进依赖。
 - 公开 API 的 docstring 与 `docs/api.zh-CN/`（及英文版 `docs/api/`）同步；改签名先改文档。

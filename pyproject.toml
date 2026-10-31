@@ -1,10 +1,10 @@
 [project]
 name = "stockchart"
 dynamic = ["version"]
-description = "A creative plotting library that draws data as stockings pulled up over a pair of legs."
+description = "A creative plotting library that draws data as stockings pulled up over legs."
 readme = "README.md"
-license = "MPL-2.0"
-license-files = ["LICENSE"]
+license = "MPL-2.0 AND LicenseRef-ARR"
+license-files = ["LICENSE", "ASSETS-LICENSE"]
 requires-python = ">=3.12"
 authors = [{ name = "xie-huaaaan" }]
 keywords = [
@@ -14,6 +14,8 @@ keywords = [
     "infographics",
     "plotting",
     "skia",
+    "charting-library",
+    "matplotlib"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -66,7 +68,9 @@ include = [
     "/docs/*.md",
     "/README.md",
     "/README.zh-CN.md",
+    "/CHANGELOG.md",
     "/LICENSE",
+    "/ASSETS-LICENSE",
     "/pyproject.toml",
 ]
 

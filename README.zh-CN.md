@@ -1,10 +1,11 @@
 # 丝袜统计图 (Stock Chart)
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.md) | 简体中文
 
 [![PyPI](https://img.shields.io/pypi/v/stockchart)](https://pypi.org/project/stockchart/)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
+[![Assets: ARR](https://img.shields.io/badge/assets-ARR-orange)](ASSETS-LICENSE)
 
 **用丝袜被拉起的高度表示数据的创意绘图库。**
 
@@ -241,6 +242,10 @@ uv run python -m pyright
 
 Copyright © 2026 xie-huaaaan。
 
-本项目以 [Mozilla Public License 2.0](LICENSE)
-（MPL-2.0）发布。你可以在闭源项目中使用 `stockchart`；如果修改了受 MPL 覆盖的源文件，
-这些文件需要继续以 MPL-2.0 提供。
+源代码以 [Mozilla Public License 2.0](LICENSE)（MPL-2.0）发布。你可以在闭源项目中
+使用 `stockchart`；如果修改了受 MPL 覆盖的源文件，这些文件需要继续以 MPL-2.0 提供。
+
+内置腿部素材（`src/stockchart/assets/leg_*.svg` 与 `legs.json`）为
+**All Rights Reserved（保留所有权利）**，不在 MPL-2.0 覆盖范围内，详见
+[素材许可](ASSETS-LICENSE)。素材可用于通过 `stockchart` 渲染图表，
+你生成的图表归你所有；素材本身除作为未修改的完整软件包的一部分外，不得单独提取或再分发。

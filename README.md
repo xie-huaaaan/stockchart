@@ -1,10 +1,11 @@
 # Stock Chart
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+English | [简体中文](README.zh-CN.md)
 
 [![PyPI](https://img.shields.io/pypi/v/stockchart)](https://pypi.org/project/stockchart/)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
+[![Assets: ARR](https://img.shields.io/badge/assets-ARR-orange)](ASSETS-LICENSE)
 
 **A creative plotting library that draws data as stockings pulled up over a pair of legs.**
 
@@ -247,6 +248,12 @@ may still change in minor releases.
 
 ## License
 
-Released under the [Mozilla Public License 2.0](LICENSE) (MPL-2.0). You can use
-`stockchart` in closed-source projects; if you modify MPL-covered source files, those
-files must remain available under MPL-2.0.
+The source code is released under the [Mozilla Public License 2.0](LICENSE) (MPL-2.0).
+You can use `stockchart` in closed-source projects; if you modify MPL-covered source
+files, those files must remain available under MPL-2.0.
+
+The built-in leg artwork (`src/stockchart/assets/leg_*.svg` and `legs.json`) is
+**All Rights Reserved** and is not covered by MPL-2.0; see the
+[asset license](ASSETS-LICENSE). The artwork may be used to render charts
+with `stockchart`, and charts you generate are your own work. The artwork itself may not
+be extracted or redistributed except as part of an unmodified stockchart package.

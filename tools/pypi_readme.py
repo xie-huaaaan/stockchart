@@ -5,11 +5,11 @@ PyPI 页面只渲染打包进包元数据的 long_description：没有仓库路�
 语言切换行与徽章在页面里既重复又多余。因此合成规则：
 
 - 用 “Stock Chart (丝袜统计图)” 作一级标题，开头放 GitHub 仓库链接；
-- 只保留 License 徽章置顶（版本与 Python 徽章在 PyPI 页面冗余）；
+- 只保留许可相关徽章置顶（代码 MPL / 素材 ARR）；版本与 Python 徽章在 PyPI 页面冗余；
   剔除两份 README 各自的标题与语言切换行，只留正文；
 - 英文正文直接铺开，中文正文收进可折叠的 `<details>`（PyPI 渲染器
   不保留 `open` 属性，无法默认展开）；
-- 所有相对链接改写为 GitHub 绝对链接（正文链接 → blob 页，图片 → raw）。
+- 所有相对链接改写为 GitHub 绝对链接（正文链接 → blob 页，图片 → raw，徽章外链同理）。
 
 发布工作流在 `uv build` 之前对检出的 README 副本生成合成版，不提交回仓库。
 
@@ -30,6 +30,9 @@ _RAW = "https://raw.githubusercontent.com/xie-huaaaan/stockchart/main/"
 # 正文两侧不允许嵌套方括号，避免吃进徽章那种 [![img](url)](url) 嵌套结构
 _MD_LINK = re.compile(r"(!?)\[([^\[\]]*)\]\(([^()\s]+)\)")
 _IMG_SRC = re.compile(r'(<img\s[^>]*?src=")([^"]+)(")')
+# 徽章外链目标（图片地址已是绝对地址，不受影响）
+_BADGE_LINK = re.compile(r"\]\((?!https?://|//|#|mailto:)([^()\s]+)\)")
+_BADGE_PREFIXES = ("[![License", "[![Assets")
 
 
 def _is_relative(url: str) -> bool:
@@ -78,20 +81,25 @@ def _strip_header(text: str) -> tuple[str, list[str]]:
     return "\n".join(lines[i:]).strip("\n"), badges
 
 
+def _absolute_badge_links(badge: str) -> str:
+    """把徽章外链的相对目标改成 GitHub blob 地址。"""
+    return _BADGE_LINK.sub(lambda m: f"]({_BLOB}{m[1]})", badge)
+
+
 def compose(en: str, zh: str) -> str:
-    """合成双语页面：License 徽章置顶、英文铺开、中文折叠。"""
+    """合成双语页面：许可徽章置顶、英文铺开、中文折叠。"""
     en_body, badges = _strip_header(en)
     zh_body, _ = _strip_header(zh)
-    # PyPI 页面侧栏自带版本号与 Python 版本要求，徽章只留 License；
-    # 徽章里的图片地址已是绝对的，唯一相对的 LICENSE 目标在此补成 blob 链接
-    license_badge = next((b for b in badges if b.startswith("[![License")), "")
-    license_badge = license_badge.replace("](LICENSE)", f"]({_BLOB}LICENSE)")
+    # PyPI 页面侧栏自带版本号与 Python 版本要求，置顶只保留许可相关徽章
+    kept_badges = " ".join(
+        _absolute_badge_links(b) for b in badges if b.startswith(_BADGE_PREFIXES)
+    )
     return (
         "# Stock Chart (丝袜统计图)\n"
         "\n"
         "[GitHub: xie-huaaaan/stockchart](https://github.com/xie-huaaaan/stockchart)\n"
         "\n"
-        f"{license_badge}\n"
+        f"{kept_badges}\n"
         "\n"
         f"{rewrite(en_body)}\n"
         "\n"
