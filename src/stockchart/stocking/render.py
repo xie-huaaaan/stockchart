@@ -86,7 +86,7 @@ def render_stocking(
 
     H, W = leg.image.shape[:2]
     height_px = min(height_px, H)
-    rng = np.random.default_rng(seed if seed is not None else 0)
+    rng = np.random.default_rng(seed)
 
     src = leg.image.astype(np.float64) / 255.0  # (H, W, 4) float64 [0,1]
 

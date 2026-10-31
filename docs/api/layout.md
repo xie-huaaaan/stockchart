@@ -13,14 +13,18 @@ def add_bars(
     *,
     bar_gap: float = DEFAULT_BAR_GAP,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
+    paired: Literal["auto", "none", "group", "global"] = "auto",
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
     """Single series: laid out left to right with uniform spacing, automatically alternating leg selection in left, right, left, right ... order.
 
     legs may explicitly specify the asset for each bar (its length must
-    match heights_px and it does not participate in cycling). When style is
-    a list, it is cycled in bar order.
+    match heights_px and it does not participate in cycling; paired is
+    ignored in that case). For a single series, "auto" and "group" both
+    fall back to "none"; explicit "global" makes adjacent bars take legs
+    from the same asset pair. When style is a list, it is cycled in bar
+    order.
     """
 
 
@@ -32,10 +36,17 @@ def add_grouped_bars(
     group_gap: float = DEFAULT_GROUP_GAP,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
     cycle: Literal["group", "sequence"] = "group",
+    paired: Literal["auto", "none", "group", "global"] = "auto",
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
     """Pixel heights as (groups, series): bar_gap within a group, group_gap between groups, with legs alternated across columns in left, right, left, right ... order.
+
+    With paired="auto" (default), a single series uses "none" and multiple
+    series use "global"; "group" takes complete pairs independently within
+    each group (adjacent legs share a pair); "global" takes pairs
+    continuously across the whole chart; "none" draws every leg from a
+    different pair. When legs is explicit, paired is ignored.
 
     When style is a list it is cycled according to cycle: "group" (default)
     cycles by position within the group — the i-th bar of a group uses

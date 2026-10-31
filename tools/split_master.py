@@ -42,6 +42,16 @@ SIG = 64  # 形状匹配用的归一化掩膜尺寸
 BACKGROUND = (250, 248, 243)  # 追踪需要不透明输入，用画纸色垫底
 SVG_SCALE = 4  # SVG 素材的固有倍率（设计像素 × 4）
 CLIP_BLUE = 242  # 腿形裁切：蓝色通道低于此值才是腿身；纸底/白色软边都会被排除
+ROW_DIR = ROOT / "dist"  # 720p 原始行图（row1~3.png）所在目录
+
+# 母图左右边缘截断了这两对腿，回退到 720p 行图重新追踪。
+# 坐标是旧版 720p 素材的出处，只属于素材管线，不进运行时元数据。
+FALLBACK_CROPS: dict[str, tuple[int, int, int]] = {
+    "leg_07": (2, 0, 179),
+    "leg_08": (2, 189, 362),
+    "leg_15": (2, 3091, 3267),
+    "leg_16": (2, 3271, 3430),
+}
 TRACE_OPTIONS: dict[str, object] = {
     "colormode": "color",
     "hierarchical": "stacked",
@@ -154,12 +164,19 @@ def _compose_svg(color_text: str, clip_d: str, w: int, h: int) -> str:
     )
 
 
-def _original_crop(entry: dict[str, object], rows: dict[int, Image.Image]) -> Image.Image:
+def _original_crop(leg_id: str, height: int, rows: dict[int, Image.Image]) -> Image.Image:
     """从 720p 原始行图裁出整条腿；母图贴边、腿形被截断时用它兜底。"""
-    row = int(entry["src_row"])
+    try:
+        row, x0, x1 = FALLBACK_CROPS[leg_id]
+    except KeyError:
+        raise ValueError(f"{leg_id} 没有 720p 兜底坐标") from None
     if row not in rows:
-        rows[row] = Image.open(ROOT / "assets" / f"row{row}.png").convert("RGBA")
-    return rows[row].crop((int(entry["src_x0"]), 0, int(entry["src_x1"]), int(entry["height"])))
+        path = ROW_DIR / f"row{row}.png"
+        if not path.is_file():
+            raise FileNotFoundError(f"缺少 720p 兜底素材 {path}")
+        with Image.open(path) as source:
+            rows[row] = source.convert("RGBA")
+    return rows[row].crop((x0, 0, x1, height))
 
 
 def _ink(im: Image.Image) -> float:
@@ -239,6 +256,7 @@ def main() -> None:
     print(f"母图腿数 {len(boxes)}，匹配 {len(mapping)}，库内未出现的腿：{missing or '无'}")
 
     # 左右贴边的腿可能被截断（如 leg_07 左侧）；同一对一起回退到 720p 原始行图。
+    # 兜底坐标在 FALLBACK_CROPS 中，行图从 dist/ 读取。
     # 上下贴边不判断：腿本来就在大腿/脚踝处切断，不是母图裁切。
     clipped_pairs = {
         str(by_id[leg_id]["pair_id"])
@@ -258,7 +276,10 @@ def main() -> None:
         w, h = int(entry["width"]), int(entry["height"])
         w4, h4 = w * SVG_SCALE, h * SVG_SCALE
         from_row = str(entry["pair_id"]) in clipped_pairs
-        crop = _original_crop(entry, rows) if from_row else im.crop((x0, y0, x1, y1))
+        if from_row and leg_id not in FALLBACK_CROPS:
+            print(f"  {leg_id} 贴边但没有 720p 兜底坐标，仍用母图裁切")
+            from_row = False
+        crop = _original_crop(leg_id, h, rows) if from_row else im.crop((x0, y0, x1, y1))
 
         # 追踪输入：垫画纸色、拉伸到设计尺寸 × 4
         flat = Image.new("RGB", crop.size, BACKGROUND)

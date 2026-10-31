@@ -43,7 +43,6 @@ def make_synthetic_leg(height: int = 200, width: int = 80) -> "stockchart.Leg":
         width=width,
         height=height,
         foot_center_x=cx,
-        foot_width=40,
     )
 
 
@@ -121,6 +120,33 @@ class TestLegLibrary:
         b = lib.get("leg_05")
         assert a is b
 
+    def test_ids_are_listed(self) -> None:
+        lib = LegLibrary()
+        assert len(lib.leg_ids) == 26
+        assert lib.leg_ids[0] == "leg_01"
+        assert lib.leg_ids[-1] == "leg_26"
+        assert len(lib.pair_ids) == 13
+        assert lib.pair_ids[0] == "pair_01"
+        assert lib.pair_ids[-1] == "pair_13"
+        assert "26 legs / 13 pairs" in repr(lib)
+
+    def test_alternate_paired_uses_same_pair(self) -> None:
+        legs = LegLibrary(seed=7).alternate(6, paired=True)
+        for i in range(0, len(legs), 2):
+            assert legs[i].pair_id == legs[i + 1].pair_id
+            assert legs[i].side == "left"
+            assert legs[i + 1].side == "right"
+
+    def test_alternate_without_pairs_uses_different_pairs(self) -> None:
+        legs = LegLibrary(seed=7).alternate(6)
+        assert len({leg.pair_id for leg in legs[:6]}) == 6
+
+    def test_preview_returns_rgb_image(self) -> None:
+        image = LegLibrary().preview(scale=0.1)
+        assert image.mode == "RGB"
+        assert image.width > 0
+        assert image.height > 0
+
 
 class TestVectorAssets:
     """内置素材只存透明 SVG，渲染时按目标密度栅格化。"""
@@ -143,6 +169,13 @@ class TestVectorAssets:
         assert hi.pixels_per_unit == 2
         assert hi.image is img
         assert hi.svg is leg.svg
+
+    def test_raster_at_high_density_renders_at_target(self) -> None:
+        leg = LegLibrary().get("leg_01")
+        img = leg.raster_at(6)
+        assert img.shape == (leg.height * 6, leg.width * 6, 4)
+        assert img[:, :, 3].min() == 0
+        assert img[:, :, 3].max() > 250
 
     def test_render_stocking_vector_scale(self) -> None:
         leg = LegLibrary().get("leg_01")
@@ -177,14 +210,13 @@ class TestLoadLeg:
         assert loaded.leg_id is None
         assert loaded.side is None
 
-    def test_explicit_foot_params(self, tmp_path: Path) -> None:
+    def test_explicit_foot_center(self, tmp_path: Path) -> None:
         leg = make_synthetic_leg(200, 80)
         png_path = tmp_path / "test_leg2.png"
         Image.fromarray(leg.image).save(png_path)
 
-        loaded = load_leg(png_path, foot_center_x=40, foot_width=30)
+        loaded = load_leg(png_path, foot_center_x=40)
         assert loaded.foot_center_x == 40
-        assert loaded.foot_width == 30
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +301,6 @@ class TestRenderScale:
         assert out.pixels_per_unit == 2
         assert (out.height, out.width) == (720, 160)
         assert out.foot_center_x == leg.foot_center_x
-        assert out.foot_width == leg.foot_width
 
     def test_bad_scale(self) -> None:
         leg = make_synthetic_leg(720, 160)

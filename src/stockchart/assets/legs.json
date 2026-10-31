@@ -3,312 +3,208 @@
     "leg_id": "leg_01",
     "pair_id": "pair_01",
     "side": "left",
-    "src_row": 1,
-    "src_x0": 0,
-    "src_x1": 169,
     "width": 169,
     "height": 720,
-    "foot_center_x": 50,
-    "foot_width": 56
+    "foot_center_x": 50
   },
   {
     "leg_id": "leg_02",
     "pair_id": "pair_01",
     "side": "right",
-    "src_row": 1,
-    "src_x0": 180,
-    "src_x1": 339,
     "width": 159,
     "height": 720,
-    "foot_center_x": 109,
-    "foot_width": 57
+    "foot_center_x": 109
   },
   {
     "leg_id": "leg_03",
     "pair_id": "pair_02",
     "side": "left",
-    "src_row": 1,
-    "src_x0": 359,
-    "src_x1": 508,
     "width": 149,
     "height": 720,
-    "foot_center_x": 44,
-    "foot_width": 62
+    "foot_center_x": 44
   },
   {
     "leg_id": "leg_04",
     "pair_id": "pair_02",
     "side": "right",
-    "src_row": 1,
-    "src_x0": 518,
-    "src_x1": 667,
     "width": 149,
     "height": 720,
-    "foot_center_x": 55,
-    "foot_width": 61
+    "foot_center_x": 55
   },
   {
     "leg_id": "leg_05",
     "pair_id": "pair_03",
     "side": "left",
-    "src_row": 1,
-    "src_x0": 1709,
-    "src_x1": 1861,
     "width": 152,
     "height": 720,
-    "foot_center_x": 70,
-    "foot_width": 50
+    "foot_center_x": 70
   },
   {
     "leg_id": "leg_06",
     "pair_id": "pair_03",
     "side": "right",
-    "src_row": 1,
-    "src_x0": 1872,
-    "src_x1": 2020,
     "width": 148,
     "height": 720,
-    "foot_center_x": 78,
-    "foot_width": 51
+    "foot_center_x": 78
   },
   {
     "leg_id": "leg_07",
     "pair_id": "pair_04",
     "side": "left",
-    "src_row": 2,
-    "src_x0": 0,
-    "src_x1": 179,
     "width": 179,
     "height": 720,
-    "foot_center_x": 31,
-    "foot_width": 64
+    "foot_center_x": 31
   },
   {
     "leg_id": "leg_08",
     "pair_id": "pair_04",
     "side": "right",
-    "src_row": 2,
-    "src_x0": 189,
-    "src_x1": 362,
     "width": 173,
     "height": 720,
-    "foot_center_x": 130,
-    "foot_width": 61
+    "foot_center_x": 130
   },
   {
     "leg_id": "leg_09",
     "pair_id": "pair_05",
     "side": "left",
-    "src_row": 2,
-    "src_x0": 1389,
-    "src_x1": 1554,
     "width": 165,
     "height": 720,
-    "foot_center_x": 98,
-    "foot_width": 53
+    "foot_center_x": 98
   },
   {
     "leg_id": "leg_10",
     "pair_id": "pair_05",
     "side": "right",
-    "src_row": 2,
-    "src_x0": 1557,
-    "src_x1": 1730,
     "width": 173,
     "height": 720,
-    "foot_center_x": 114,
-    "foot_width": 62
+    "foot_center_x": 114
   },
   {
     "leg_id": "leg_11",
     "pair_id": "pair_06",
     "side": "left",
-    "src_row": 2,
-    "src_x0": 1804,
-    "src_x1": 1970,
     "width": 166,
     "height": 720,
-    "foot_center_x": 56,
-    "foot_width": 59
+    "foot_center_x": 56
   },
   {
     "leg_id": "leg_12",
     "pair_id": "pair_06",
     "side": "right",
-    "src_row": 2,
-    "src_x0": 1977,
-    "src_x1": 2160,
     "width": 183,
     "height": 720,
-    "foot_center_x": 149,
-    "foot_width": 56
+    "foot_center_x": 149
   },
   {
     "leg_id": "leg_13",
     "pair_id": "pair_07",
     "side": "left",
-    "src_row": 2,
-    "src_x0": 2238,
-    "src_x1": 2416,
     "width": 178,
     "height": 720,
-    "foot_center_x": 56,
-    "foot_width": 56
+    "foot_center_x": 56
   },
   {
     "leg_id": "leg_14",
     "pair_id": "pair_07",
     "side": "right",
-    "src_row": 2,
-    "src_x0": 2420,
-    "src_x1": 2587,
     "width": 167,
     "height": 720,
-    "foot_center_x": 62,
-    "foot_width": 56
+    "foot_center_x": 62
   },
   {
     "leg_id": "leg_15",
     "pair_id": "pair_08",
     "side": "left",
-    "src_row": 2,
-    "src_x0": 3091,
-    "src_x1": 3267,
     "width": 176,
     "height": 720,
-    "foot_center_x": 32,
-    "foot_width": 63
+    "foot_center_x": 32
   },
   {
     "leg_id": "leg_16",
     "pair_id": "pair_08",
     "side": "right",
-    "src_row": 2,
-    "src_x0": 3271,
-    "src_x1": 3430,
     "width": 159,
     "height": 720,
-    "foot_center_x": 98,
-    "foot_width": 55
+    "foot_center_x": 98
   },
   {
     "leg_id": "leg_17",
     "pair_id": "pair_09",
     "side": "left",
-    "src_row": 3,
-    "src_x0": 0,
-    "src_x1": 159,
     "width": 159,
     "height": 720,
-    "foot_center_x": 46,
-    "foot_width": 57
+    "foot_center_x": 46
   },
   {
     "leg_id": "leg_18",
     "pair_id": "pair_09",
     "side": "right",
-    "src_row": 3,
-    "src_x0": 165,
-    "src_x1": 331,
     "width": 166,
     "height": 720,
-    "foot_center_x": 128,
-    "foot_width": 56
+    "foot_center_x": 128
   },
   {
     "leg_id": "leg_19",
     "pair_id": "pair_10",
     "side": "left",
-    "src_row": 3,
-    "src_x0": 443,
-    "src_x1": 613,
     "width": 170,
     "height": 720,
-    "foot_center_x": 94,
-    "foot_width": 57
+    "foot_center_x": 94
   },
   {
     "leg_id": "leg_20",
     "pair_id": "pair_10",
     "side": "right",
-    "src_row": 3,
-    "src_x0": 625,
-    "src_x1": 794,
     "width": 169,
     "height": 720,
-    "foot_center_x": 85,
-    "foot_width": 58
+    "foot_center_x": 85
   },
   {
     "leg_id": "leg_21",
     "pair_id": "pair_11",
     "side": "left",
-    "src_row": 3,
-    "src_x0": 897,
-    "src_x1": 1066,
     "width": 169,
     "height": 720,
-    "foot_center_x": 30,
-    "foot_width": 60
+    "foot_center_x": 30
   },
   {
     "leg_id": "leg_22",
     "pair_id": "pair_11",
     "side": "right",
-    "src_row": 3,
-    "src_x0": 1073,
-    "src_x1": 1231,
     "width": 158,
     "height": 720,
-    "foot_center_x": 43,
-    "foot_width": 53
+    "foot_center_x": 43
   },
   {
     "leg_id": "leg_23",
     "pair_id": "pair_12",
     "side": "left",
-    "src_row": 3,
-    "src_x0": 1305,
-    "src_x1": 1486,
     "width": 181,
     "height": 720,
-    "foot_center_x": 33,
-    "foot_width": 64
+    "foot_center_x": 33
   },
   {
     "leg_id": "leg_24",
     "pair_id": "pair_12",
     "side": "right",
-    "src_row": 3,
-    "src_x0": 1488,
-    "src_x1": 1633,
     "width": 145,
     "height": 720,
-    "foot_center_x": 44,
-    "foot_width": 50
+    "foot_center_x": 44
   },
   {
     "leg_id": "leg_25",
     "pair_id": "pair_13",
     "side": "left",
-    "src_row": 3,
-    "src_x0": 1751,
-    "src_x1": 1896,
     "width": 145,
     "height": 720,
-    "foot_center_x": 72,
-    "foot_width": 51
+    "foot_center_x": 72
   },
   {
     "leg_id": "leg_26",
     "pair_id": "pair_13",
     "side": "right",
-    "src_row": 3,
-    "src_x0": 1904,
-    "src_x1": 2054,
     "width": 150,
     "height": 720,
-    "foot_center_x": 51,
-    "foot_width": 53
+    "foot_center_x": 51
   }
 ]

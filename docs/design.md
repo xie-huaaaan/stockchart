@@ -200,15 +200,22 @@ matplotlib's font configuration, so none of its caching/configuration issues app
   even), and `group_gap` is the group spacing (default 120); the two are
   independent. The group spacing was increased after review to make group
   boundaries more obvious.
-- Leg-picking strategy (default): take legs along each column in the order
-  "left, right, left, right…"; which pair the assets come from is chosen
-  pseudo-randomly by `seed`, preferring no repeats, and can also be specified
-  manually.
-- Paired selection is no longer a standalone function: the top-level `paired`
-  parameter (default True) makes each group reuse the same pair of assets when
-  the data has exactly 2 series (series 0 takes the left leg, series 1 the
-  right leg); with any other series count the parameter is ignored.
-- Single-leg assets are used only when pairing is not requested.
+- Leg-picking strategy: `LegLibrary.alternate(n, paired=...)` takes legs along
+  each column in the order "left, right, left, right…"; the asset pair is
+  chosen pseudo-randomly by `seed`, preferring no repeats. With
+  `paired=True`, adjacent legs form a pair (left, right); otherwise every leg
+  comes from a different pair. Single-leg assets are used only when pairing is
+  not requested.
+- **Four top-level `paired` strategies**: `"auto"` (default) uses `"none"`
+  for a single series and `"global"` for multiple series; `"group"` takes
+  complete pairs independently within each group — series 0 and 1 share a
+  pair, series 2 starts the next pair, and for an odd series count the extra
+  right leg of the last pair is discarded; `"global"` takes pairs continuously
+  across the whole chart, so a pair may span groups; `"none"` draws every leg
+  from a different pair. For a single series, `"group"` falls back to `"none"`
+  so the chart does not become all left legs. Multi-series defaults to
+  `"global"` to avoid two same-side legs meeting at a group boundary. L3's
+  `add_bars` / `add_grouped_bars` accept the same parameter.
 - **Style cycling**: the batch methods accept a list for `style`, and the
   `cycle` parameter decides how it cycles. "group" cycles by **position within
   the group** (bar i in a group uses `styles[i % len]`) — when the list length
@@ -305,10 +312,10 @@ later if needed.
 ## Assets and Output (Design Pixels vs Pixel Density)
 
 - **Design pixels are the layout coordinate system**: `Leg`'s
-  `width/height/foot_center_x/foot_width` are always in design pixels (leg
-  height 720), and spacing, font sizes, and `y_extent` all live in this unit.
-  Callers never pass design sizes, and should never change them — they belong
-  to the asset, provided by `LegLibrary`.
+  `width/height/foot_center_x` are always in design pixels (leg height 720),
+  and spacing, font sizes, and `y_extent` all live in this unit. Callers never
+  pass design sizes, and should never change them — they belong to the asset,
+  provided by `LegLibrary`.
 - **Pixel density is a separate matter**: `Leg.pixels_per_unit` means
   "`image` pixels / design pixels". The bundled assets' `image` is only a
   design-size layout preview (1); `render_stocking(scale=k)` scales the
@@ -325,12 +332,15 @@ later if needed.
   `<clipPath>` generated from the leg's visible silhouette (blue channel below
   the paper background) is applied to cut the background away — the SVG is
   therefore transparent and can be stored in the library as the sole asset.
-- **Rasterizing at the target height**: `vector.rasterize_svg` renders the SVG
-  to the target pixel size. skia's SVGDOM miscalculates clipPath when scaling
-  the container (observed: shifted left / partially clipped), so it always
-  renders at the intrinsic size (design × 4) first, then scales to the target
-  with Lanczos; the result is cached on the Leg. At runtime each leg costs
-  about 85ms on first rasterization (4×), and chart redraws reuse the cache.
+- **Rasterizing directly at the target pixel size**: `vector.rasterize_svg`
+  renders the SVG directly at the target pixel size. skia's SVGDOM
+  miscalculates clipPath when the **container** is scaled (observed: shifted
+  left / partially clipped), so the container always stays at the SVG's
+  intrinsic size (design × 4) and only the canvas is scaled — vector paths
+  (including clipping) are rasterized at the target resolution. As a result
+  scales above 4× still get true vector detail instead of an upscaled 4×
+  bitmap; the result is cached on the Leg by target size, and chart redraws
+  reuse the cache.
 - **Legs clipped at the master artwork's edges**: the master artwork's left and
   right edges may cut off legs (currently pair_04, pair_08); those pairs fall
   back together to the 720p row images and are re-traced from there, while the
@@ -357,8 +367,9 @@ Five layers; full signatures and semantics in the [API reference](api/index.md):
   `draw_text()`, `sketch_line()`, `sketch_axis()`
 - L2 Free-form bar charts: `BarPlot`, `Scale`, `Canvas`
 - L3 Layout helpers: `BarPlot.add_bars / add_grouped_bars / add_paired_bars`
-- L4 One-line charts: `bar()`, `mirror_bar()` (the `paired` parameter controls
-  paired leg selection and only takes effect with exactly 2 series)
+- L4 One-line charts: `bar()`, `mirror_bar()` (the four-valued `paired`
+  parameter controls auto, unpaired, group-paired, or globally-paired leg
+  selection)
 
 ## Data Input and Parameter Pass-Through
 
@@ -451,6 +462,12 @@ Five layers; full signatures and semantics in the [API reference](api/index.md):
 - **L4 parameter layering**: chart-semantic parameters stay in the signature;
   pass-through parameters are packed into `ChartOptions` and received via
   `**options`;
+- **Leg pairing**: `paired="auto"` (default; none for a single series,
+  global for multiple series) / `"none"` / `"group"` / `"global"`; for a
+  single series, group falls back to none; L0's `alternate(paired=True)`
+  provides the flat "adjacent legs form a pair" primitive;
+- **No default seed**: omitting `seed` is random; the same `seed` reproduces
+  the same result;
 - **Group spacing defaults to 120** (previously 96), making group boundaries
   clearer;
 - Output is PNG only; no SVG/PDF. SVG exists only as the storage format for

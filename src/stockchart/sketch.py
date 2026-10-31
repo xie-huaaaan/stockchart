@@ -15,7 +15,6 @@ from stockchart.defaults import (
     DEFAULT_ARROW_HALF_ANGLE_DEG,
     DEFAULT_ARROW_SIZE,
     DEFAULT_INK_COLOR,
-    DEFAULT_SEED,
     DEFAULT_SKETCH_SEGMENT_PX,
     DEFAULT_STROKE_WIDTH,
     DEFAULT_TICK_LABEL_GAP,
@@ -85,7 +84,7 @@ def sketch_line(
     seed: int | None = None,
 ) -> None:
     """手绘风直线：对线段做确定性细分抖动，两端点保持原位。wobble 为 0 时画直线。"""
-    rng = random.Random(DEFAULT_SEED if seed is None else seed)
+    rng = random.Random(seed)
     points = _jittered_points(x1, y1, x2, y2, wobble, rng)
     if not points:
         return
@@ -124,7 +123,7 @@ def sketch_axis(
     ticks 为 (距起点的像素偏移, 标签文字)：垂直轴的刻度与数字在干线左侧，
     水平轴的在其下侧。
     """
-    rng = random.Random(DEFAULT_SEED if seed is None else seed)
+    rng = random.Random(seed)
 
     def child_seed() -> int:
         return rng.getrandbits(32)

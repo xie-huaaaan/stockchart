@@ -26,9 +26,8 @@ class Leg:
         width: 设计像素宽。
         height: 设计像素高。
         foot_center_x: 足底中心在设计坐标系里的 x，放置对齐的锚点。
-        foot_width: 足底宽度（设计像素）。
         pixels_per_unit: `image` 的像素 / 设计像素。内置素材为 1（布局预览）；
-            外部素材为 1 或更高密度。
+            外部素材为 1。
         leg_id: 内置素材编号（如 "leg_03"）；外部素材为 None。
         pair_id: 所属配对编号（如 "pair_02"）；外部素材为 None。
         side: "left" / "right"；外部素材为 None。
@@ -39,7 +38,6 @@ class Leg:
     width: int
     height: int
     foot_center_x: int
-    foot_width: int
     pixels_per_unit: float = 1.0
     leg_id: str | None = None
     pair_id: str | None = None
@@ -52,7 +50,7 @@ class Leg:
     )
 
     def raster_at(self, pixels_per_unit: float) -> NDArray[np.uint8]:
-        """按目标密度栅格化矢量源，结果缓存在 Leg 上。
+        """按目标密度直接把矢量源渲染成位图，结果缓存在 Leg 上。
 
         Args:
             pixels_per_unit: 目标像素 / 设计像素。

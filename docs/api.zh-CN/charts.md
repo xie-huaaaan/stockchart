@@ -59,7 +59,7 @@ def bar(
     ylabel: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
     cycle: Literal["auto", "group", "sequence"] = "auto",
-    paired: bool = True,
+    paired: Literal["auto", "none", "group", "global"] = "auto",
     value_labels: bool = False,
     max_fill: float = 0.8,
     min_fill: float = 0.1,
@@ -95,8 +95,11 @@ def bar(
             取 "sequence"（即每根柱按顺序取样式）、二维数据取 "group"。
             二维数据下 "sequence" 与 series_labels 无法对应固定的系列样式，
             同时传入抛 ValueError。
-        paired: 仅当数据恰好 2 系列时生效（默认 True）：每组使用同一对素材，
-            系列 0 左腿、系列 1 右腿；其余系列数时忽略此参数。
+        paired: 选腿的配对策略。"auto"（默认）单系列用 "none"、多系列用
+            "global"；"group" 每组独立取完整对：系列 0、1 同一对（左、右），
+            系列 2 起继续取下一对；"global" 整张图连续取对，配对可以跨组；
+            "none" 每条腿来自不同素材对。单系列下 "group" 也退化为 "none"，
+            避免全部使用左腿。
         value_labels: True 时在袜口上方手写数值。
         max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
@@ -126,7 +129,7 @@ def mirror_bar(
     ylabel: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
     cycle: Literal["auto", "group", "sequence"] = "auto",
-    paired: bool = True,
+    paired: Literal["auto", "none", "group", "global"] = "auto",
     value_labels: bool = False,
     max_abs_fill: float = 0.8,
     y_extent: int = DEFAULT_Y_EXTENT,
@@ -147,7 +150,7 @@ def mirror_bar(
         ylabel: y 轴名称。
         style: 语义同 bar()。
         cycle: 语义同 bar()。
-        paired: 语义同 bar()。
+        paired: 语义同 bar()；镜像图同样默认 "auto"。
         value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
         max_abs_fill: 最大绝对值映射到 y_extent 的比例（默认 0.8）。
         y_extent: 基线上方预留的像素高度。

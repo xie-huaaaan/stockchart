@@ -19,7 +19,6 @@ def make_leg(h: int = 720, w: int = 160) -> Leg:
         width=w,
         height=h,
         foot_center_x=w // 2,
-        foot_width=w // 2,
     )
 
 
@@ -71,7 +70,7 @@ class TestBarPlotCore:
 
     def test_render_pixels_and_determinism(self) -> None:
         def build() -> BarPlot:
-            p = BarPlot(400, extent_up=760)
+            p = BarPlot(400, extent_up=760, seed=0)
             p.add_bar(120, 500, make_leg(), style="black_sheer")
             p.add_bar(280, 200, make_leg(), style="white_tights")
             return p

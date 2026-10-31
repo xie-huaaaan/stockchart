@@ -24,7 +24,6 @@ from stockchart.defaults import (
     DEFAULT_GROUP_GAP,
     DEFAULT_MAX_FILL,
     DEFAULT_MIN_FILL,
-    DEFAULT_SEED,
     DEFAULT_STOCKING_STYLE,
     DEFAULT_TITLE_ALIGN,
     DEFAULT_TITLE_SIZE,
@@ -32,12 +31,12 @@ from stockchart.defaults import (
     DEFAULT_Y_EXTENT,
 )
 from stockchart.legs import Leg
-from stockchart.library import LegLibrary
 from stockchart.plot import (
     AxisStyle,
     BarPlot,
     BarSide,
     LegendLoc,
+    Pairing,
     Scale,
     StyleCycle,
     TitleAlign,
@@ -47,6 +46,7 @@ from stockchart.plot import (
     _format_tick,
     _LegSpec,
     _normalize_style_seq,
+    _select_legs_for_groups,
 )
 from stockchart.stocking import StyleSeq
 from stockchart.text import measure_text
@@ -107,21 +107,11 @@ def _check_options(options: ChartOptions) -> None:
 def _select_legs(
     rows: list[list[float]],
     *,
-    paired: bool,
+    paired: Pairing,
     seed: int,
 ) -> list[list[Leg]]:
-    """自动选腿。
-
-    恰好 2 系列且 paired 时每组同用一对（系列 0 左腿），否则跨列
-    左、右、左、右……交替。
-    """
-    lib = LegLibrary(seed=seed)
-    series = len(rows[0])
-    if series == 2 and paired:
-        pairs = lib.sample_pairs(len(rows))
-        return [list(pair) for pair in pairs]
-    flat = lib.alternate(len(rows) * series)
-    return [flat[g * series : (g + 1) * series] for g in range(len(rows))]
+    """按组的系列数自动选腿；规则见 plot._select_legs_for_groups。"""
+    return _select_legs_for_groups([len(row) for row in rows], paired=paired, seed=seed)
 
 
 def _plan_slots(
@@ -232,7 +222,7 @@ def bar(
     ylabel: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
     cycle: CycleMode = "auto",
-    paired: bool = True,
+    paired: Pairing = "auto",
     value_labels: bool = False,
     max_fill: float = DEFAULT_MAX_FILL,
     min_fill: float = DEFAULT_MIN_FILL,
@@ -266,8 +256,11 @@ def bar(
             "sequence"（每根柱按顺序取样式）、二维取 "group"（长度等于系列数
             时即"每系列一个样式"）。二维数据下 "sequence" 无法与图例的系列
             样式对应，同时传 series_labels 抛 ValueError。
-        paired: 仅当数据恰好 2 系列时生效（默认 True）：每组使用同一对素材，
-            系列 0 左腿、系列 1 右腿；其余系列数时忽略此参数。
+        paired: 选腿的配对策略。"auto"（默认）单系列用 "none"、多系列用
+            "global"；"group" 每组独立取完整对：系列 0、1 同一对（左、右），
+            系列 2 起继续取下一对；"global" 整张图连续取对，配对可以跨组；
+            "none" 每条腿来自不同素材对。单系列下 "group" 也退化为 "none"，
+            避免全部使用左腿。
         value_labels: True 时在袜口上方手写数值。
         max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
@@ -300,7 +293,7 @@ def bar(
     if series_labels is not None and mode == "sequence":
         raise ValueError("series_labels 需要固定的系列样式，请用 cycle='group'")
 
-    rng = random.Random(DEFAULT_SEED if seed is None else seed)
+    rng = random.Random(seed)
     legs = _select_legs(rows, paired=paired, seed=rng.getrandbits(32))
     styles = _normalize_style_seq(style)
 
@@ -379,7 +372,7 @@ def mirror_bar(
     ylabel: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
     cycle: CycleMode = "auto",
-    paired: bool = True,
+    paired: Pairing = "auto",
     value_labels: bool = False,
     max_abs_fill: float = DEFAULT_MAX_FILL,
     y_extent: int = DEFAULT_Y_EXTENT,
@@ -402,7 +395,7 @@ def mirror_bar(
         ylabel: y 轴名称。
         style: 语义同 bar()。
         cycle: 语义同 bar()。
-        paired: 语义同 bar()。
+        paired: 语义同 bar()；镜像图同样默认 "auto"。
         value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
         max_abs_fill: 最大绝对值映射到 y_extent 的比例（默认 0.8）。
         y_extent: 基线上方预留的像素高度。
@@ -434,7 +427,7 @@ def mirror_bar(
     if series_labels is not None and mode_cycle == "sequence":
         raise ValueError("series_labels 需要固定的系列样式，请用 cycle='group'")
 
-    rng = random.Random(DEFAULT_SEED if seed is None else seed)
+    rng = random.Random(seed)
     legs = _select_legs(rows, paired=paired, seed=rng.getrandbits(32))
     styles = _normalize_style_seq(style)
 

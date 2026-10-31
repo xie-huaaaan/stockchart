@@ -12,7 +12,14 @@ from stockchart.data import (
 )
 from stockchart.legs import Leg
 from stockchart.library import LegLibrary, load_leg
-from stockchart.plot import AxisStyle, BarPlot, Scale, TitleAlign, XLabelRotation
+from stockchart.plot import (
+    AxisStyle,
+    BarPlot,
+    Pairing,
+    Scale,
+    TitleAlign,
+    XLabelRotation,
+)
 from stockchart.sketch import sketch_axis, sketch_line
 from stockchart.stocking import (
     STYLES,
@@ -51,6 +58,7 @@ __all__ = [
     "Lace",
     "Leg",
     "LegLibrary",
+    "Pairing",
     "Plain",
     "PlotData",
     "Ribbed",

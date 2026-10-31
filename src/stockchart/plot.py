@@ -42,7 +42,6 @@ from stockchart.defaults import (
     DEFAULT_OUTPUT_SCALE,
     DEFAULT_PLOT_LEFT_PAD,
     DEFAULT_PLOT_RIGHT_PAD,
-    DEFAULT_SEED,
     DEFAULT_STOCKING_STYLE,
     DEFAULT_SWATCH_RADIUS,
     DEFAULT_SWATCH_STROKE,
@@ -88,6 +87,51 @@ type StyleCycle = Literal["group", "sequence"]
 type AxisStyle = Literal["clean", "handdrawn"]
 type XLabelRotation = float | Literal["auto"]
 type TitleAlign = Literal["center", "left"]
+type Pairing = Literal["auto", "none", "group", "global"]
+
+
+def _check_pairing(paired: Pairing) -> None:
+    """校验选腿的配对策略。"""
+    if paired not in ("auto", "none", "group", "global"):
+        raise ValueError(f"paired 须为 'auto'、'none'、'group' 或 'global'，得到 {paired!r}")
+
+
+def _select_legs_for_groups(sizes: Sequence[int], *, paired: Pairing, seed: int) -> list[list[Leg]]:
+    """按每组腿数自动选腿。
+
+    "auto"（默认）单系列用 "none"、多系列用 "global"；"none" 时每条腿
+    来自不同素材对；"group" 时每组独立取完整对，奇数系列数舍去最后一对
+    多出的右腿；"global" 时整张图连续取对，配对可以跨组。单系列下
+    "group" 退化为 "none"，避免全部使用左腿。
+    """
+    _check_pairing(paired)
+    if not sizes or any(size <= 0 for size in sizes):
+        raise ValueError("每组腿数须为正数")
+    lib = LegLibrary(seed=seed)
+    multi_series = max(sizes) >= 2
+    if paired == "auto":
+        paired = "global" if multi_series else "none"
+    if paired == "group" and not multi_series:
+        paired = "none"
+
+    if paired == "group":
+        pairs_per_group = [(size + 1) // 2 for size in sizes]
+        pairs = lib.sample_pairs(sum(pairs_per_group))
+        result: list[list[Leg]] = []
+        cursor = 0
+        for size, count in zip(sizes, pairs_per_group, strict=True):
+            group_pairs = pairs[cursor : cursor + count]
+            cursor += count
+            result.append([leg for pair in group_pairs for leg in pair][:size])
+        return result
+
+    flat = lib.alternate(sum(sizes), paired=paired == "global")
+    result = []
+    cursor = 0
+    for size in sizes:
+        result.append(flat[cursor : cursor + size])
+        cursor += size
+    return result
 
 
 def _resolve_style(style: StyleLike) -> StockingStyle:
@@ -407,7 +451,7 @@ class BarPlot:
         self._extent_down = extent_down
         self._background = background
         self._axis_style = axis_style
-        self._rng = random.Random(DEFAULT_SEED if seed is None else seed)
+        self._rng = random.Random(seed)
         self._bars: list[_BarRecord] = []
         self._group_centers: list[float] = []
         self._l3_cursor = 0.0  # L3 方法的续排光标（最后一条腿的右缘）
@@ -637,20 +681,26 @@ class BarPlot:
         *,
         bar_gap: float = DEFAULT_BAR_GAP,
         style: StyleSeq = DEFAULT_STOCKING_STYLE,
+        paired: Pairing = "auto",
         legs: Sequence[Leg] | None = None,
         seed: int | None = None,
     ) -> BarPlot:
         """单序列：统一间距从左到右排开，自动按左、右、左、右……交替选腿。
 
         legs 可显式指定每根柱子的素材（长度须与 heights_px 一致，不参与
-        循环）。style 为列表时按柱序循环取用。多次调用 L3 方法时从上一次
-        内容的右缘续排。
+        循环，此时 paired 忽略）。单序列下 "auto" / "group" 都退化为
+        "none"；显式 "global" 时相邻柱子成对取素材。style 为列表时按柱序
+        循环取用。多次调用 L3 方法时从上一次内容的右缘续排。
         """
         heights = list(heights_px)
         if not heights:
             raise ValueError("heights_px 为空")
+        _check_pairing(paired)
         if legs is None:
-            legs = self._auto_legs(len(heights), seed=seed)
+            seed_value = self._rng.getrandbits(32) if seed is None else seed
+            sizes = [1] * len(heights)
+            rows = _select_legs_for_groups(sizes, paired=paired, seed=seed_value)
+            legs = [leg for row in rows for leg in row]
         elif len(legs) != len(heights):
             raise ValueError(f"legs 与 heights_px 长度不一致：{len(legs)} != {len(heights)}")
         self._advance_cursor(DEFAULT_GROUP_GAP)
@@ -666,24 +716,34 @@ class BarPlot:
         group_gap: float = DEFAULT_GROUP_GAP,
         style: StyleSeq = DEFAULT_STOCKING_STYLE,
         cycle: StyleCycle = "group",
+        paired: Pairing = "auto",
         legs: Sequence[Leg] | None = None,
         seed: int | None = None,
     ) -> BarPlot:
         """(组数, 系列数) 的像素高度。
 
         组内用 bar_gap、组间用 group_gap，跨列按左、右、左、右……交替选腿。
+        paired="auto"（默认）单系列用 "none"、多系列用 "global"；"group"
+        时每组独立取完整对（相邻两腿同一对素材），"global" 时整张图连续
+        取对，"none" 时每条腿来自不同素材对。
 
         style 为列表时按 cycle 取用："group"（默认）按组内位置循环，组内
         第 i 根用 styles[i % len]，列表长度等于系列数时即"每系列一个样式"；
         "sequence" 按全部柱子的绘制顺序循环（组 0 第 0 根、组 0 第 1 根、
-        组 1 第 0 根……）。legs 显式时按行优先展平，长度须等于总柱数。
+        组 1 第 0 根……）。legs 显式时按行优先展平，长度须等于总柱数，
+        此时 paired 忽略。
         """
         groups = [list(g) for g in heights_px]
         if not groups:
             raise ValueError("heights_px 为空")
         total = sum(len(g) for g in groups)
+        _check_pairing(paired)
         if legs is None:
-            legs = self._auto_legs(total, seed=seed)
+            seed_value = self._rng.getrandbits(32) if seed is None else seed
+            rows = _select_legs_for_groups(
+                [len(group) for group in groups], paired=paired, seed=seed_value
+            )
+            legs = [leg for row in rows for leg in row]
         elif len(legs) != total:
             raise ValueError(f"legs 与总柱数不一致：{len(legs)} != {total}")
         self._advance_cursor(group_gap)
@@ -736,11 +796,6 @@ class BarPlot:
             self._place_group(group, bar_gap=DEFAULT_BAR_GAP, styles=styles, legs=list(pair))
             self._l3_cursor += group_gap
         return self
-
-    def _auto_legs(self, n: int, *, seed: int | None) -> list[Leg]:
-        """自动选腿：左、右、左、右……交替，素材对按 seed 伪随机。"""
-        lib = LegLibrary(seed=self._rng.getrandbits(32) if seed is None else seed)
-        return lib.alternate(n)
 
     def _advance_cursor(self, gap: float) -> None:
         """续排时光标与已有内容保持 group_gap 的边缘间距。"""

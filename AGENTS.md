@@ -19,6 +19,7 @@ L4 的下层参数通过 `ChartOptions` 透传。新会话先看 `git log --onel
 - `uv run ruff check . && uv run ruff format .`
 - `uv run python -m pyright`
 - `uv run python tools/render_plot_review.py`：重出评审图到 `out/plots/`
+- `uv run python tools/render_leg_catalog.py`：重出素材目录图到 `docs/images/`
 - 素材管线：`uv run python tools/split_master.py dist/all_up_1.png`；改动素材后重出
   `out/preview_svg.png` 并核对配对与左右。
 
@@ -36,7 +37,8 @@ L4 的下层参数通过 `ChartOptions` 透传。新会话先看 `git log --onel
 - 内置腿素材是透明 SVG，`render_stocking(scale=)` 按目标倍率栅格化；腿编号与配对
   一经发布不得变动。代码为 MPL-2.0，腿素材为 ARR，不得单独再分发或改作独立素材；
   改许可声明须同步 `LICENSE`、`ASSETS-LICENSE` 与两份 README。
-- 默认值集中在 `defaults.py`；随机行为由 `seed` 控制，保证可复现。
+- 默认值集中在 `defaults.py`；随机行为由 `seed` 控制，同一 seed 可复现；
+  不传 seed 则每次随机。
 - pandas 只按 `index` / `columns` / `to_numpy()` 结构识别，不 import、不进依赖。
 - 公开 API 的 docstring 与 `docs/api.zh-CN/`（及英文版 `docs/api/`）同步；改签名先改文档。
 - 新增 L4 透传参数时同步 `ChartOptions`、`_OPTION_KEYS` 与 `docs/api.zh-CN/charts.md`

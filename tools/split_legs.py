@@ -1,7 +1,8 @@
 """720p 原始素材切分脚本：从 assets/row1~3.png 提取各条腿，供参考与兜底。
 
 库内素材现在是透明 SVG（`tools/split_master.py` 生成），本脚本只产出设计尺寸
-位图参考，不再写进 `src/stockchart/assets/`。
+位图参考，不再写进 `src/stockchart/assets/`；输出 JSON 的字段与运行时
+`legs.json` 一致（不含出处的 720p 坐标）。
 
 用法：uv run python tools/split_legs.py
 输出：
@@ -68,18 +69,15 @@ def extract_legs(png_path: Path, row: int) -> list[dict]:  # type: ignore[type-a
         crop = img[:, x0:x1, :].copy()
         H, W = crop.shape[:2]
 
-        # 足底信息：用底部 FOOT_ROWS 行的 alpha 质心和宽度
+        # 足底中心：用底部 FOOT_ROWS 行的 alpha 质心
         bot_alpha = crop[H - FOOT_ROWS :, :, 3].astype(float)
         col_sum = bot_alpha.sum(0)
         total = col_sum.sum()
         if total < 1:
             foot_center_x = W // 2
-            foot_width = W // 3
         else:
             xs = np.arange(W, dtype=float)
             foot_center_x = int((col_sum * xs).sum() / total)
-            # 足底宽度：alpha > 0 的列数均值
-            foot_width = int((bot_alpha > 0).sum(1).mean())
 
         legs.append(
             {
@@ -87,10 +85,8 @@ def extract_legs(png_path: Path, row: int) -> list[dict]:  # type: ignore[type-a
                 "width": W,
                 "height": H,
                 "foot_center_x": foot_center_x,
-                "foot_width": foot_width,
                 "src_row": row,
                 "src_x0": x0,
-                "src_x1": x1,
             }
         )
 
@@ -154,18 +150,14 @@ def main() -> None:
                 "leg_id": leg_id,
                 "pair_id": pair_id,
                 "side": leg["side"],
-                "src_row": leg["src_row"],
-                "src_x0": leg["src_x0"],
-                "src_x1": leg["src_x1"],
                 "width": leg["width"],
                 "height": leg["height"],
                 "foot_center_x": leg["foot_center_x"],
-                "foot_width": leg["foot_width"],
             }
         )
         print(
             f"  {leg_id}  {pair_id}  {leg['side']:<5}  w={leg['width']}  "
-            f"foot_cx={leg['foot_center_x']}  foot_w={leg['foot_width']}"
+            f"foot_cx={leg['foot_center_x']}"
         )
 
     # 写 JSON

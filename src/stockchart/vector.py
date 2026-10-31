@@ -1,8 +1,8 @@
 """内置矢量素材的栅格化。
 
-素材 SVGDOM 在固有尺寸（设计像素 × 4）下渲染时才能正确应用 `<clipPath>`；
-把容器缩放到其他尺寸时 skia 会把裁切区域算错（实测左侧被裁掉）。因此这里总是
-先按 SVG 的固有尺寸渲染，再用 Lanczos 缩放到目标像素尺寸。
+SVG 的容器尺寸必须保持固有尺寸，`clipPath` 才能正确应用；把容器缩放到其他
+尺寸时 skia 会把裁切区域算错（实测左侧被裁掉）。因此渲染到目标尺寸时改为
+缩放画布，让矢量路径（含裁切）按目标分辨率重新光栅化。
 """
 
 from __future__ import annotations
@@ -12,13 +12,12 @@ import re
 import numpy as np
 import skia
 from numpy.typing import NDArray
-from PIL import Image
 
 _SVG_SIZE = re.compile(r'<svg[^>]*\bwidth="([0-9.]+)"[^>]*\bheight="([0-9.]+)"')
 
 
 def rasterize_svg(svg: bytes, width: int, height: int) -> NDArray[np.uint8]:
-    """把透明 SVG 素材栅格化成 width × height 的 RGBA 图。
+    """把透明 SVG 素材直接栅格化成 width × height 的 RGBA 图。
 
     Args:
         svg: SVG 文本字节；根节点须带 width/height。
@@ -34,17 +33,16 @@ def rasterize_svg(svg: bytes, width: int, height: int) -> NDArray[np.uint8]:
     if m is None:
         raise ValueError("SVG 根节点缺少 width/height")
     intrinsic_w, intrinsic_h = round(float(m.group(1))), round(float(m.group(2)))
+    if intrinsic_w <= 0 or intrinsic_h <= 0:
+        raise ValueError(f"SVG 固有尺寸须为正数，得到 {intrinsic_w}×{intrinsic_h}")
 
     dom = skia.SVGDOM.MakeFromStream(skia.MemoryStream(svg))
     if dom is None:
         raise ValueError("无法解析 SVG")
-    surface = skia.Surface(intrinsic_w, intrinsic_h)
+    surface = skia.Surface(width, height)
     with surface as canvas:
         dom.setContainerSize(skia.Size(intrinsic_w, intrinsic_h))
+        canvas.scale(width / intrinsic_w, height / intrinsic_h)
         dom.render(canvas)
     # skia 的光栅缓冲是 BGRA，导出时换回 RGBA
-    arr = surface.makeImageSnapshot().toarray()[:, :, [2, 1, 0, 3]].copy()
-
-    if (intrinsic_w, intrinsic_h) != (width, height):
-        arr = np.asarray(Image.fromarray(arr).resize((width, height), Image.Resampling.LANCZOS))
-    return arr
+    return surface.makeImageSnapshot().toarray()[:, :, [2, 1, 0, 3]].copy()

@@ -39,6 +39,14 @@ class TestAddBars:
         sides = [b.leg.side for b in p._bars]
         assert sides == ["left", "right", "left", "right", "left"]
 
+    def test_global_pairing_pairs_adjacent_bars(self) -> None:
+        p = BarPlot(2000, seed=3)
+        p.add_bars([100.0] * 4, paired="global")
+        legs = [b.leg for b in p._bars]
+        assert legs[0].pair_id == legs[1].pair_id
+        assert legs[2].pair_id == legs[3].pair_id
+        assert legs[0].pair_id != legs[2].pair_id
+
     def test_style_sequence_cycles_by_bar(self) -> None:
         p = BarPlot(2000)
         p.add_bars([100.0] * 4, style=["black_tights", "white_tights"])
@@ -119,6 +127,22 @@ class TestAddGroupedBars:
         # add_x_labels 无 xs 时自动对齐组中心
         p.add_x_labels(["甲", "乙"])
         assert p._x_labels is not None and p._x_labels.xs is None
+
+    def test_auto_pairs_across_group_boundary(self) -> None:
+        p = BarPlot(4000, seed=2)
+        p.add_grouped_bars([[100.0, 100.0, 100.0], [100.0, 100.0, 100.0]])
+        legs = [b.leg for b in p._bars]
+        assert legs[2].pair_id == legs[3].pair_id
+        assert legs[3].side == "right"
+
+    def test_paired_group_restarts_each_group(self) -> None:
+        p = BarPlot(4000, seed=2)
+        p.add_grouped_bars([[100.0, 100.0, 100.0], [100.0, 100.0, 100.0]], paired="group")
+        legs = [b.leg for b in p._bars]
+        assert legs[0].pair_id == legs[1].pair_id
+        assert legs[2].pair_id != legs[1].pair_id
+        assert legs[3].pair_id == legs[4].pair_id
+        assert legs[3].pair_id != legs[2].pair_id
 
     def test_explicit_legs_flattened_length(self) -> None:
         p = BarPlot(4000)

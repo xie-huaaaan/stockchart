@@ -6,6 +6,13 @@
 
 - 许可：代码保持 MPL-2.0；内置腿部素材改为 ARR（保留所有权利），并新增素材许可文件。
 - 文档：PyPI 页面改为中英双语合成，相对链接全部改写为 GitHub 绝对地址。
+- L0：移除默认种子（不传 `seed` 即随机）；移除 `Leg.foot_width` 与 `legs.json` 的
+  720p 出处字段；`legs.json` 加载时做完整性校验；新增 `LegLibrary.leg_ids` /
+  `pair_ids` / `preview()` 与素材目录工具。
+- 选腿：`LegLibrary.alternate(n, paired=True)` 支持相邻成对；L4 `paired` 改为
+  `"auto"` / `"none"` / `"group"` / `"global"` 四值，默认 `"auto"`（单系列
+  none、多系列 global），不再限于 2 系列。
+- 栅格化：SVG 素材改为按目标像素直接渲染，`scale > 4` 不再放大 4× 位图。
 
 ## 0.1.0 — 2026-10-27
 

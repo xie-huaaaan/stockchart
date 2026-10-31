@@ -56,7 +56,7 @@ def bar(
     ylabel: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
     cycle: Literal["auto", "group", "sequence"] = "auto",
-    paired: bool = True,
+    paired: Literal["auto", "none", "group", "global"] = "auto",
     value_labels: bool = False,
     max_fill: float = 0.8,
     min_fill: float = 0.1,
@@ -102,10 +102,14 @@ def bar(
             takes styles in order) and "group" for 2D data. With 2D data,
             "sequence" cannot be matched to a fixed per-series style when
             series_labels is also given; providing both raises ValueError.
-        paired: only takes effect when the data has exactly 2 series
-            (default True): each group uses the same pair of assets,
-            series 0 the left leg and series 1 the right leg; ignored for
-            any other series count.
+        paired: leg-pairing strategy. "auto" (default) uses "none" for a
+            single series and "global" for multiple series; "group" takes
+            complete pairs independently within each group: series 0 and 1
+            share a pair (left, right), series 2 starts the next pair;
+            "global" takes pairs continuously across the whole chart, so a
+            pair may span groups; "none" draws every leg from a different
+            pair. For a single series, "group" also falls back to "none" so
+            the chart does not become all left legs.
         value_labels: when True, handwritten value labels above the
             stocking tops.
         max_fill: fraction of y_extent the maximum maps to (default 0.8).
@@ -142,7 +146,7 @@ def mirror_bar(
     ylabel: str | None = None,
     style: StyleSeq = DEFAULT_STOCKING_STYLE,
     cycle: Literal["auto", "group", "sequence"] = "auto",
-    paired: bool = True,
+    paired: Literal["auto", "none", "group", "global"] = "auto",
     value_labels: bool = False,
     max_abs_fill: float = 0.8,
     y_extent: int = DEFAULT_Y_EXTENT,
@@ -166,7 +170,7 @@ def mirror_bar(
         ylabel: y axis name.
         style: same semantics as bar().
         cycle: same semantics as bar().
-        paired: same semantics as bar().
+        paired: same semantics as bar(); mirrored charts also default to "auto".
         value_labels: when True, handwritten value labels — above the
             stocking top for upper legs, below it for lower legs.
         max_abs_fill: fraction of y_extent the largest absolute value maps

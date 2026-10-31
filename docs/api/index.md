@@ -14,7 +14,7 @@ stockchart's public API is organized in five layers (L0–L4); higher layers wor
 ## Global conventions
 
 - **Coordinate units** are always design pixels (the design coordinate system where a leg is 720 tall); the final output magnification is a separate `scale` parameter.
-- **Randomness**: leg selection, stocking textures, and hand-drawn wobble are all controlled by `seed`; the same parameters with the same seed always render identically.
+- **Randomness**: leg selection, stocking textures, and hand-drawn wobble are all controlled by `seed`; the same parameters with the same seed always render identically. Omitting `seed` gives a fresh random result each run.
 - **Bare leg** simply means "stocking height 0"; there is no separate switch.
 - Higher layers work only through the public interfaces of lower layers:
 

@@ -3,7 +3,7 @@
 
 """L4 一行出图测试：映射规则、成对选腿、图例、数值标签与镜像。"""
 
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -53,6 +53,68 @@ class TestBarMapping:
     def test_ragged_rows_raise(self) -> None:
         with pytest.raises(ValueError):
             bar([[1.0, 2.0], [3.0]])
+
+
+class TestPairing:
+    """paired 的四种策略：auto / none / group / global。"""
+
+    def test_auto_single_series_uses_none(self) -> None:
+        p = bar([1.0, 2.0, 3.0], seed=1)
+        legs = [b.leg for b in p._bars]
+        assert len({leg.pair_id for leg in legs}) == 3
+        assert [leg.side for leg in legs] == ["left", "right", "left"]
+
+    def test_auto_multi_series_uses_global(self) -> None:
+        p = bar([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], seed=1)
+        legs = [b.leg for b in p._bars]
+        assert legs[2].pair_id == legs[3].pair_id
+        assert legs[3].side == "right"
+
+    def test_auto_two_series_pairs_within_each_group(self) -> None:
+        p = bar([[1.0, 2.0], [3.0, 4.0]], seed=1)
+        legs = [b.leg for b in p._bars]
+        assert legs[0].pair_id == legs[1].pair_id
+        assert legs[2].pair_id == legs[3].pair_id
+
+    def test_group_pairing_three_series(self) -> None:
+        p = bar([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], paired="group", seed=1)
+        legs = [b.leg for b in p._bars]
+        assert legs[0].pair_id == legs[1].pair_id
+        assert legs[2].pair_id != legs[1].pair_id
+        assert [leg.side for leg in legs[:3]] == ["left", "right", "left"]
+        assert legs[3].pair_id == legs[4].pair_id
+        assert legs[3].pair_id != legs[2].pair_id
+        assert [leg.side for leg in legs[3:]] == ["left", "right", "left"]
+
+    def test_global_pairing_can_span_groups(self) -> None:
+        p = bar([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], paired="global", seed=1)
+        legs = [b.leg for b in p._bars]
+        assert legs[0].pair_id == legs[1].pair_id
+        assert legs[2].pair_id != legs[1].pair_id
+        assert legs[2].pair_id == legs[3].pair_id
+        assert legs[3].side == "right"
+        assert legs[4].pair_id == legs[5].pair_id
+
+    def test_none_pairing_uses_distinct_pairs(self) -> None:
+        p = bar([1.0, 2.0, 3.0], paired="none", seed=1)
+        legs = [b.leg for b in p._bars]
+        assert len({leg.pair_id for leg in legs}) == 3
+        assert [leg.side for leg in legs] == ["left", "right", "left"]
+
+    def test_single_series_group_falls_back_to_none(self) -> None:
+        p = bar([1.0, 2.0, 3.0], paired="group", seed=1)
+        assert [b.leg.side for b in p._bars] == ["left", "right", "left"]
+
+    def test_two_series_group_is_same_pair_per_group(self) -> None:
+        p = bar([[1.0, 2.0], [3.0, 4.0]], paired="group", seed=1)
+        legs = [b.leg for b in p._bars]
+        assert legs[0].pair_id == legs[1].pair_id
+        assert legs[2].pair_id == legs[3].pair_id
+        assert legs[0].pair_id != legs[2].pair_id
+
+    def test_invalid_pairing_raises(self) -> None:
+        with pytest.raises(ValueError):
+            bar([1.0, 2.0], paired=cast(Any, "bogus"))
 
 
 class TestBarLayout:
