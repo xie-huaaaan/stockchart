@@ -120,9 +120,12 @@ def render_stocking(
             are true detail at that resolution, not an upscaled finished
             image; built-in SVG assets are re-rasterized at that scale, and
             external bitmap assets are resampled proportionally.
+            Textures are internally generated at 2x and then downsampled to
+            improve anti-aliasing on hard edges such as fishnet and lace; the
+            returned image size and `pixels_per_unit` are unchanged.
             The returned Leg's image is "design pixels x scale"
-            (`pixels_per_unit == scale`) while metadata such as foot
-            center/foot width remains in design pixels; compositing layers
+            (`pixels_per_unit == scale`) while metadata such as width, height,
+            and foot center remains in design pixels; compositing layers
             1:1 yields scale-x output.
 
     Returns:

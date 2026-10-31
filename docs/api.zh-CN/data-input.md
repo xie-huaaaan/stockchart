@@ -18,7 +18,7 @@
 pandas **不是**运行时依赖、也不会被 import：DataFrame / Series 通过结构
 （`index` / `columns` / `to_numpy()`）识别，未安装 pandas 时其余功能不受影响。
 显式传入的 `labels` / `series_labels` 覆盖数据推断出的标签。空数据、空组、
-行不齐、非数值都会抛 `ValueError`。
+行不齐、非数值以及 NaN / Infinity 都会抛 `ValueError`。
 
 `DataInput` 是对上述形式的类型别名（表对象用结构协议描述，不硬依赖具体库）：
 
@@ -40,10 +40,15 @@ class PlotData:
     """归一后的数据：(组数, 系列数) 浮点矩阵 + 可选标签。
 
     Attributes:
-        values: 每组的各系列数值，行数即组数、列数即系列数；行不能为空且等长。
+        values: 每组的各系列数值，行数即组数、列数即系列数；行不能为空、
+            等长且全部为有限数值。
         is_1d: 输入是否为一维（决定样式循环默认值等）。
         labels: 每组一个 x 轴标签；None 表示由调用方或默认均分决定。
         series_labels: 每系列一个名字；None 表示不出图例。
+
+    Raises:
+        ValueError: 矩阵为空、存在空组、各组长度不一致、含非有限数值、
+            is_1d 与系列数矛盾，或标签/系列名数量与数据不符。
     """
 
     values: tuple[tuple[float, ...], ...]

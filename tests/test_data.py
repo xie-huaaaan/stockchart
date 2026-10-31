@@ -168,6 +168,12 @@ class TestPlotData:
         with pytest.raises(ValueError, match="只能有 1 个值"):
             PlotData(values=((1.0, 2.0),), is_1d=True)
 
+    def test_non_finite_rejected(self) -> None:
+        with pytest.raises(ValueError, match="非有限"):
+            PlotData(values=((1.0,), (float("nan"),)), is_1d=True)
+        with pytest.raises(ValueError, match="非有限"):
+            normalize_data([1.0, float("inf")])
+
 
 class TestTableLike:
     def test_dataframe_like(self) -> None:

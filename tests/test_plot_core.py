@@ -37,6 +37,12 @@ class TestScale:
         with pytest.raises(ValueError):
             Scale((10.0, 0.0), (0.0, 100.0))
 
+    def test_range_validation(self) -> None:
+        with pytest.raises(ValueError):
+            Scale((0.0, 10.0), (100.0, 100.0))
+        with pytest.raises(ValueError):
+            Scale((0.0, 10.0), (100.0, 0.0))
+
     def test_fit(self) -> None:
         s = Scale.fit([2.0, 4.0, 9.0], 300.0)
         assert s.domain == (2.0, 9.0)
@@ -53,6 +59,10 @@ class TestScale:
             Scale.fit([3.0, 3.0, 3.0], 100.0)
         with pytest.raises(ValueError):
             Scale.fit([1.0, 2.0], 100.0, margin=-0.1)
+        with pytest.raises(ValueError):
+            Scale.fit([1.0, 2.0], 0.0)
+        with pytest.raises(ValueError):
+            Scale.fit([1.0, float("nan")], 100.0)
 
 
 class TestBarPlotCore:
@@ -105,6 +115,18 @@ class TestBarPlotCore:
         plot = BarPlot(400).add_bar(100, 100, make_leg())
         with pytest.raises(ValueError):
             plot.render(scale=0)
+        with pytest.raises(ValueError):
+            plot.render(scale=float("nan"))
+
+    def test_invalid_extents_and_side(self) -> None:
+        with pytest.raises(ValueError):
+            BarPlot(400, extent_up=-1)
+        with pytest.raises(ValueError):
+            BarPlot(400, extent_down=-1)
+        with pytest.raises(ValueError):
+            BarPlot(400).add_bar(100, 100, make_leg(), side="left")  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            BarPlot(400).add_bar(float("nan"), 100, make_leg())
 
     def test_bare_leg_is_zero_height_stocking(self) -> None:
         p = BarPlot(400, extent_up=760)

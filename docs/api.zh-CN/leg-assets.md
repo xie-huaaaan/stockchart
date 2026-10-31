@@ -63,10 +63,18 @@ class Leg:
 
 ```python
 class LegLibrary:
-    """内置腿部素材库（26 条腿 / 13 对；每条腿是透明 SVG）。"""
+    """内置腿部素材库（26 条腿 / 13 对；每条腿是透明 SVG）。
 
-    def __init__(self, *, seed: int | None = None) -> None:
-        """seed 作为后续自动选腿的随机源；不传则每次运行随机。"""
+    所有 Leg 在首次访问时懒加载并缓存；seed 只影响自动选腿顺序。
+
+    Args:
+        seed: 后续自动选腿的随机源；不传则每次运行随机。
+
+    Raises:
+        ValueError: 打包的 legs.json 缺失或校验失败。
+    """
+
+    def __init__(self, *, seed: int | None = None) -> None: ...
 
     @property
     def leg_ids(self) -> tuple[str, ...]:
@@ -112,5 +120,9 @@ def load_leg(
     Returns:
         自定义素材的 Leg 实例，可直接传入各层接口；`svg` 为 None，
         `pixels_per_unit` 为 1（不做多分辨率识别）。
+
+    Raises:
+        OSError: 文件无法打开或不是可识别的图片。
+        ValueError: foot_center_x 不在图像宽度范围内。
     """
 ```

@@ -5,11 +5,18 @@
 ```python
 @dataclass(slots=True, frozen=True)
 class Scale:
-    """线性比例尺：数据值 ↔ 基线上方像素。柱高与轴刻度共用同一个 Scale 即可保证一致。"""
+    """线性比例尺：数据值 ↔ 基线上方像素。柱高与轴刻度共用同一个 Scale 即可保证一致。
+
+    Attributes:
+        domain: (值下限, 值上限)，须下限 < 上限。
+        range_px: (像素下限, 像素上限)，基线为 0、向上为正；须下限 < 上限。
+
+    Raises:
+        ValueError: domain 或 range_px 的下限不小于上限。
+    """
 
     domain: tuple[float, float]
     range_px: tuple[float, float]
-    # domain: (值下限, 值上限)；range_px: (像素下限, 像素上限)，基线为 0、向上为正。
 
     def to_px(self, value: float) -> float:
         """数据值 → 像素。"""
@@ -19,12 +26,35 @@ class Scale:
 
     @classmethod
     def fit(cls, values: Sequence[float], extent_px: float, *, margin: float = 0.0) -> Scale:
-        """构造 [min(values), max(values)] → [0, extent_px] 的比例尺，margin 两端留边。"""
+        """构造 [min(values), max(values)] → [0, extent_px] 的比例尺，margin 两端留边。
+
+        Raises:
+            ValueError: values 为空、含非有限数值、extent_px 不是正数、
+                margin 为负，或 values 全部相同。
+        """
 ```
 
 ```python
 class BarPlot:
-    """自由柱状图：以 X 轴为基线，腿的位置与丝袜高度全部由调用者按设计像素指定。"""
+    """自由柱状图：以 X 轴为基线，腿的位置与丝袜高度全部由调用者按设计像素指定。
+
+    `width_px` 是绘图区宽度；`extent_up` / `extent_down` 只在基线上下为腿预留
+    高度，不含标题、轴名称、刻度数字、x 标签、图例等边缘；腿高于预留时柱区
+    自动扩张，轴、文字与图例另占空间。
+
+    Args:
+        width_px: 绘图区宽度，也是腿与坐标使用的 x 范围。
+        extent_up: 基线以上为腿预留的设计像素高度；不含标题、图例等边缘。
+        extent_down: 基线以下为向下腿预留的设计像素高度；不含 x 标签等边缘。
+        background: 画布背景色。
+        axis_style: "clean"（默认）画直线坐标轴与网格；"handdrawn" 使用
+            seed 控制的手绘抖动。
+        seed: 随机源；影响默认的柱纹理、基线与手绘抖动。
+
+    Raises:
+        ValueError: width_px 不是正数、extent_up / extent_down 为负数，或
+            axis_style 不是允许值。
+    """
 
     def __init__(
         self,
@@ -35,13 +65,7 @@ class BarPlot:
         background: Color = DEFAULT_BACKGROUND,
         axis_style: Literal["clean", "handdrawn"] = "clean",
         seed: int | None = None,
-    ) -> None:
-        """构造绘图区（轴与标签的边距在内部另行留出）。
-
-        extent_up / extent_down 为基线上、下各预留的像素高度；腿超出预留
-        高度时自动扩张。`axis_style="clean"`（默认）画直线坐标轴与网格，
-        `"handdrawn"` 改由 seed 控制的手绘抖动。
-        """
+    ) -> None: ...
 
     def add_bar(
         self,
@@ -59,6 +83,10 @@ class BarPlot:
             height_px: 丝袜高度（设计像素）。小于等于 0 为裸腿。
             leg: 腿素材；side="down" 时素材竖直翻转、脚贴基线朝下。
             style: StockingStyle 实例或 STYLES 预设名。
+
+        Raises:
+            ValueError: style 是未知预设名、side 不是 "up" / "down"，或
+                x / height_px 不是有限数值。
         """
 
     def add_y_axis(
@@ -72,8 +100,12 @@ class BarPlot:
 
         轴线与网格样式由构造参数 axis_style 决定。刻度按 scale 映射到基线
         上下两侧：domain 含负值时干线向下延伸、下方刻度照常绘制，箭头仍在
-        最上端。grid=True 时沿各刻度画横向虚线（浅色，压在腿与袜之下）。
+        最上端；刻度高于 extent_up 时画布顶部自动扩展以容纳轴顶与刻度数字。
+        grid=True 时沿各刻度画横向虚线（浅色，压在腿与袜之下）。
         轴名称用 add_y_axis_name() 单独添加。
+
+        Raises:
+            ValueError: ticks 含非有限数值。
         """
 
     def add_x_labels(
@@ -98,6 +130,10 @@ class BarPlot:
         补足对应的上/下与左右边距。
 
         xs 缺省沿宽度均分；与 add_bars 系列方法配合时自动对齐组中心。
+
+        Raises:
+            ValueError: pos / rotation 不合法、xs 与 labels 长度不一致，或
+                xs 含非有限数值。
         """
 
     def add_title(

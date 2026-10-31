@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """基础集成测试：覆盖 L0 素材层与 L1 渲染原语。"""
 
 from dataclasses import replace
@@ -8,6 +10,7 @@ import pytest
 from PIL import Image
 
 import stockchart
+import stockchart.stocking.render as render_module
 from stockchart import (
     STYLES,
     Fishnet,
@@ -218,6 +221,14 @@ class TestLoadLeg:
         loaded = load_leg(png_path, foot_center_x=40)
         assert loaded.foot_center_x == 40
 
+    def test_foot_center_out_of_range(self, tmp_path: Path) -> None:
+        leg = make_synthetic_leg(200, 80)
+        png_path = tmp_path / "test_leg3.png"
+        Image.fromarray(leg.image).save(png_path)
+
+        with pytest.raises(ValueError, match="foot_center_x"):
+            load_leg(png_path, foot_center_x=80)
+
 
 # ---------------------------------------------------------------------------
 # L1：StockingStyle 参数校验
@@ -290,6 +301,34 @@ class TestSkinShading:
         assert diff[:, leg.width // 2 - 11].max() > 0
 
 
+class TestShadingLayers:
+    def test_shadow_color_is_not_overwritten_by_highlight(self) -> None:
+        from stockchart.stocking.render import _render_shading
+
+        H, W = 20, 40
+        alpha = np.ones((H, W))
+        u = np.tile(np.linspace(-1.0, 1.0, W), (H, 1))
+        style = Shading(
+            rim_shadow=0.5,
+            highlight=0.0,
+            shadow_color=(150, 140, 180, 180),
+        )
+        shadow, highlight = _render_shading(style, np.ones((H, W, 4)), alpha, u, 0, H, W)
+        # 阴影 RGB 必须保持配置的蓝色分量，不能被高光强度占用
+        assert shadow[..., 2] == pytest.approx(180 / 255)
+        assert not highlight.any()
+
+    def test_dotted_scatter_depends_on_seed(self) -> None:
+        from stockchart.stocking.render import _dot_mask
+
+        H, W = 80, 80
+        abs_x = np.tile(np.linspace(-30.0, 30.0, W), (H, 1))
+        ys = np.arange(H, dtype=float)[:, None] * np.ones((1, W))
+        a = _dot_mask(abs_x, ys, 10.0, 3.0, "scatter", "dot", np.random.default_rng(1))
+        b = _dot_mask(abs_x, ys, 10.0, 3.0, "scatter", "dot", np.random.default_rng(2))
+        assert not np.array_equal(a, b)
+
+
 class TestRenderScale:
     """倍率渲染：在 scale 倍像素空间生成，而非放大成品图。"""
 
@@ -306,6 +345,13 @@ class TestRenderScale:
         leg = make_synthetic_leg(720, 160)
         with pytest.raises(ValueError):
             render_stocking(leg, STYLES["black_sheer"], 400, scale=0)
+        with pytest.raises(ValueError):
+            render_stocking(leg, STYLES["black_sheer"], 400, scale=float("nan"))
+
+    def test_bad_density(self) -> None:
+        leg = make_synthetic_leg(720, 160)
+        with pytest.raises(ValueError):
+            leg.at_density(0)
 
     def test_scale2_matches_scale1_when_downsampled(self) -> None:
         leg = make_synthetic_leg(720, 160)
@@ -317,6 +363,16 @@ class TestRenderScale:
         diff = np.abs(small[:, :, :3] - a.astype(int)[:, :, :3])
         # 高频条纹在降采样时会有少量差异，整体应高度一致
         assert diff.mean() < 12
+
+    def test_internal_supersampling_is_used(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        leg = make_synthetic_leg(720, 160)
+        style = STYLES["fishnet_black"]
+        supersampled = render_stocking(leg, style, 400, seed=1).image
+        monkeypatch.setattr(render_module, "_SUPERSAMPLE", 1)
+        direct = render_stocking(leg, style, 400, seed=1).image
+        assert supersampled.shape == direct.shape
+        # 二值网线边缘经过 2× 生成再降采样后不应与直接生成完全相同
+        assert not np.array_equal(supersampled, direct)
 
     def test_bare_leg_scale_doubles_image(self) -> None:
         leg = make_synthetic_leg(720, 160)

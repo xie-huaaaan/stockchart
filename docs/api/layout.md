@@ -21,10 +21,10 @@ def add_bars(
 
     legs may explicitly specify the asset for each bar (its length must
     match heights_px and it does not participate in cycling; paired is
-    ignored in that case). For a single series, "auto" and "group" both
-    fall back to "none"; explicit "global" makes adjacent bars take legs
-    from the same asset pair. When style is a list, it is cycled in bar
-    order.
+    ignored in that case). For a single series, "auto" uses "none"; explicit
+    "group" takes the left leg of a fresh pair for each bar, and "global"
+    makes adjacent bars take legs from the same asset pair. When style is a
+    list, it is cycled in bar order.
     """
 
 
@@ -44,9 +44,10 @@ def add_grouped_bars(
 
     With paired="auto" (default), a single series uses "none" and multiple
     series use "global"; "group" takes complete pairs independently within
-    each group (adjacent legs share a pair); "global" takes pairs
-    continuously across the whole chart; "none" draws every leg from a
-    different pair. When legs is explicit, paired is ignored.
+    each group (adjacent legs share a pair; for a single series, each group
+    takes a left leg); "global" takes pairs continuously across the whole
+    chart; "none" draws every leg from a different pair. When legs is
+    explicit, paired is ignored.
 
     When style is a list it is cycled according to cycle: "group" (default)
     cycles by position within the group — the i-th bar of a group uses
@@ -75,5 +76,11 @@ def add_paired_bars(
     automatically.
     """
 ```
+
+`add_grouped_bars` requires a rectangular `heights_px` table (non-empty,
+same-length, non-empty groups); `add_paired_bars` requires exactly 2 values
+per group and exactly 2 legs per explicit pair; `cycle` only accepts "group"
+/ "sequence". When `legs` / `pairs` are passed explicitly, `paired` is not
+validated.
 
 **Spacing semantics**: `bar_gap` / `group_gap` both mean the gap between the **edges** of adjacent legs (leg widths vary from 144 to 181; spacing by edge looks visually even), not foot-sole-center distance.

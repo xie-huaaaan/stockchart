@@ -70,9 +70,10 @@ def bar(
     The y axis and baseline are drawn automatically (straight by default;
     axis_style="handdrawn" switches to hand-drawn wobble). When labels are
     given, x labels align to each group automatically and tilt to avoid
-    collisions when too long; when the canvas width is omitted it adapts
-    to the legs, spacing, and label widths. Legend labels wrap
-    automatically when they exceed the canvas width. labels feeds the x
+    collisions when too long; when the plot-area width is omitted it adapts
+    to the legs, spacing, and label widths, and the final canvas is wider
+    because of axes, labels, and title. Legend labels wrap automatically when
+    they exceed the plot-area width. labels feeds the x
     labels and series_labels feeds the legend — the latter distinguishes
     "series" (which leg within a group), the former distinguishes "groups".
 
@@ -100,7 +101,7 @@ def bar(
             series"); "sequence" cycles in the draw order of all bars;
             "auto" (default) takes "sequence" for 1D data (i.e. each bar
             takes styles in order) and "group" for 2D data. With 2D data,
-            "sequence" cannot be matched to a fixed per-series style when
+            if "sequence" cannot be matched to a fixed per-series style when
             series_labels is also given; providing both raises ValueError.
         paired: leg-pairing strategy. "auto" (default) uses "none" for a
             single series and "global" for multiple series; "group" takes
@@ -108,16 +109,18 @@ def bar(
             share a pair (left, right), series 2 starts the next pair;
             "global" takes pairs continuously across the whole chart, so a
             pair may span groups; "none" draws every leg from a different
-            pair. For a single series, "group" also falls back to "none" so
-            the chart does not become all left legs.
+            pair. For a single series, "group" takes the left leg of a fresh
+            pair for each group.
         value_labels: when True, handwritten value labels above the
             stocking tops.
         max_fill: fraction of y_extent the maximum maps to (default 0.8).
         min_fill: only enabled when the data contains negatives
             (default 0.1); see below.
-        y_extent: pixel height reserved above the baseline.
-        width_px: canvas width; by default adapts to the leg count, spacing,
-            and label widths; the legend wraps within the fixed width.
+        y_extent: design-pixel height reserved above the baseline for the bar
+            area; excludes title, labels, legend, and other edge areas.
+        width_px: plot-area width; by default adapts to the leg count,
+            spacing, and label widths. The final canvas is wider because of
+            axes, labels, and title.
         options: optional parameters passed through to lower layers; see
             the `ChartOptions` table (grid, axis_style, legend_loc,
             bar_gap, etc.).
@@ -131,7 +134,9 @@ def bar(
           leg with some stocking, and the y axis's 0 tick floats somewhere
           mid-stocking — an accepted trade-off to fully preserve the
           ordering of the values. All-negative data follows the same rule:
-          the larger the value, the higher the stocking.
+          the larger the value, the higher the stocking. When all values
+          are the same negative number there is no ordering to preserve,
+          so every leg uses min_fill.
     """
 
 
@@ -175,8 +180,10 @@ def mirror_bar(
             stocking top for upper legs, below it for lower legs.
         max_abs_fill: fraction of y_extent the largest absolute value maps
             to (default 0.8).
-        y_extent: pixel height reserved above the baseline.
-        width_px: canvas width; adapts by default.
+        y_extent: design-pixel height reserved above the baseline for the bar
+            area; excludes title, labels, legend, and other edge areas.
+        width_px: plot-area width; adapts by default. The final canvas is
+            wider because of axes, labels, and title.
         options: same semantics as bar(). x_label_pos defaults to "auto":
             mirrored charts often leave one side entirely empty, so labels
             sit by the baseline on the side without legs (e.g. above the
@@ -194,6 +201,11 @@ def mirror_bar(
           "both" always reserves it.
     """
 ```
+
+Parameter checks: `max_fill` / `max_abs_fill` must be finite and positive,
+`0 <= min_fill < max_fill`, `y_extent` must be positive, and `cycle` plus
+`mirror_bar`'s `mode` only accept the documented values. NaN / Infinity in
+the data raise `ValueError` during normalization.
 
 ## Centralized defaults
 

@@ -23,9 +23,14 @@ from stockchart.color import Color, check_color
 class Plain:
     """纯色袜：从极薄透肉的丝袜到完全不透明的厚袜。
 
-    opacity 是腿正面中线处的遮盖率（0 近乎透明，1 完全不透肤色）。
-    rim 控制两侧因斜向观察穿过更多织物而自然变不透明的程度。
-    stretch 模拟腿越粗袜子被撑得越薄越透的视觉效果。
+    Attributes:
+        color: 织物颜色；4 元组可带透明度。
+        opacity: 腿正面中线处的遮盖率（0 近乎透明，1 完全不透肤色）。
+        rim: 两侧因斜向观察穿过更多织物而变不透明的程度（0 不提升）。
+        stretch: 腿越粗袜子被撑得越薄越透的视觉强度（0 关闭）。
+
+    Raises:
+        ValueError: color 非法，或 opacity/rim/stretch 不在 [0, 1]。
     """
 
     color: Color
@@ -42,7 +47,16 @@ class Plain:
 
 @dataclass(slots=True, frozen=True)
 class Stripe:
-    """横条纹袜的单条条带。width 单位为素材像素（腿正面）。"""
+    """横条纹袜的单条条带。
+
+    Attributes:
+        color: 条带颜色；4 元组可带透明度。
+        width: 条带宽度（设计像素，按腿高 720 的参考尺寸）。
+        opacity: 条带遮盖率（0–1）。
+
+    Raises:
+        ValueError: color 非法、width <= 0，或 opacity 不在 [0, 1]。
+    """
 
     color: Color
     width: float
@@ -58,10 +72,14 @@ class Stripe:
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class Striped:
-    """横条纹袜：周期性横条，从袜口往下排，腿两侧按圆柱透视自动压缩宽度。
+    """横条纹袜：周期性横条，从袜口往下排，腿两侧按圆柱透视自动压缩。
 
-    stripes 定义一个周期内从上到下的条带顺序。
-    offset 是相位偏移（像素），正值使第一条纹从袜口向下偏移。
+    Attributes:
+        stripes: 一个周期内从上到下的条带顺序；不能为空。
+        offset: 相位偏移（设计像素），正值使第一条纹从袜口向下偏移。
+
+    Raises:
+        ValueError: stripes 为空。
     """
 
     stripes: tuple[Stripe, ...]
@@ -76,8 +94,15 @@ class Striped:
 class Ribbed:
     """竖罗纹针织袜：竖向罗纹，越靠近腿两侧罗纹越密（透视收缩）。
 
-    rib_width 是腿正面中线处相邻罗纹的间距（像素）。
-    depth 是罗纹凹凸产生的明暗对比度（0 无纹理，1 最强对比）。
+    Attributes:
+        color: 织物颜色；4 元组可带透明度。
+        opacity: 织物遮盖率（0–1）。
+        rib_width: 腿正面中线处相邻罗纹的间距（设计像素）。
+        depth: 罗纹凹凸产生的明暗对比度（0 无纹理，1 最强）。
+
+    Raises:
+        ValueError: color 非法、opacity/depth 不在 [0, 1]，或
+            rib_width <= 0。
     """
 
     color: Color
@@ -99,9 +124,15 @@ class Ribbed:
 class Fishnet:
     """网袜：斜向或方形网格，可在下面叠一层 Plain 底袜。
 
-    cell 是网眼大小（腿正面中线处，像素）。
-    angle 是网格旋转角度（度），45 为菱形，0 为方格。
-    underlay 为网格下方叠的底袜；None 表示仅网格、皮肤直接透出。
+    Attributes:
+        color: 网线颜色；4 元组可带透明度。
+        cell: 网眼大小（设计像素，按腿正面中线计）。
+        line_width: 网线宽度（设计像素）。
+        angle: 网格旋转角度（度）；45 为菱形，0 为方格。
+        underlay: 网格下方叠的底袜；None 表示仅网格、皮肤直接透出。
+
+    Raises:
+        ValueError: color 非法、cell <= 0，或 line_width <= 0。
     """
 
     color: Color
@@ -122,8 +153,18 @@ class Fishnet:
 class Dotted:
     """印花袜：在底袜上叠加规律排列或随机散布的小图案。
 
-    shape 为图案形状；layout 为 "grid"（错位网格）或 "scatter"（由 seed 随机散布）。
-    spacing 是相邻图案中心的距离（腿正面，像素）。
+    Attributes:
+        base: 底袜；图案叠在其上。
+        color: 图案颜色；4 元组可带透明度。
+        shape: 图案形状。
+        size: 图案尺寸（设计像素）。
+        spacing: 相邻图案中心的距离（设计像素）。
+        layout: "grid" 为错位网格，"scatter" 为由 seed 随机散布。
+        opacity: 图案遮盖率（0–1）。
+
+    Raises:
+        ValueError: color 非法、size/spacing <= 0、opacity 不在 [0, 1]，
+            或 shape / layout 不是允许值。
     """
 
     base: Plain
@@ -136,6 +177,10 @@ class Dotted:
 
     def __post_init__(self) -> None:
         check_color(self.color, "Dotted.color")
+        if self.shape not in ("dot", "heart", "star"):
+            raise ValueError(f"Dotted.shape 须为 'dot'/'heart'/'star'，得到 {self.shape!r}")
+        if self.layout not in ("grid", "scatter"):
+            raise ValueError(f"Dotted.layout 须为 'grid' 或 'scatter'，得到 {self.layout!r}")
         if self.size <= 0:
             raise ValueError(f"Dotted.size 须 > 0，得到 {self.size}")
         if self.spacing <= 0:
@@ -161,9 +206,15 @@ class Bare:
 class Welt:
     """松紧袜口：袜口处加厚的条带，颜色略深于袜身。
 
-    color 为 None 时取袜身主色加深一档。
-    opacity 为 None 时视为不透明（1.0，双层织物）。
-    pinch 是袜口上方皮肤被勒出的浅阴影线强度（0 关闭）。
+    Attributes:
+        height: 条带高度（设计像素）。
+        color: 条带颜色；None 表示取袜身主色加深一档。
+        opacity: 条带遮盖率；None 视为不透明（双层织物）。
+        pinch: 袜口上方皮肤被勒出的浅阴影线强度（0 关闭）。
+
+    Raises:
+        ValueError: height <= 0、color 非法、opacity 不在 [0, 1]，或
+            pinch 不在 [0, 1]。
     """
 
     height: float = 20.0
@@ -186,11 +237,15 @@ class Welt:
 class Lace:
     """蕾丝边：锯齿波浪下沿，可选镂空小孔。
 
-    scallop 是波浪周期（像素）。
-    color 为 None 时取袜身主色。
-    蕾丝是镂空织物，带子默认半透明（0.85），透出其下遮盖的皮肤；
-    镂空感同时由 holes 的孔点图案表达。
-    holes 为 True 时在蕾丝带上叠加孔点。
+    Attributes:
+        height: 蕾丝带高度（设计像素）。
+        scallop: 波浪周期（设计像素）。
+        color: 蕾丝颜色；None 表示取袜身主色。
+        opacity: 蕾丝带遮盖率；默认半透明以透出下方皮肤。
+        holes: 是否在蕾丝带上叠加孔点。
+
+    Raises:
+        ValueError: height/scallop <= 0、color 非法，或 opacity 不在 [0, 1]。
     """
 
     height: float = 28.0
@@ -212,9 +267,13 @@ class Lace:
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class Fade:
-    """连裤袜式渐隐上沿：没有明显的边线，颜色向上逐渐消失。
+    """连裤袜式渐隐上沿：没有明显边线，颜色向上逐渐消失。
 
-    length 是渐变区的高度（像素）；数据高度取渐变区中点。
+    Attributes:
+        length: 渐变区高度（设计像素）；数据高度取渐变区中点。
+
+    Raises:
+        ValueError: length <= 0。
     """
 
     length: float = 60.0
@@ -234,21 +293,26 @@ type TopEdge = Bare | Welt | Lace | Fade
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class Shading:
-    """丝袜的光影与立体感参数。
+    """丝袜的光影与立体感参数，所有 Fabric 共用。
 
-    curve: 横向线条（上沿、横条纹）向下弯曲的程度（0 为直线）。
-    rim_shadow: 背光侧边缘压暗程度（0 关闭，1 最深）。
-    shadow_color: 阴影的正片叠底色（RGBA），默认偏冷淡紫（动漫常用）。
-    highlight: 竖向高光强度（0 关闭）。
-    highlight_pos: 高光在腿宽方向的位置，−1 左缘、1 右缘。
-    highlight_width: 高光半宽（腿半宽的比例）。
-    cel_steps: 0 为平滑渐变；2 或 3 为动漫分阶色块。
-    ink: 素材描边透出的强度（深色袜上渲染器自动换用更深的线色）。
-    wobble: 新增线条（袜口、蕾丝边）的手绘抖动幅度（像素），由 seed 控制。
-    skin: 袜口以上裸露皮肤的光影强度（相对袜子上的强度）：0 只作用于袜子
-        （旧观感），1 与袜子同等，0.5 左右体积感自然。裸腿同样参与。
-    skin_shadow_color: 皮肤上的阴影色。合成纤维用偏冷的 shadow_color 好看，
-        但皮肤用冷紫会显脏，默认改用偏暖的肤色阴影。
+    Attributes:
+        curve: 横向线条（上沿、横条纹）向下弯曲的程度；0 为直线。
+        rim_shadow: 背光侧边缘压暗程度（0 关闭，1 最深）。
+        shadow_color: 阴影的正片叠底色（RGBA），默认偏冷淡紫。
+        highlight: 竖向高光强度（0 关闭）。
+        highlight_pos: 高光在腿宽方向的位置；−1 左缘，1 右缘。
+        highlight_width: 高光半宽（腿半宽的比例）。
+        cel_steps: 0 为平滑渐变；2 或 3 为动漫分阶色块。
+        ink: 素材描边透出的强度；深色袜上渲染器自动换用更深的线色。
+        wobble: 新增线条（袜口、蕾丝边）的手绘抖动幅度（设计像素），由
+            seed 控制。
+        skin: 袜口以上裸露皮肤的光影强度（相对袜子）：0 只作用于袜子，
+            1 与袜子同等；裸腿同样参与。
+        skin_shadow_color: 皮肤上的阴影色；用偏暖的肤色阴影避免冷紫显脏。
+
+    Raises:
+        ValueError: 颜色非法、强度类参数为负、highlight_pos 超出
+            [−1, 1]，或 cel_steps 不是 0/2/3。
     """
 
     curve: float = 0.12
@@ -304,15 +368,31 @@ class StockingStyle:
 
 
 def scale_style(style: StockingStyle, factor: float) -> StockingStyle:
-    """把样式里所有"像素长度"乘以 factor，得到同一视觉在另一分辨率下的等价样式。
+    """按比例缩放样式里的所有像素长度。
 
-    比例类参数（opacity、rim、stretch、curve、highlight_width、angle、depth、
-    pinch、skin 等）保持不变；factor 为 1 时原样返回。
+    用于把按腿高 720 写死的样式换算到另一渲染密度；比例类参数
+    （opacity、rim、stretch、curve、highlight_width、angle、depth、pinch、
+    skin 等）保持不变。
+
+    Args:
+        style: 原始样式。
+        factor: 像素长度倍率；1 时原样返回。
+
+    Returns:
+        像素长度乘以 factor 的新样式。
     """
     if factor == 1.0:
         return style
 
     def fabric(f: Fabric) -> Fabric:
+        """递归缩放单个 Fabric 的像素长度。
+
+        Args:
+            f: 待缩放的袜身样式。
+
+        Returns:
+            像素长度已缩放的新 Fabric。
+        """
         if isinstance(f, Striped):
             stripes = tuple(replace(s, width=s.width * factor) for s in f.stripes)
             return replace(f, stripes=stripes, offset=f.offset * factor)
@@ -328,6 +408,14 @@ def scale_style(style: StockingStyle, factor: float) -> StockingStyle:
         return f
 
     def top(t: TopEdge) -> TopEdge:
+        """缩放单个上沿样式的像素长度。
+
+        Args:
+            t: 待缩放的上沿样式。
+
+        Returns:
+            像素长度已缩放的新上沿。
+        """
         if isinstance(t, Welt):
             return replace(t, height=t.height * factor)
         if isinstance(t, Lace):
@@ -350,7 +438,11 @@ def scale_style(style: StockingStyle, factor: float) -> StockingStyle:
 
 
 def _make_styles() -> dict[str, StockingStyle]:
-    """构造内置预设字典，内部调用一次后包装为只读映射。"""
+    """构造全部内置样式预设。
+
+    Returns:
+        以 STYLES 键名到 StockingStyle 的字典。
+    """
     # 常用颜色常量
     _BLACK = (28, 26, 30)
     _DARK_GRAY = (80, 77, 76)

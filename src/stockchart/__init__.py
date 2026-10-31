@@ -1,4 +1,8 @@
-"""stockchart: draw data as stockings pulled up over legs."""
+"""stockchart：把数据画成被拉起的丝袜。
+
+公开 API 按 L0–L4 分层：腿素材、丝袜渲染、自由柱状图、布局封装与一行出图。
+常用入口是 `bar()` / `mirror_bar()` 与 `render_stocking()`。
+"""
 
 __version__ = "0.1.0"
 

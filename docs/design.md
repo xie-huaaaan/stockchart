@@ -51,7 +51,8 @@ super-resolution masters. The library itself only ships transparent SVGs
 - The mapping happens only at the top layer (`bar` / `mirror_bar`); everything
   below works in design pixels (see "Assets and Output"). The data value
   corresponding to the baseline defaults to 0 and is adjustable.
-- **The y-axis maximum** `y_extent` is a pixel value, not a ratio. Default 760
+- **The y-axis maximum** `y_extent` is a pixel height for the bar area, not a
+  ratio and not including title, labels, legend, or other edge areas. Default 760
   (leg height 720, leaving a little headroom), confirmed during review. All
   legs have the same height, so bars are directly comparable to each other.
 - Branch A (`bar`, everything upward):
@@ -62,7 +63,8 @@ super-resolution masters. The library itself only ships transparent SVGs
     a band of stocking and the y-axis 0 tick hangs somewhere in the middle of
     the stocking — a deliberate trade-off to fully preserve size ordering;
   - All-zero data: all bare legs; all-negative data follows the same rule, with
-    larger values meaning higher stockings.
+    larger values meaning higher stockings. When all negative values are equal
+    there is no ordering to preserve, so every leg uses `min_fill`.
 - Branch B (`mirror_bar`, mirrored positive/negative): ratio =
   `max_abs_fill` (default 0.8) × y_extent / max|v|; positive values draw the
   upper leg, negative values draw the flipped lower leg (foot against the
@@ -74,7 +76,8 @@ super-resolution masters. The library itself only ships transparent SVGs
   downward); the `pos` parameter can pin them against the baseline above or
   below instead ("auto" automatically picks the side without legs). The y-axis
   trunk line extends downward with the negative ticks, and the arrowhead stays
-  at the very top.
+  at the very top; if a tick maps above `extent_up`, the top of the canvas
+  expands to keep the trunk and tick number inside.
 - Stocking-height mapping and leg layout are two separate layers, so they can
   be tested independently. Full signatures: [API reference](api/index.md).
 
@@ -212,8 +215,8 @@ matplotlib's font configuration, so none of its caching/configuration issues app
   pair, series 2 starts the next pair, and for an odd series count the extra
   right leg of the last pair is discarded; `"global"` takes pairs continuously
   across the whole chart, so a pair may span groups; `"none"` draws every leg
-  from a different pair. For a single series, `"group"` falls back to `"none"`
-  so the chart does not become all left legs. Multi-series defaults to
+  from a different pair. For a single series, `"group"` literally takes the
+  left leg of a fresh pair for each group. Multi-series defaults to
   `"global"` to avoid two same-side legs meeting at a group boundary. L3's
   `add_bars` / `add_grouped_bars` accept the same parameter.
 - **Style cycling**: the batch methods accept a list for `style`, and the
@@ -321,7 +324,10 @@ later if needed.
   design-size layout preview (1); `render_stocking(scale=k)` scales the
   rendering space to k pixels per design unit, re-rasterizes the SVG at k
   (fabric texture, top edge, and shading are recomputed at that resolution
-  too), and the returned Leg metadata is still in design pixels.
+  too), and the returned Leg metadata is still in design pixels. Textures are
+  additionally generated at 2x internally and downsampled, improving
+  anti-aliasing on hard edges such as fishnet, lace, and stripes without
+  changing the public output size.
 - **Bundled assets are stored only as transparent SVG**: `tools/split_master.py`
   splits the 13 pairs of super-resolution master artwork the user made with
   Upscayl (`dist/all_up_1.png`): each leg is cut out via alpha connected
@@ -464,8 +470,9 @@ Five layers; full signatures and semantics in the [API reference](api/index.md):
   `**options`;
 - **Leg pairing**: `paired="auto"` (default; none for a single series,
   global for multiple series) / `"none"` / `"group"` / `"global"`; for a
-  single series, group falls back to none; L0's `alternate(paired=True)`
-  provides the flat "adjacent legs form a pair" primitive;
+  single series, group takes a fresh pair's left leg per group; L0's
+  `alternate(paired=True)` provides the flat "adjacent legs form a pair"
+  primitive;
 - **No default seed**: omitting `seed` is random; the same `seed` reproduces
   the same result;
 - **Group spacing defaults to 120** (previously 96), making group boundaries

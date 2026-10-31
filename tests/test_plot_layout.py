@@ -63,6 +63,11 @@ class TestAddBars:
         with pytest.raises(ValueError):
             p.add_bars([100.0, 200.0], legs=[leg_w(150)])
 
+    def test_explicit_legs_ignore_paired(self) -> None:
+        p = BarPlot(2000)
+        p.add_bars([100.0], legs=[leg_w(150)], paired="not-a-strategy")  # type: ignore[arg-type]
+        assert len(p._bars) == 1
+
     def test_empty_heights_raises(self) -> None:
         with pytest.raises(ValueError):
             BarPlot(2000).add_bars([])
@@ -128,6 +133,11 @@ class TestAddGroupedBars:
         p.add_x_labels(["甲", "乙"])
         assert p._x_labels is not None and p._x_labels.xs is None
 
+    def test_group_single_series_takes_left_legs(self) -> None:
+        p = BarPlot(2000, seed=3)
+        p.add_bars([100.0] * 3, paired="group")
+        assert [b.leg.side for b in p._bars] == ["left", "left", "left"]
+
     def test_auto_pairs_across_group_boundary(self) -> None:
         p = BarPlot(4000, seed=2)
         p.add_grouped_bars([[100.0, 100.0, 100.0], [100.0, 100.0, 100.0]])
@@ -151,6 +161,18 @@ class TestAddGroupedBars:
             p.add_grouped_bars([[100.0, 100.0], [100.0, 100.0]], legs=legs[:3])
         p.add_grouped_bars([[100.0, 100.0], [100.0, 100.0]], legs=legs)
         assert len(p._bars) == 4
+
+    def test_ragged_groups_rejected(self) -> None:
+        with pytest.raises(ValueError, match="系列数须一致"):
+            BarPlot(4000).add_grouped_bars([[1.0, 2.0], [3.0]])
+
+    def test_empty_group_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            BarPlot(4000).add_grouped_bars([[1.0], []])
+
+    def test_invalid_cycle_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            BarPlot(4000).add_grouped_bars([[1.0]], cycle="bad")  # type: ignore[arg-type]
 
 
 class TestAddPairedBars:
@@ -189,6 +211,14 @@ class TestAddPairedBars:
         pair = (leg_w(150, "left"), leg_w(150, "right"))
         with pytest.raises(ValueError):
             p.add_paired_bars([(1.0, 2.0), (3.0, 4.0)], pairs=[pair])
+
+    def test_group_must_have_exactly_two_values(self) -> None:
+        with pytest.raises(ValueError, match="恰好 2 个值"):
+            BarPlot(2000).add_paired_bars([(1.0, 2.0, 3.0)])  # type: ignore[list-item]
+
+    def test_invalid_cycle_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            BarPlot(2000).add_paired_bars([(1.0, 2.0)], cycle="bad")  # type: ignore[arg-type]
 
 
 class TestBarPlacement:

@@ -33,6 +33,11 @@ def test_valid_metadata_round_trip() -> None:
     assert metas[0].side == "left"
 
 
+def test_empty_metadata_raises() -> None:
+    with pytest.raises(ValueError, match="不能为空"):
+        _parse_metadata(dump())
+
+
 def test_missing_pair_side_raises() -> None:
     with pytest.raises(ValueError, match="缺少右腿"):
         _parse_metadata(dump(LEFT))

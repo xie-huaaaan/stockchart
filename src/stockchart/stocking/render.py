@@ -1,6 +1,7 @@
 """丝袜渲染算法：render_stocking 的实现。
 
-所有坐标以素材像素为单位；坐标原点在图像左上角，y 轴向下。
+算法内部在目标密度的图像像素空间中计算；公开参数与元数据使用设计像素；
+坐标原点在图像左上角，y 轴向下。
 渲染分三步：
   1. 计算腿的形状（alpha mask）与宽度剖面；
   2. 按 Fabric 种类生成 RGBA 纹理层；
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
+from PIL import Image
 
 from stockchart.color import color_alpha, color_rgb
 from stockchart.stocking.styles import (
@@ -37,6 +39,10 @@ if TYPE_CHECKING:
     from stockchart.legs import Leg
 
 
+# 纹理在输出密度之上再按该倍率生成，然后降采样；只影响画质，不改变公开的 scale 语义。
+_SUPERSAMPLE = 2
+
+
 # ---------------------------------------------------------------------------
 # 公开入口
 # ---------------------------------------------------------------------------
@@ -55,34 +61,44 @@ def render_stocking(
     Args:
         leg: 待渲染的腿素材。
         style: 丝袜样式，可从 STYLES 预设取得。
-        height_px: 丝袜上沿到脚端的像素数（素材像素）。小于等于 0 时为裸腿
+        height_px: 丝袜上沿到脚端的像素数（设计像素）。小于等于 0 时为裸腿
             （`Shading.skin` 大于 0 时裸腿仍按皮肤光影渲染，否则原样返回）；
             不小于 leg.height 时整腿全盖。
         seed: 纹理类随机效果的随机源。
         scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
             光影都是该分辨率的真细节，不是把成品放大；内置矢量素材按该倍率
             重新栅格化，外部位图素材先按比例重采样。
-            返回的 Leg 尺寸为素材像素 × scale，足底中心/足宽同步放大，
-            图层按 1:1 贴图即可得到 target_scale 倍的输出。
+            纹理在内部再按 2 倍生成后降采样以改善硬边抗锯齿，这不改变返回
+            图像的尺寸与 `pixels_per_unit`。
+            返回的 Leg 图像为「设计尺寸 × scale」像素（`pixels_per_unit == scale`），
+            `width` / `height` / `foot_center_x` 等元数据仍是设计像素，
+            图层按 1:1 贴图即得到 scale 倍输出。
 
     Returns:
-        新的 Leg：像素已替换，元数据与原素材一致（`scale != 1` 时按倍率放大）。
+        新的 Leg：图像按 scale 倍密度重绘（`pixels_per_unit == scale`），
+        设计像素元数据与原素材一致。
+
+    Raises:
+        ValueError: scale 不是正的有限数。
     """
-    if scale <= 0:
+    if not math.isfinite(scale) or scale <= 0:
         raise ValueError(f"scale 须为正数，得到 {scale}")
 
-    # 图像密度统一到 scale（矢量素材重栅格化，位图降/升采样），元数据保持设计像素
-    leg = _resample_leg(leg, scale)
+    # 输出密度的腿图：返回尺寸、alpha 轮廓与元数据都以它为准。
+    output_leg = _resample_leg(leg, scale)
+    if height_px <= 0 and style.shading.skin <= 0:
+        return output_leg
+
+    # 纹理在更高的密度上生成，最后缩回输出密度。
+    leg = _resample_leg(leg, scale * _SUPERSAMPLE)
     density = leg.pixels_per_unit
     if density != 1.0:
         style = scale_style(style, density)
         height_px = round(height_px * density)
 
     if height_px <= 0:
-        if style.shading.skin <= 0:
-            return leg
         # 裸腿也要参与皮肤光影，否则同一张图里裸腿比穿袜腿少一层受光
-        return _shade_bare_leg(leg, style)
+        return _downsample_rendered(_shade_bare_leg(leg, style), output_leg, scale)
 
     H, W = leg.image.shape[:2]
     height_px = min(height_px, H)
@@ -95,6 +111,13 @@ def render_stocking(
 
     # 渲染区域：图像底部 height_px 行（脚在底部）
     y_start = H - height_px  # 袜口顶端所在行（含）
+
+    # 袜口以上没有绘制内容时保留输出密度的原像素，避免整图重采样；
+    # 余量覆盖袜口边线与抖动，皮肤光影开启时整条腿都会被修改。
+    margin = 3 + math.ceil(style.shading.wobble * scale / density)
+    content_top = (
+        0 if style.shading.skin > 0 else min(H, max(0, round(y_start * scale / density) - margin))
+    )
 
     # 每行腿的宽度剖面：用于圆柱透视压缩
     col_profile = _column_profile(alpha_mask)  # (H, W) float，横向归一化坐标
@@ -147,7 +170,9 @@ def render_stocking(
 
     # 光影：袜身用全强度与冷色阴影；袜口以上的裸皮按 Shading.skin 强度并换成
     # 暖色阴影（冷紫落在皮肤上会显脏）。两层按覆盖率加权合并后一次应用。
-    shading_layer = _render_shading(style.shading, src, alpha_mask, col_profile, 0, H, W)
+    shading_layer, shading_hl = _render_shading(
+        style.shading, src, alpha_mask, col_profile, 0, H, W
+    )
     skin = style.shading.skin
     above = ys_grid < top_arc
     if fade_ramp is None:
@@ -159,7 +184,7 @@ def render_stocking(
         w_sock = np.where(above, 0.0, fade_ramp)
         w_skin = np.where(above, 1.0, 1.0 - fade_ramp) * skin
     if skin > 0:
-        skin_layer = _render_shading(
+        skin_layer, skin_hl = _render_shading(
             replace(style.shading, shadow_color=style.shading.skin_shadow_color),
             src,
             alpha_mask,
@@ -176,16 +201,10 @@ def render_stocking(
             shading_layer[..., :3] * a_sock + skin_layer[..., :3] * a_skin
         ) / safe
         shading_layer[..., 3:4] = total
-        hl = np.clip(
-            shading_layer[..., 2:3] * w_sock[..., np.newaxis]
-            + skin_layer[..., 2:3] * w_skin[..., np.newaxis],
-            0.0,
-            1.0,
-        )
-        shading_layer[..., 2:3] = hl
+        shading_hl = np.clip(shading_hl * w_sock + skin_hl * w_skin, 0.0, 1.0)
     else:
         shading_layer[..., 3] *= w_sock
-        shading_layer[..., 2] *= w_sock
+        shading_hl *= w_sock
 
     # 合成：将腿皮肤与袜子融合（光影后置，使上沿条带同样受光）
     result = _composite(src, fabric_layer, alpha_mask, y_start)
@@ -207,7 +226,7 @@ def render_stocking(
     )
 
     # 应用光影：在条带绘制之后，袜口/蕾丝与袜身统一受光
-    result = _apply_shading(result, shading_layer)
+    result = _apply_shading(result, shading_layer, shading_hl)
 
     # 膝盖褶皱等素材内部墨线增强：以"织物压痕"的方式补画到袜子上
     result = _boost_ink_lines(
@@ -221,12 +240,12 @@ def render_stocking(
         ys_grid,
         top_arc,
         y_start,
-        scale,
+        density,
     )
 
     out = (np.clip(result, 0.0, 1.0) * 255.0).astype(np.uint8)
 
-    return replace(leg, image=out)
+    return _downsample_rendered(replace(leg, image=out), output_leg, scale, content_top=content_top)
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +256,14 @@ _LUM_WEIGHTS = np.array([0.299, 0.587, 0.114])
 
 
 def _luminance(rgb: NDArray[np.float64]) -> NDArray[np.float64]:
-    """RGB (..., 3) → 亮度 (...)。"""
+    """按 ITU-R 601 权重把 RGB 转为亮度。
+
+    Args:
+        rgb: (..., 3) 的归一化 RGB。
+
+    Returns:
+        去掉最后一维的亮度数组。
+    """
     return rgb @ _LUM_WEIGHTS
 
 
@@ -246,11 +272,19 @@ def _ink_mask(
     alpha: NDArray[np.float64],
     scale: float = 1.0,
 ) -> NDArray[np.float64]:
-    """检测素材内部的手绘线条（膝盖褶皱等），返回 [0,1] 软掩码。
+    """检测素材内部的手绘线条（膝盖褶皱等），返回软掩码。
 
     以肤色亮度的 90 分位为基准，亮度低于基准 0.05 开始、0.18 达到全强度；
-    排除 alpha 边缘约 3px 环带（轮廓线不参与，避免与侧缘阴影叠加），
-    并做轻微模糊保持手绘感。腐蚀与模糊的像素窗口按 scale 放大。
+    排除 alpha 边缘约 3px 环带（轮廓线不参与，避免与侧缘阴影叠加），并做
+    轻微模糊保持手绘感。
+
+    Args:
+        src: (H, W, 4) 归一化腿图。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        scale: 当前渲染密度；腐蚀窗口与模糊半径按此放大。
+
+    Returns:
+        (H, W) 的 [0, 1] 软掩码；无覆盖或无暗线时全零。
     """
     from PIL import Image, ImageFilter
 
@@ -298,8 +332,24 @@ def _boost_ink_lines(
     """把素材自带的内部墨线以织物褶痕的形式补画到袜子上。
 
     线条颜色跟随袜色：深色织物上用 screen 提亮为冷灰线（动漫黑丝的画法），
-    浅色织物上按原线条深度比 multiply 压暗。强度由 Shading.ink 控制，
-    并按局部织物不透明度加权——裸腿处不增强（皮肤本来的线已在）。
+    浅色织物上按原线条深度比 multiply 压暗。强度由 `Shading.ink` 控制，并按
+    局部织物不透明度加权——裸腿处不增强。
+
+    Args:
+        img: (H, W, 4) 已合成的图像；原地修改并返回。
+        src: (H, W, 4) 归一化腿图，用于检测原始墨线。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        u: (H, W) 横向归一化坐标，供底袜覆盖率计算。
+        fabric: 袜身种类；渔网只增强底袜部分。
+        sh: 光影参数；`ink <= 0` 时直接返回。
+        fabric_layer: (H, W, 4) 袜身纹理层，用于判断织物深浅与覆盖率。
+        ys_grid: (H, 1) 行坐标，用于排除袜口弧线以上的区域。
+        top_arc: (H, W) 袜口弧线。
+        y0: 袜子区域起始行。
+        scale: 当前渲染密度；传给墨线掩码做窗口缩放。
+
+    Returns:
+        修改后的图像。
     """
     if sh.ink <= 0:
         return img
@@ -351,8 +401,14 @@ def _boost_ink_lines(
 def _column_profile(alpha: NDArray[np.float64]) -> NDArray[np.float64]:
     """为每个像素计算横向归一化坐标 u（−1 左缘，0 中线，1 右缘）。
 
-    用每行的 alpha 覆盖范围动态估计腿宽，保证在腿宽变化时（脚踝/大腿）
-    u 坐标始终贴合当前截面。
+    用每行的 alpha 覆盖范围动态估计腿宽，保证腿宽变化时（脚踝/大腿）u 坐标
+    始终贴合当前截面；空行保持 0。
+
+    Args:
+        alpha: (H, W) 腿的 alpha 覆盖。
+
+    Returns:
+        (H, W) 的 u 坐标数组。
     """
     H, W = alpha.shape
     u = np.zeros_like(alpha)
@@ -375,10 +431,18 @@ def _curve_dip(
     alpha: NDArray[np.float64],
     curve: float,
 ) -> NDArray[np.float64]:
-    """环形线条的透视下弯量（像素，正值向下）。
+    """计算环形线条的透视下弯量（像素，正值向下）。
 
     圆柱在略微俯视时，横向环绕线呈弧线：腿中线处下垂最多、两侧缘为 0，
-    下垂量与该行腿宽（局部半径）成正比。curve 为 0 时返回全零。
+    下垂量与该行腿宽（局部半径）成正比。
+
+    Args:
+        u: (H, W) 横向归一化坐标。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        curve: 弯曲强度；<= 0 时返回全零。
+
+    Returns:
+        (H, W) 的下弯量。
     """
     if curve <= 0:
         return np.zeros_like(u)
@@ -394,10 +458,21 @@ def _lace_wave(
     H: int,
     rng: np.random.Generator,
 ) -> tuple[NDArray[np.float64], float, float, float]:
-    """蕾丝波浪下沿的每列 y 坐标及波形参数 (wave_bot, scallop, amplitude, phase)。
+    """计算蕾丝波浪下沿的每列 y 坐标及波形参数。
 
-    wave_bot 在 (y0 + height ± 振幅) 之间起伏，计入条带下沿所在行的弧线
-    下弯量；振幅约为 scallop 的 15%（使扇贝圆缓）。
+    `wave_bot` 在 `(y0 + height ± 振幅)` 之间起伏，并计入条带下沿所在行的
+    弧线下弯量；振幅约为 scallop 的 15%，使扇贝形圆缓。
+
+    Args:
+        top: 蕾丝上沿参数。
+        y0: 蕾丝带顶端所在行。
+        dip: (H, W) 弧线下弯量；None 表示不弯。
+        W: 图像宽。
+        H: 图像高。
+        rng: 随机源，决定波浪相位。
+
+    Returns:
+        `(wave_bot, scallop, amplitude, phase)`：每列下沿 y、周期、振幅与相位。
     """
     scallop = max(top.scallop, 20.0)
     amplitude = min(scallop * 0.15, top.height * 0.25)
@@ -429,11 +504,22 @@ def _render_fabric(
     dip: NDArray[np.float64] | None = None,
     pattern_offset: float = 0.0,
 ) -> NDArray[np.float64]:
-    """生成 (H, W, 4) float64 的袜身 RGBA 层，y_start 以上行全透明。
+    """生成袜身 RGBA 纹理层。
 
-    dip 为环形图案（横纹、网格横线、印花行）的透视下弯量 (H, W)。
-    pattern_offset 为上沿条带高度：图案相位从条带下沿起算（是否可见由
-    render_stocking 中的逐列裁剪决定）。
+    Args:
+        fabric: 袜身种类。
+        src: (H, W, 4) 归一化腿图。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        u: (H, W) 横向归一化坐标。
+        y_start: 袜子区域起始行；以上行清零。
+        H: 图像高。
+        W: 图像宽。
+        rng: 随机源，供散布类图案使用。
+        dip: (H, W) 环形图案的透视下弯量；None 表示不弯。
+        pattern_offset: 上沿条带高度；图案相位从条带下沿起算。
+
+    Returns:
+        (H, W, 4) float64 RGBA 层；袜口以上与腿外均为全透明。
     """
     layer = np.zeros((H, W, 4), dtype=np.float64)
 
@@ -464,7 +550,20 @@ def _fabric_plain(
     H: int,
     W: int,
 ) -> NDArray[np.float64]:
-    """纯色袜：opacity 随圆柱曲率和腿截面宽度变化。"""
+    """生成纯色袜纹理：不透明度随圆柱曲率和腿截面宽度变化。
+
+    Args:
+        f: 纯色袜参数。
+        src: 归一化腿图；本实现不读取，保留统一签名。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        u: (H, W) 横向归一化坐标。
+        y0: 袜子区域起始行。
+        H: 图像高。
+        W: 图像宽。
+
+    Returns:
+        (H, W, 4) RGBA 层。
+    """
     layer = np.zeros((H, W, 4), dtype=np.float64)
     rgb = color_rgb(f.color)  # (3,)
     base_a = f.opacity * color_alpha(f.color)
@@ -496,9 +595,16 @@ def _fabric_plain(
 def _stripe_opacity_at_y(
     fabric: Striped, ys: NDArray[np.float64]
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """对每个 (y, x) 位置返回 RGB (H,W,3) 和 opacity (H,W)。
+    """按每点相对条纹周期的位置计算颜色与不透明度。
 
     条带边界做约 1.2px 的亚像素软化，避免逐列相位取整产生阶梯锯齿。
+
+    Args:
+        fabric: 条纹袜参数。
+        ys: (H, W) 已含相位偏移与下弯量的图案坐标。
+
+    Returns:
+        `(rgb, opacity)`：均为 (H, W, ...) 的 float64 数组。
     """
     period = sum(s.width for s in fabric.stripes)
     phase = (ys - fabric.offset) % period
@@ -534,9 +640,21 @@ def _fabric_striped(
     dip: NDArray[np.float64] | None = None,
     pattern_offset: float = 0.0,
 ) -> NDArray[np.float64]:
-    """横条纹袜：条纹相位从上沿条带下沿起算，沿弧线下弯。
+    """生成横条纹袜纹理，相位从袜口条带下沿起算并沿弧线下弯。
 
-    条带覆盖区的清除由 render_stocking 的逐列裁剪完成。
+    Args:
+        f: 条纹袜参数。
+        src: 归一化腿图；本实现不读取，保留统一签名。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        u: (H, W) 横向归一化坐标。
+        y0: 袜子区域起始行。
+        H: 图像高。
+        W: 图像宽。
+        dip: (H, W) 下弯量；None 表示不弯。
+        pattern_offset: 上沿条带高度。
+
+    Returns:
+        (H, W, 4) RGBA 层。
     """
     layer = np.zeros((H, W, 4), dtype=np.float64)
     ys_pat = np.arange(H, dtype=np.float64).reshape(H, 1) - y0 - pattern_offset
@@ -558,7 +676,20 @@ def _fabric_ribbed(
     H: int,
     W: int,
 ) -> NDArray[np.float64]:
-    """竖罗纹：用 cos 函数在 u 方向产生明暗交替的条纹。"""
+    """生成竖罗纹纹理：用 cos 在 u 方向产生明暗交替的条纹。
+
+    Args:
+        f: 罗纹袜参数。
+        src: 归一化腿图；本实现不读取，保留统一签名。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        u: (H, W) 横向归一化坐标。
+        y0: 袜子区域起始行。
+        H: 图像高。
+        W: 图像宽。
+
+    Returns:
+        (H, W, 4) RGBA 层。
+    """
     layer = np.zeros((H, W, 4), dtype=np.float64)
     rgb = color_rgb(f.color)
 
@@ -586,7 +717,18 @@ def _fishnet_mask(
     line_w: float,
     angle_deg: float,
 ) -> NDArray[np.float64]:
-    """在 (abs_x, ys) 坐标系中计算网线的 alpha（0 网孔，1 网线）。"""
+    """在腿面绝对坐标中计算网线覆盖率。
+
+    Args:
+        W_abs: (H, W) 腿面横向绝对坐标。
+        ys: (H, W) 已含下弯量的纵向坐标。
+        cell: 网眼大小（像素）。
+        line_w: 网线宽度（像素）。
+        angle_deg: 网格旋转角度（度）。
+
+    Returns:
+        (H, W) 的 0/1 掩码：1 为网线，0 为网孔。
+    """
     a = math.radians(angle_deg)
     cos_a, sin_a = math.cos(a), math.sin(a)
     # 旋转到网格坐标
@@ -615,9 +757,21 @@ def _fabric_fishnet(
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
-    """网袜：网线不透明、网孔透明（可叠底袜），横向网线沿弧线下弯。
+    """生成网袜纹理：网线不透明、网孔透明，可叠一层底袜。
 
-    条带覆盖区的清除由 render_stocking 的逐列裁剪完成。
+    Args:
+        f: 网袜参数。
+        src: (H, W, 4) 归一化腿图，用于底袜。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        u: (H, W) 横向归一化坐标。
+        y0: 袜子区域起始行。
+        H: 图像高。
+        W: 图像宽。
+        rng: 保留统一签名；当前实现不使用随机散布。
+        dip: (H, W) 下弯量；None 表示不弯。
+
+    Returns:
+        (H, W, 4) RGBA 层。
     """
     layer = np.zeros((H, W, 4), dtype=np.float64)
 
@@ -652,7 +806,20 @@ def _dot_mask(
     shape: str,
     rng: np.random.Generator,
 ) -> NDArray[np.float64]:
-    """生成印花图案的 alpha（1 在图案内，0 在图案外）。"""
+    """生成印花图案的 alpha 掩码。
+
+    Args:
+        abs_x: (H, W) 腿面横向绝对坐标。
+        ys: (H, W) 已含下弯量的纵向坐标。
+        spacing: 图案中心间距（像素）。
+        size: 图案尺寸（像素）。
+        layout: "grid" 为错位网格，"scatter" 为确定性随机散布。
+        shape: "dot" / "heart" / "star"。
+        rng: 随机源；scatter 布局用它产生整幅图的散布相位，grid 布局不使用。
+
+    Returns:
+        (H, W) 的 0/1 掩码：1 在图案内，0 在图案外。
+    """
     H, W = abs_x.shape
 
     if layout == "grid":
@@ -667,7 +834,9 @@ def _dot_mask(
         cell = spacing
         gi = np.floor(abs_x / cell).astype(int)
         gj = np.floor(ys / cell).astype(int)
-        seed_arr = ((gi * 1000003 + gj * 7919) & 0xFFFFFF).astype(np.uint32)
+        # 用 seed 派生一个整幅图的盐值，使同一 seed 可复现、不同 seed 图案不同
+        salt = int(rng.integers(0, 0x1000000))
+        seed_arr = ((gi * 1000003 + gj * 7919 + salt) & 0xFFFFFF).astype(np.uint32)
         mask32 = np.uint32(0xFFFFFF)
         # 每格 0~1 的伪随机偏移（确定性，不依赖 rng）
         raw_x = (seed_arr * np.uint32(0x5DEECE6D) + np.uint32(11)) & mask32
@@ -715,7 +884,25 @@ def _fabric_dotted(
     dip: NDArray[np.float64] | None = None,
     pattern_offset: float = 0.0,
 ) -> NDArray[np.float64]:
-    """印花袜：底袜 + 图案叠加；图案行沿弧线下弯，相位从条带下沿起算。"""
+    """生成印花袜纹理：底袜 + 图案叠加。
+
+    图案行沿弧线下弯，相位从袜口条带下沿起算。
+
+    Args:
+        f: 印花袜参数。
+        src: (H, W, 4) 归一化腿图，用于底袜。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        u: (H, W) 横向归一化坐标。
+        y0: 袜子区域起始行。
+        H: 图像高。
+        W: 图像宽。
+        rng: 随机源，供散布类图案使用。
+        dip: (H, W) 下弯量；None 表示不弯。
+        pattern_offset: 上沿条带高度。
+
+    Returns:
+        (H, W, 4) RGBA 层。
+    """
     base = _fabric_plain(f.base, src, alpha, u, y0, H, W)
 
     row_half_w = np.where(alpha > 0.05, 1, 0).sum(axis=1) / 2.0
@@ -747,17 +934,30 @@ def _render_shading(
     y0: int,
     H: int,
     W: int,
-) -> NDArray[np.float64]:
-    """生成 (H, W, 4) 光影覆盖层。
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """生成光影覆盖层。
 
-    使用正片叠底（multiply）模式：颜色越深遮越暗，白色 (1,1,1) 不影响。
-    高光使用屏幕（screen）模式叠加。
+    边缘阴影使用正片叠底（multiply），高光使用屏幕（screen）。阴影色与阴影
+    强度放在 RGBA 层里，高光强度单独返回，避免复用颜色通道造成串色。
+
+    Args:
+        sh: 光影参数。
+        src: (H, W, 4) 归一化腿图；本实现不读取，保留统一签名。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        u: (H, W) 横向归一化坐标。
+        y0: 袜子区域起始行。
+        H: 图像高。
+        W: 图像宽。
+
+    Returns:
+        `(shadow_layer, highlight)`：shadow_layer 为 (H, W, 4)，RGB 是阴影色、
+        alpha 是阴影强度；highlight 为 (H, W) 的 [0, 1] 高光强度。
     """
-    layer = np.ones((H, W, 4), dtype=np.float64)
-    layer[..., 3] = 0.0  # 默认全透
+    layer = np.zeros((H, W, 4), dtype=np.float64)
+    highlight = np.zeros((H, W), dtype=np.float64)
 
     if sh.rim_shadow <= 0 and sh.highlight <= 0:
-        return layer
+        return layer, highlight
 
     shadow_rgb = color_rgb(sh.shadow_color)
     shadow_a_base = color_alpha(sh.shadow_color)
@@ -780,15 +980,14 @@ def _render_shading(
         hl_a = np.round(hl_a * steps) / steps
 
     layer[..., :3] = shadow_rgb
-    # 阴影 alpha 放在 R 通道用作权重（合成时单独处理）
-    # 用 (H, W, 2) 分别传阴影和高光 alpha，这里打包进 G=hl_a
     layer[..., 3] = shadow_a
-    # 把高光 alpha 打包进 B 通道临时存储，合成时提取
-    layer[..., 2] = hl_a  # 约定：B 通道存高光 alpha（合成函数负责解包）
-
+    in_leg = alpha > 0.05
     layer[:y0] = 0.0
-    layer[alpha < 0.05] = 0.0
-    return layer
+    layer[~in_leg] = 0.0
+    highlight = hl_a.copy()
+    highlight[:y0] = 0.0
+    highlight[~in_leg] = 0.0
+    return layer, highlight
 
 
 # ---------------------------------------------------------------------------
@@ -797,7 +996,15 @@ def _render_shading(
 
 
 def _alpha_over(dst: NDArray[np.float64], src_: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Porter-Duff 'A over B'（src_ 在上）。"""
+    """按 Porter-Duff 'A over B' 合成两层 RGBA。
+
+    Args:
+        dst: 下层 RGBA。
+        src_: 上层 RGBA。
+
+    Returns:
+        合成后的新 RGBA 数组。
+    """
     a_src = src_[..., 3:4]
     a_dst = dst[..., 3:4]
     a_out = a_src + a_dst * (1.0 - a_src)
@@ -818,7 +1025,19 @@ def _composite(
     alpha: NDArray[np.float64],
     y0: int,
 ) -> NDArray[np.float64]:
-    """将腿皮肤与袜子纹理合成为 RGBA（光影由 _apply_shading 后置应用）。"""
+    """把腿皮肤与袜身纹理合成为 RGBA。
+
+    袜口以上保留原腿；光影由 `_apply_shading` 在后续步骤应用。
+
+    Args:
+        src_leg: (H, W, 4) 归一化腿图。
+        fabric: (H, W, 4) 袜身纹理层。
+        alpha: (H, W) 腿的 alpha 覆盖；本实现不读取，保留统一签名。
+        y0: 袜子区域起始行。
+
+    Returns:
+        (H, W, 4) 合成结果。
+    """
     result = src_leg.copy()
 
     fa = fabric[..., 3:4]  # 袜子 alpha (H,W,1)
@@ -836,12 +1055,93 @@ def _composite(
     return result
 
 
-def _resample_leg(leg: Leg, density: float) -> Leg:
-    """把腿图重采样到 density 个像素/设计像素；元数据仍是设计像素。
+def _resize_rgba(
+    image: NDArray[np.uint8],
+    width: int,
+    height: int,
+    *,
+    resample: Image.Resampling,
+) -> NDArray[np.uint8]:
+    """按预乘 alpha 缩放 RGBA。
 
-    内置矢量素材按目标密度重新栅格化；外部位图素材比目标更密时降采样
-    （画质最好），否则升采样。位图先乘 alpha 再插值（预乘），否则透明区的
-    黑色会被插值拉进边缘形成暗边。
+    先乘 alpha 再插值，避免透明区的黑色被拉进边缘形成暗边。
+
+    Args:
+        image: (H, W, 4) uint8 RGBA。
+        width: 目标宽。
+        height: 目标高。
+        resample: PIL 重采样算法。
+
+    Returns:
+        (height, width, 4) uint8 RGBA。
+    """
+    src = image.astype(np.float64) / 255.0
+    alpha = src[..., 3:4]
+    premultiplied = src[..., :3] * alpha
+    rgb = Image.fromarray((np.clip(premultiplied, 0, 1) * 255).round().astype(np.uint8)).resize(
+        (width, height), resample
+    )
+    a = Image.fromarray((np.clip(alpha[..., 0], 0, 1) * 255).round().astype(np.uint8)).resize(
+        (width, height), resample
+    )
+    out = np.dstack(
+        [
+            np.asarray(rgb).astype(np.float64) / 255.0,
+            np.asarray(a).astype(np.float64)[..., np.newaxis] / 255.0,
+        ]
+    )
+    out[..., :3] /= np.maximum(out[..., 3:4], 1e-6)
+    return (np.clip(out, 0, 1) * 255).round().astype(np.uint8)
+
+
+def _downsample_rendered(
+    leg: Leg,
+    output_leg: Leg,
+    density: float,
+    *,
+    content_top: int = 0,
+) -> Leg:
+    """把超采样渲染结果缩到输出密度。
+
+    轮廓 alpha 直接沿用输出密度的腿图，避免边缘漂移；袜口以上不参与重采样。
+
+    Args:
+        leg: 当前超采样密度下的渲染结果。
+        output_leg: 输出密度的参考腿图，提供尺寸与轮廓 alpha。
+        density: 输出密度（像素 / 设计像素）。
+        content_top: 该行以上的像素直接复制 output_leg；0 表示不保留。
+
+    Returns:
+        输出密度下的 Leg。
+    """
+    height, width = output_leg.image.shape[:2]
+    if leg.image.shape[:2] == (height, width):
+        image = leg.image.copy()
+    else:
+        image = _resize_rgba(leg.image, width, height, resample=Image.Resampling.LANCZOS)
+    alpha = output_leg.image[..., 3]
+    # 超采样 alpha 在轮廓最外侧可能已为 0，而输出密度仍有覆盖率；
+    # 这些像素没有可用的织物颜色，用原腿颜色补齐，避免出现黑边。
+    empty = (image[..., 3] == 0) & (alpha > 0)
+    image[empty, :3] = output_leg.image[empty, :3]
+    image[..., 3] = alpha
+    if content_top > 0:
+        image[:content_top] = output_leg.image[:content_top]
+    return replace(leg, image=image, pixels_per_unit=density)
+
+
+def _resample_leg(leg: Leg, density: float) -> Leg:
+    """把腿图重采样到指定密度，元数据仍是设计像素。
+
+    内置矢量素材按目标密度重新栅格化；外部位图素材比目标更密时降采样，
+    否则升采样。位图使用预乘 alpha 插值，避免透明边缘出现暗边。
+
+    Args:
+        leg: 原始腿素材。
+        density: 目标像素 / 设计像素。
+
+    Returns:
+        图像为目标密度、`pixels_per_unit == density` 的新 Leg。
     """
     if leg.svg is not None:
         return leg.at_density(density)
@@ -850,70 +1150,69 @@ def _resample_leg(leg: Leg, density: float) -> Leg:
     h_img, w_img = leg.image.shape[:2]
     h2 = max(1, round(h_img * density / leg.pixels_per_unit))
     w2 = max(1, round(w_img * density / leg.pixels_per_unit))
-    from PIL import Image
 
     # 降采样用 Lanczos（保细节），升采样用双三次（避免振铃）
     resample = (
         Image.Resampling.LANCZOS if density < leg.pixels_per_unit else Image.Resampling.BICUBIC
     )
-    src = leg.image.astype(np.float64) / 255.0
-    a = src[..., 3:4]
-    pm = src[..., :3] * a
-    rgb = Image.fromarray((np.clip(pm, 0, 1) * 255).round().astype(np.uint8)).resize(
-        (w2, h2), resample
-    )
-    al = Image.fromarray((np.clip(a[..., 0], 0, 1) * 255).round().astype(np.uint8)).resize(
-        (w2, h2), resample
-    )
-    out = np.dstack(
-        [
-            np.asarray(rgb).astype(np.float64) / 255.0,
-            np.asarray(al).astype(np.float64)[..., np.newaxis] / 255.0,
-        ]
-    )
-    out[..., :3] /= np.maximum(out[..., 3:4], 1e-6)
     return replace(
         leg,
-        image=(np.clip(out, 0, 1) * 255).round().astype(np.uint8),
+        image=_resize_rgba(leg.image, w2, h2, resample=resample),
         pixels_per_unit=density,
     )
 
 
 def _shade_bare_leg(leg: Leg, style: StockingStyle) -> Leg:
-    """给裸腿整体打上皮肤光影（不画袜子）。"""
+    """给裸腿整体打上皮肤光影（不画袜子）。
+
+    Args:
+        leg: 当前渲染密度下的腿图。
+        style: 样式参数；使用 shading.skin 与暖色皮肤阴影。
+
+    Returns:
+        光照后的 Leg。
+    """
     H, W = leg.image.shape[:2]
     src = leg.image.astype(np.float64) / 255.0
     alpha = src[..., 3]
     prof = _column_profile(alpha)
     sh = style.shading
-    layer = _render_shading(
+    shadow, highlight = _render_shading(
         replace(sh, shadow_color=sh.skin_shadow_color), src, alpha, prof, 0, H, W
     )
-    layer[..., 3] *= sh.skin
-    layer[..., 2] *= sh.skin
-    out = _apply_shading(src.copy(), layer)
+    shadow[..., 3] *= sh.skin
+    highlight *= sh.skin
+    out = _apply_shading(src.copy(), shadow, highlight)
     return replace(leg, image=(np.clip(out, 0.0, 1.0) * 255.0).astype(np.uint8))
 
 
 def _apply_shading(
     img: NDArray[np.float64],
-    shading: NDArray[np.float64],
+    shadow: NDArray[np.float64],
+    highlight: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """对合成结果应用光影：边缘阴影正片叠底、竖向高光 screen。
+    """对合成结果应用光影。
 
-    在上沿条带绘制之后调用，使袜口/蕾丝同样受光。
-    shading[..., 3] 为阴影 alpha，[..., 2] 为高光 alpha。
+    边缘阴影按正片叠底压暗，竖向高光按 screen 提亮；在上沿条带绘制之后调用，
+    使袜口与蕾丝同样受光。
+
+    Args:
+        img: (H, W, 4) 归一化图像；原地修改并返回。
+        shadow: (H, W, 4) 阴影层：RGB 为阴影色，alpha 为阴影强度。
+        highlight: (H, W) 高光强度。
+
+    Returns:
+        修改后的图像。
     """
-    sh_a = shading[..., 3:4]
-    hl_a = shading[..., 2:3]
-    sh_rgb = shading[..., :3]
+    sh_a = shadow[..., 3:4]
+    sh_rgb = shadow[..., :3]
 
     # 正片叠底阴影：shadow_rgb 通常偏冷，乘在当前颜色上
     mul = img[..., :3] * sh_rgb
     img[..., :3] = img[..., :3] * (1.0 - sh_a) + mul * sh_a
 
     # screen 高光（白色）：提亮
-    img[..., :3] = img[..., :3] + (1.0 - img[..., :3]) * hl_a
+    img[..., :3] = img[..., :3] + (1.0 - img[..., :3]) * highlight[..., np.newaxis]
     return img
 
 
@@ -936,11 +1235,27 @@ def _render_top_edge(
     dip: NDArray[np.float64] | None = None,
     wave: tuple[NDArray[np.float64], float, float, float] | None = None,
 ) -> NDArray[np.float64]:
-    """在图像上原地绘制上沿效果，返回修改后的图像。
+    """在图像上原地绘制上沿效果。
 
-    Fade 的渐隐已在织物 alpha 中实现，此处无需再画。
-    dip 为环形线条的透视下弯量 (H, W)，可为 None（不弯）。
-    wave 为 Lace 的 (wave_bot, scallop, amplitude, phase)，由 render_stocking 预计算。
+    Bare 画细边线，Welt 画加厚条带，Lace 画波浪蕾丝；Fade 的渐隐已在织物
+    alpha 中实现，此处不额外绘制。
+
+    Args:
+        img: (H, W, 4) 归一化图像；原地修改并返回。
+        top: 上沿样式。
+        fabric: 袜身种类，用于取主色。
+        sh: 光影参数。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        u: (H, W) 横向归一化坐标。
+        y0: 袜口顶端所在行。
+        H: 图像高。
+        W: 图像宽。
+        rng: 随机源，供边线抖动使用。
+        dip: (H, W) 下弯量；None 表示不弯。
+        wave: Lace 的预计算波形；非 Lace 时为 None。
+
+    Returns:
+        修改后的图像。
     """
     if isinstance(top, Bare):
         img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng, color=(0.1, 0.1, 0.1))
@@ -957,7 +1272,16 @@ def _edge_base(
     W: int,
     dip: NDArray[np.float64] | None,
 ) -> NDArray[np.float64]:
-    """上沿边线各列的基准 y：y0 加上该行的下弯量。"""
+    """计算上沿边线各列的基准 y。
+
+    Args:
+        y0: 袜口顶端所在行。
+        W: 图像宽。
+        dip: (H, W) 下弯量；None 表示不弯。
+
+    Returns:
+        长度为 W 的每列基准 y。
+    """
     if dip is None:
         return np.full(W, float(y0))
     row = dip[min(max(y0, 0), dip.shape[0] - 1)]
@@ -965,7 +1289,14 @@ def _edge_base(
 
 
 def _fabric_main_color(fabric: Fabric) -> NDArray[np.float64]:
-    """取袜身的主色（RGB [0,1]）。"""
+    """取袜身的主色（归一化 RGB）。
+
+    Args:
+        fabric: 袜身种类；条纹取第一条，印花取底袜颜色。
+
+    Returns:
+        长度为 3 的 RGB 数组。
+    """
     if isinstance(fabric, Plain):
         return color_rgb(fabric.color)
     if isinstance(fabric, Striped) and fabric.stripes:
@@ -980,9 +1311,16 @@ def _fabric_main_color(fabric: Fabric) -> NDArray[np.float64]:
 
 
 def _soft_cover(y: NDArray[np.float64], edge: NDArray[np.float64]) -> NDArray[np.float64]:
-    """行的 y 坐标相对 edge 的覆盖率：edge 以上为 0、以下为 1，边界处 1px 过渡。
+    """计算行坐标相对软边缘的覆盖率。
 
     二值判定会让斜向边界形成 1px 阶梯；按覆盖率取值等价于一次简单的抗锯齿。
+
+    Args:
+        y: 行坐标数组（可含批次维）。
+        edge: 边缘坐标，与 y 同形或可广播。
+
+    Returns:
+        0–1 的覆盖率：edge 以上为 0、以下为 1，边界约 1px 过渡。
     """
     return np.clip(y - edge + 0.5, 0.0, 1.0)
 
@@ -992,10 +1330,18 @@ def _smooth_wobble(
     n: int,
     amplitude: float,
 ) -> NDArray[np.float64]:
-    """低频起伏的抖动曲线，振幅 ±amplitude。
+    """生成低频起伏的抖动曲线，振幅约为 ±amplitude。
 
-    逐列独立取噪声会让边线每列各跳 1–2px，看起来是"毛刺"而非手绘线；对白噪声
-    平滑两次再归一化，得到相邻列连续变化的缓慢漂移。
+    逐列独立取噪声会让边线每列各跳 1–2px，看起来是毛刺；这里对白噪声平滑
+    两次再归一化，得到相邻列连续变化的缓慢漂移。
+
+    Args:
+        rng: 随机源。
+        n: 采样点数（通常为图像宽）。
+        amplitude: 最大绝对偏移（像素）；<= 0 或 n=0 时返回全零。
+
+    Returns:
+        长度为 n 的抖动曲线。
     """
     if amplitude <= 0 or n == 0:
         return np.zeros(n)
@@ -1018,9 +1364,20 @@ def _draw_edge_line(
     rng: np.random.Generator,
     color: tuple[float, float, float] = (0.1, 0.1, 0.1),
 ) -> NDArray[np.float64]:
-    """沿基准曲线 y_base 画一条手绘边线：低频抖动 + 按覆盖率混合的软笔触。
+    """沿基准曲线画一条手绘边线。
 
-    线宽约 1.5px，边缘由覆盖率自然过渡，避免逐列取整在斜向处产生的锯齿。
+    使用低频抖动与覆盖率软笔触，线宽约 1.5px，避免斜向处的阶梯锯齿。
+
+    Args:
+        img: (H, W, 4) 归一化图像；原地修改并返回。
+        alpha: (H, W) 腿的 alpha 覆盖；腿外不画。
+        y_base: 每列的基准 y。
+        sh: 光影参数，提供抖动幅度。
+        rng: 随机源。
+        color: 线色（归一化 RGB）。
+
+    Returns:
+        修改后的图像。
     """
     H, W = img.shape[0], img.shape[1]
     color_arr = np.array(color, dtype=np.float64)
@@ -1045,9 +1402,25 @@ def _draw_welt(
     rng: np.random.Generator,
     dip: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
-    """松紧袜口：袜口顶端对齐 y0，条带从 y0 向下延伸 height 像素，随弧线下弯。
+    """绘制松紧袜口条带与勒痕。
 
-    条带颜色取 Welt.color 或主色加深一档。
+    袜口顶端对齐 y0，条带向下延伸 height 像素并随弧线下弯；颜色取
+    `Welt.color` 或主色加深一档。
+
+    Args:
+        img: (H, W, 4) 归一化图像；原地修改并返回。
+        fabric: 袜身种类，用于取主色。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        y0: 袜口顶端所在行。
+        H: 图像高。
+        W: 图像宽。
+        top: 松紧袜口参数。
+        sh: 光影参数。
+        rng: 随机源，供边线抖动使用。
+        dip: (H, W) 下弯量；None 表示不弯。
+
+    Returns:
+        修改后的图像。
     """
     h = int(top.height)
 
@@ -1089,10 +1462,26 @@ def _draw_lace(
     dip: NDArray[np.float64] | None,
     wave: tuple[NDArray[np.float64], float, float, float],
 ) -> NDArray[np.float64]:
-    """蕾丝边：半透明带直接覆盖在皮肤上，孔点加深，沿波浪画边线勾轮廓。
+    """绘制蕾丝边。
 
-    wave 为 render_stocking 预计算的 (wave_bot, scallop, amplitude, phase)，
-    与织物图案的逐列裁剪共用同一波形。
+    半透明带直接覆盖在皮肤上，孔点加深，沿波浪下沿与袜口顶端各画一条边线。
+
+    Args:
+        img: (H, W, 4) 归一化图像；原地修改并返回。
+        fabric: 袜身种类，用于取主色。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        y0: 蕾丝带顶端所在行。
+        H: 图像高。
+        W: 图像宽。
+        top: 蕾丝参数。
+        sh: 光影参数。
+        rng: 随机源，供边线抖动使用。
+        dip: (H, W) 下弯量；None 表示不弯。
+        wave: 预计算的波形 `(wave_bot, scallop, amplitude, phase)`，与织物
+            图案的逐列裁剪共用。
+
+    Returns:
+        修改后的图像。
     """
     lace_rgb = color_rgb(top.color) if top.color is not None else _fabric_main_color(fabric)
 

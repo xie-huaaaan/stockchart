@@ -15,6 +15,7 @@ from stockchart.defaults import (
     DEFAULT_PLOT_LEFT_PAD,
     DEFAULT_X_LABEL_SIZE,
 )
+from stockchart.plot import _format_tick
 
 INK = np.array((72, 72, 72), dtype=int)
 
@@ -47,6 +48,11 @@ class TestAddYAxis:
         arr = p.render(scale=1).to_numpy()
         assert inked(arr).any()
 
+    def test_tiny_ticks_do_not_round_to_zero(self) -> None:
+        assert _format_tick(1e-10) == "1e-10"
+        assert _format_tick(0.0) == "0"
+        assert _format_tick(12.0) == "12"
+
     def test_negative_domain_extends_below(self) -> None:
         up_only = BarPlot(600, extent_down=0)
         up_only.add_bar(300, 0, make_leg())
@@ -59,6 +65,18 @@ class TestAddYAxis:
         h_neg = with_neg.render(scale=1).height_px
         # 负刻度把内容向下推
         assert h_neg > h_up + 300
+
+    def test_ticks_above_extent_expand_top(self) -> None:
+        p = BarPlot(600, extent_up=100)
+        p.add_y_axis(Scale((0.0, 10.0), (0.0, 300.0)), ticks=[0, 10])
+        layout = p._layout()
+        # 轴顶与最高刻度数字都要留在画布内
+        assert layout.baseline_y - layout.y_up_len >= 0
+        assert layout.baseline_y > 100
+
+    def test_non_finite_ticks_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            BarPlot(600).add_y_axis(Scale((0.0, 10.0), (0.0, 300.0)), ticks=[0, float("nan")])
 
     def test_grid_draws_under_bars(self) -> None:
         p = BarPlot(600)
@@ -191,10 +209,27 @@ class TestXLabelRotation:
         cols = np.where(inked(arr).any(axis=0))[0]
         assert cols.min() > 0
 
+    def test_vertical_label_is_centered_on_anchor(self) -> None:
+        p = BarPlot(500, extent_up=200)
+        x = 250.0
+        p.add_x_labels(["甲"], xs=[x], pos="below", rotation=90)
+        layout = p._layout()
+        assert layout.x_label_y is not None
+        arr = p.render(scale=1).to_numpy()
+        # x 标签从 x_label_y 开始；基线箭头两翼会伸到基线下方，不纳入统计
+        below = inked(arr)[int(layout.x_label_y) :]
+        cols = np.where(below.any(axis=0))[0]
+        center = (cols.min() + cols.max()) / 2
+        assert center == pytest.approx(layout.plot_left + x, abs=6)
+
     def test_invalid_rotation(self) -> None:
         p = BarPlot(600)
         with pytest.raises(ValueError):
             p.add_x_labels(["甲"], rotation=120)
+
+    def test_non_finite_xs_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            BarPlot(600).add_x_labels(["甲"], xs=[float("nan")])
 
 
 class TestAxisStyle:

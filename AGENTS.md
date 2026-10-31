@@ -39,6 +39,9 @@ L4 的下层参数通过 `ChartOptions` 透传。新会话先看 `git log --onel
   改许可声明须同步 `LICENSE`、`ASSETS-LICENSE` 与两份 README。
 - 默认值集中在 `defaults.py`；随机行为由 `seed` 控制，同一 seed 可复现；
   不传 seed 则每次随机。
+- `BarPlot.extent_up` / `extent_down` 只表示基线上下给柱子（腿）预留的高度，
+  不含标题、轴名称、刻度数字、x 标签、图例等边缘区域；这些空间由布局另行计算。
+  L4 的 `y_extent` 同样只描述柱区高度。
 - pandas 只按 `index` / `columns` / `to_numpy()` 结构识别，不 import、不进依赖。
 - 公开 API 的 docstring 与 `docs/api.zh-CN/`（及英文版 `docs/api/`）同步；改签名先改文档。
 - 新增 L4 透传参数时同步 `ChartOptions`、`_OPTION_KEYS` 与 `docs/api.zh-CN/charts.md`
@@ -48,6 +51,14 @@ L4 的下层参数通过 `ChartOptions` 透传。新会话先看 `git log --onel
 
 - 现代 Python：`type` 别名、`X | None`、`dataclass(slots=True, frozen=True)`。
 - 全部代码带类型标注；公开 API 不用 `Any`。
-- 中文文档/注释，英文标识符；内部函数一两句 docstring 即可。
+- 中文文档/注释，英文标识符。
+- Docstring 一律遵循 PEP 257 + Google 风格：摘要行单独成行，空一行后按需使用
+  `Args:` / `Returns:` / `Raises:` / `Attributes:` / `Example:`。公开模块、类、函数、
+  方法必须完整；私有类与函数至少写清用途，参数或返回值不直观时同样列出。
+  参数说明不重复签名里的类型，只写含义、单位、默认值或边界条件。
+- 类的说明以类 docstring 为主：构造参数写在类的 `Args:`，校验约束写在 `Raises:`，
+  数据字段写在 `Attributes:`。`__init__` / `__post_init__` 一般不再重复写
+  docstring，只有初始化过程本身的特殊行为才单独说明。
+- 注释解释“为什么”和隐含约束（单位、坐标系、边界条件、随机性），不复述代码。
 - 每完成一个可运行的功能点提交一次，中文一句话概述；提交前跑测试 / ruff / pyright。
 - 需求不明确先问用户；用中文交流；外网站点打不开时提醒开 VPN。

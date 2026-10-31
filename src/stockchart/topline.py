@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Sequence
 from typing import Literal, TypedDict, Unpack
@@ -43,7 +44,6 @@ from stockchart.plot import (
     XLabelPos,
     XLabelRotation,
     _BarRecord,
-    _format_tick,
     _LegSpec,
     _normalize_style_seq,
     _select_legs_for_groups,
@@ -55,7 +55,23 @@ type CycleMode = Literal["auto", "group", "sequence"]
 
 
 class ChartOptions(TypedDict, total=False):
-    """L4 透传给下层的可选参数；键名与 L2 接口一致。"""
+    """L4 透传给下层的可选参数；键名与 L2 接口一致。
+
+    Attributes:
+        axis_style: 坐标轴样式，"clean" 或 "handdrawn"。
+        background: 画布背景色。
+        bar_gap: 组内相邻腿边缘之间的空隙（设计像素）。
+        group_gap: 组间空隙（设计像素）。
+        grid: 是否画 y 刻度横向虚线。
+        ticks: 显式刻度值；None 表示自动生成。
+        x_label_pos: x 标签位置策略。
+        x_label_rotation: x 标签旋转策略。
+        title_align: 标题对齐方式。
+        title_size_px: 标题字号（设计像素）。
+        axis_name_size_px: 轴名称字号（设计像素）。
+        legend_loc: 图例在顶部或底部。
+        legend_ncol: 图例列数；None 表示自动换行。
+    """
 
     axis_style: AxisStyle
     background: Color
@@ -96,12 +112,68 @@ _LABEL_BREATH = 2 * DEFAULT_BAR_GAP
 
 
 def _check_options(options: ChartOptions) -> None:
-    """拒绝未知选项，避免拼错的参数被静默忽略。"""
+    """拒绝未知选项，避免拼错的参数被静默忽略。
+
+    Args:
+        options: 调用方传入的关键字选项。
+
+    Raises:
+        TypeError: 含 _OPTION_KEYS 之外的键。
+    """
     unknown = sorted(set(options) - _OPTION_KEYS)
     if unknown:
         raise TypeError(
             f"未知参数：{'、'.join(unknown)}；可用选项：{'、'.join(sorted(_OPTION_KEYS))}"
         )
+
+
+def _check_positive(name: str, value: float) -> None:
+    """校验一个映射参数为正的有限数值。
+
+    Args:
+        name: 参数名，用于错误信息。
+        value: 待校验的值。
+
+    Raises:
+        ValueError: 值不是有限正数。
+    """
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} 须为正数，得到 {value!r}")
+
+
+def _check_fill_bounds(max_fill: float, min_fill: float) -> None:
+    """校验正负值压缩区间 0 <= min_fill < max_fill <= 1。
+
+    Args:
+        max_fill: 最大值映射比例。
+        min_fill: 含负值时值域下界比例。
+
+    Raises:
+        ValueError: 两个比例不是有限数、max_fill 超过 1，或区间不合法。
+    """
+    _check_positive("max_fill", max_fill)
+    if max_fill > 1.0:
+        raise ValueError(f"max_fill 须在 (0, 1]，得到 {max_fill!r}")
+    if not math.isfinite(min_fill) or not 0.0 <= min_fill < max_fill:
+        raise ValueError(f"min_fill 须满足 0 <= min_fill < max_fill，得到 {min_fill!r}")
+
+
+def _format_value(value: float) -> str:
+    """格式化数值标签。
+
+    与刻度不同，数值标签应尽量保留原始精度：整数直接输出，非整数使用
+    Python 的最短往返表示，避免大数被截成 6 位有效数字。
+
+    Args:
+        value: 数据值。
+
+    Returns:
+        数值的可读字符串。
+    """
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return repr(number)
 
 
 def _select_legs(
@@ -110,7 +182,16 @@ def _select_legs(
     paired: Pairing,
     seed: int,
 ) -> list[list[Leg]]:
-    """按组的系列数自动选腿；规则见 plot._select_legs_for_groups。"""
+    """按每组的系列数自动选腿。
+
+    Args:
+        rows: 二维数据；每行一组。
+        paired: 配对策略。
+        seed: 选腿随机源。
+
+    Returns:
+        与 rows 同构的 Leg 列表。
+    """
     return _select_legs_for_groups([len(row) for row in rows], paired=paired, seed=seed)
 
 
@@ -120,7 +201,18 @@ def _plan_slots(
     labels: Sequence[str] | None,
     bar_gap: float,
 ) -> list[float]:
-    """每槽占宽 = max(腿自然宽度, 标签宽度 + 呼吸余量)。"""
+    """计算每个槽的宽度。
+
+    槽宽取“腿的自然宽度”与“标签宽度 + 呼吸余量”的较大者。
+
+    Args:
+        specs: 槽 → 列 → 腿规格的嵌套结构。
+        labels: 每组标签；None 表示不加宽。
+        bar_gap: 同槽相邻列之间的空隙。
+
+    Returns:
+        每个槽的宽度（设计像素）。
+    """
     slots_px: list[float] = []
     for g, slot in enumerate(specs):
         natural = sum(col[0].leg.width for col in slot) + (len(slot) - 1) * bar_gap
@@ -146,8 +238,27 @@ def _assemble(
     seed: int | None,
     options: ChartOptions,
 ) -> tuple[BarPlot, list[list[list[_BarRecord]]]]:
-    """按槽位建图并摆好腿，返回 (BarPlot, 与 specs 同构的柱记录)。"""
+    """按槽位建图并摆好腿。
+
+    Args:
+        specs: 槽 → 列 → 腿规格的嵌套结构。
+        labels: 每组标签；None 表示不加 x 标签。
+        title: 整图标题；None 表示不加。
+        xlabel: x 轴名称；None 表示不加。
+        bar_gap: 同槽相邻列之间的空隙。
+        slot_gap: 相邻槽之间的空隙。
+        width_px: 显式绘图区宽度；None 时按槽宽与边距自适应。
+        extent_up: 基线以上为腿预留的高度；不含标题、标签等边缘。
+        extent_down: 基线以下为向下腿预留的高度。
+        x_label_pos: x 标签位置策略。
+        seed: BarPlot 与选腿的随机源。
+        options: 其余 L2 透传选项。
+
+    Returns:
+        `(BarPlot, 与 specs 同构的柱记录)`。
+    """
     slots_px = _plan_slots(specs, labels=labels, bar_gap=bar_gap)
+    # 显式 width_px 不做内容宽度校验：过小时腿会超出画布被裁，已知边界，暂不处理。
     width = (
         width_px
         if width_px is not None
@@ -189,26 +300,76 @@ def _assemble(
 
 
 def _check_labels(labels: Sequence[str] | None, n: int) -> Sequence[str] | None:
+    """校验标签数量与组数一致。
+
+    Args:
+        labels: 标签序列或 None。
+        n: 组数。
+
+    Returns:
+        原标签序列（或 None）。
+
+    Raises:
+        ValueError: 标签数量与组数不一致。
+    """
     if labels is not None and len(labels) != n:
         raise ValueError(f"labels 与组数不一致：{len(labels)} != {n}")
     return labels
 
 
 def _check_series_labels(series_labels: Sequence[str] | None, n: int) -> Sequence[str] | None:
+    """校验系列名数量与系列数一致。
+
+    Args:
+        series_labels: 系列名序列或 None。
+        n: 系列数。
+
+    Returns:
+        原系列名序列（或 None）。
+
+    Raises:
+        ValueError: 系列名数量与系列数不一致。
+    """
     if series_labels is not None and len(series_labels) != n:
         raise ValueError(f"series_labels 与系列数不一致：{len(series_labels)} != {n}")
     return series_labels
 
 
 def _resolve_cycle(cycle: CycleMode, *, is_1d: bool) -> StyleCycle:
-    """解析样式循环方式：auto 一维按整体循环（组内循环会退化为全同）、二维按组内位置。"""
+    """解析样式循环方式。
+
+    "auto" 在一维数据下用 "sequence"（组内循环会退化为全同），二维数据下
+    用 "group"。
+
+    Args:
+        cycle: 调用方指定的循环方式。
+        is_1d: 输入是否为一维。
+
+    Returns:
+        实际使用的 "group" 或 "sequence"。
+
+    Raises:
+        ValueError: cycle 不是 "auto" / "group" / "sequence"。
+    """
+    if cycle not in ("auto", "group", "sequence"):
+        raise ValueError(f"cycle 须为 'auto'/'group'/'sequence'，得到 {cycle!r}")
     if cycle != "auto":
         return cycle
     return "sequence" if is_1d else "group"
 
 
 def _style_index(cycle: StyleCycle, *, g: int, s: int, series: int) -> int:
-    """某根柱在样式列表中的序号：整体循环按绘制顺序，组内循环只看系列位置。"""
+    """计算某根柱在样式列表中的序号。
+
+    Args:
+        cycle: 实际循环方式。
+        g: 组索引。
+        s: 系列索引。
+        series: 每组系列数。
+
+    Returns:
+        样式列表下标（调用方再对长度取模）。
+    """
     return g * series + s if cycle == "sequence" else s
 
 
@@ -233,11 +394,9 @@ def bar(
 ) -> BarPlot:
     """全朝上的柱状图：自动完成数据到丝袜高度的映射、选腿与布局。
 
-    返回布局完毕的 BarPlot（可直接 .save() / .render()，也可继续手工微调）。
-
-    自动绘制 y 轴与基线；labels 传入时 x 标签自动与各组对齐；画布宽缺省时
-    按腿、间距与标签宽度自适应。坐标轴默认直线，axis_style="handdrawn"
-    改为手绘抖动。
+    自动绘制 y 轴与基线；labels 传入时 x 标签自动与各组对齐；绘图区宽度
+    缺省时按腿、间距与标签宽度自适应，最终画布会因轴、标签与标题更宽。
+    坐标轴默认直线，axis_style="handdrawn" 改为手绘抖动。
 
     Args:
         data: 支持一维/二维序列、numpy 数组、dict、pandas 风格表对象与
@@ -254,29 +413,44 @@ def bar(
         cycle: "group" 按组内位置循环（组内第 i 根取 styles[i % len]），
             "sequence" 按全部柱子的绘制顺序循环；"auto"（默认）一维取
             "sequence"（每根柱按顺序取样式）、二维取 "group"（长度等于系列数
-            时即"每系列一个样式"）。二维数据下 "sequence" 无法与图例的系列
+            时即"每系列一个样式"）。二维数据下若 "sequence" 无法与图例的系列
             样式对应，同时传 series_labels 抛 ValueError。
         paired: 选腿的配对策略。"auto"（默认）单系列用 "none"、多系列用
             "global"；"group" 每组独立取完整对：系列 0、1 同一对（左、右），
-            系列 2 起继续取下一对；"global" 整张图连续取对，配对可以跨组；
-            "none" 每条腿来自不同素材对。单系列下 "group" 也退化为 "none"，
-            避免全部使用左腿。
+            系列 2 起继续取下一对（单系列即每组取新素材对的左腿）；
+            "global" 整张图连续取对，配对可以跨组；"none" 每条腿来自不同
+            素材对。
         value_labels: True 时在袜口上方手写数值。
-        max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
+        max_fill: 最大值映射到 y_extent 的比例，须在 (0, 1]（默认 0.8）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
-        y_extent: 基线上方预留的像素高度。
-        width_px: 画布宽；缺省按腿数、间距与标签宽度自适应。
-        options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap 等），
-            见 docs/api.zh-CN/charts.md 的 ChartOptions 表。
+        y_extent: 柱区在基线上方预留的设计像素高度，不含标题、标签、图例等
+            边缘区域。
+        width_px: 绘图区宽度；缺省按腿数、间距与标签宽度自适应。最终画布会
+            因轴、标签与标题更宽。
+        options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap
+            等），见 docs/api.zh-CN/charts.md 的 ChartOptions 表。
+
+    Returns:
+        已布局并添加图例/轴/标题的 BarPlot；可直接 `.save()` / `.render()`，
+        也可继续手工微调。
+
+    Raises:
+        TypeError: 数据类型不受支持，或 options 含未知键。
+        ValueError: 标签长度不符、series_labels 用于一维数据、cycle 不合法、
+            max_fill/min_fill/y_extent 不合法、样式列表为空/未知预设，或
+            数据内容不合法。
 
     数据 → 丝袜高度（基线对应的数据值默认 0）:
         - 全部数据为 0: 全部裸腿。
         - 无负值: height = v / max × max_fill × y_extent，0 值即裸腿。
         - 含负值: 整个值域 [min, max] 线性压缩到 [min_fill, max_fill]。
           此时 0 值的腿带一段丝袜、y 轴 0 刻度悬在丝袜中间某处——这是为完整
-          保留大小关系所做的既定取舍。全负数据同规则：值越大丝袜越高。
+          保留大小关系所做的既定取舍。全负数据同规则：值越大丝袜越高；
+          全负且所有值相同（没有大小关系）时统一取 min_fill。
     """
     _check_options(options)
+    _check_positive("y_extent", float(y_extent))
+    _check_fill_bounds(max_fill, min_fill)
     normalized = normalize_data(data)
     rows = [list(row) for row in normalized.values]
     is_1d = normalized.is_1d
@@ -309,15 +483,22 @@ def bar(
         ticks = None
     else:
         span = vmax - vmin
-        heights = [
-            [
-                (v - vmin) / span * (max_fill - min_fill) * y_extent + min_fill * y_extent
-                for v in row
+        if span == 0:
+            # 全部为同一负值：没有可压缩的大小关系，统一取下界；刻度按
+            # [vmin, 0] 展开，避免除零并让 0 刻度落在正常位置。
+            heights = [[min_fill * y_extent] * len(row) for row in rows]
+            scale = Scale((vmin, 0.0), (min_fill * y_extent, max_fill * y_extent))
+            ticks = None
+        else:
+            heights = [
+                [
+                    (v - vmin) / span * (max_fill - min_fill) * y_extent + min_fill * y_extent
+                    for v in row
+                ]
+                for row in rows
             ]
-            for row in rows
-        ]
-        scale = Scale((vmin, vmax), (min_fill * y_extent, max_fill * y_extent))
-        ticks = None
+            scale = Scale((vmin, vmax), (min_fill * y_extent, max_fill * y_extent))
+            ticks = None
 
     specs: list[list[list[_LegSpec]]] = []
     for g, row in enumerate(rows):
@@ -346,7 +527,7 @@ def bar(
     if value_labels:
         for g, row in enumerate(rows):
             for s, v in enumerate(row):
-                records[g][s][0].value_label = _format_tick(v)
+                records[g][s][0].value_label = _format_value(v)
     plot.add_y_axis(scale, ticks=options.get("ticks", ticks), grid=options.get("grid", False))
     if ylabel is not None:
         plot.add_y_axis_name(
@@ -397,13 +578,24 @@ def mirror_bar(
         cycle: 语义同 bar()。
         paired: 语义同 bar()；镜像图同样默认 "auto"。
         value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
-        max_abs_fill: 最大绝对值映射到 y_extent 的比例（默认 0.8）。
-        y_extent: 基线上方预留的像素高度。
-        width_px: 画布宽；缺省自适应。
+        max_abs_fill: 最大绝对值映射到 y_extent 的比例，须在 (0, 1]（默认 0.8）。
+        y_extent: 柱区在基线上方预留的设计像素高度，不含标题、标签、图例等
+            边缘区域。
+        width_px: 绘图区宽度；缺省自适应。最终画布会因轴、标签与标题更宽。
         options: 语义同 bar()。x_label_pos 默认 "auto"：镜像图常有一侧全空，
             会把标签贴到没有腿的一侧的基线旁（如全负数据标签在基线上方）；
             两侧都有腿（正负混合或 mode="both"）时退回 "content"，画在全部
             内容最低点之下。
+
+    Returns:
+        已布局并添加图例/轴/标题的 BarPlot；可直接 `.save()` / `.render()`，
+        也可继续手工微调。
+
+    Raises:
+        TypeError: 数据类型不受支持，或 options 含未知键。
+        ValueError: 标签长度不符、series_labels 用于一维数据、mode/cycle
+            不合法、max_abs_fill/y_extent 不合法、样式列表为空/未知预设，
+            或数据内容不合法。
 
     规则:
         - 比例 = max_abs_fill × y_extent / max|v|，正负同比例。
@@ -411,6 +603,12 @@ def mirror_bar(
         - 下方空间: "single" 仅在存在负值时保留；"both" 始终保留。
     """
     _check_options(options)
+    if mode not in ("single", "both"):
+        raise ValueError(f"mode 须为 'single' 或 'both'，得到 {mode!r}")
+    _check_positive("y_extent", float(y_extent))
+    _check_positive("max_abs_fill", max_abs_fill)
+    if max_abs_fill > 1.0:
+        raise ValueError(f"max_abs_fill 须在 (0, 1]，得到 {max_abs_fill!r}")
     normalized = normalize_data(data)
     rows = [list(row) for row in normalized.values]
     is_1d = normalized.is_1d
@@ -465,6 +663,7 @@ def mirror_bar(
 
     bar_gap = options.get("bar_gap", DEFAULT_BAR_GAP)
     slot_gap = options.get("group_gap", DEFAULT_BAR_GAP if is_1d else DEFAULT_GROUP_GAP)
+    # 全负数据没有上方腿，但仍预留完整 y_extent，会留出空白顶部；已知取舍，暂不处理。
     plot, records = _assemble(
         specs,
         labels=labels,
@@ -482,7 +681,7 @@ def mirror_bar(
     if value_labels:
         for g, row in enumerate(rows):
             for s, v in enumerate(row):
-                records[g][s][0].value_label = _format_tick(v)
+                records[g][s][0].value_label = _format_value(v)
     plot.add_y_axis(scale, ticks=options.get("ticks", ticks), grid=options.get("grid", False))
     if ylabel is not None:
         plot.add_y_axis_name(

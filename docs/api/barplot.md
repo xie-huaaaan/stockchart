@@ -7,12 +7,19 @@
 ```python
 @dataclass(slots=True, frozen=True)
 class Scale:
-    """Linear scale: data values <-> pixels above the baseline. Sharing one Scale between bar heights and axis ticks guarantees consistency."""
+    """Linear scale: data values <-> pixels above the baseline. Sharing one Scale between bar heights and axis ticks guarantees consistency.
+
+    Attributes:
+        domain: (lower value, upper value); lower must be < upper.
+        range_px: (lower pixel, upper pixel) with the baseline at 0 and
+            positive upward; lower must be < upper.
+
+    Raises:
+        ValueError: the lower bound of domain or range_px is not < the upper bound.
+    """
 
     domain: tuple[float, float]
     range_px: tuple[float, float]
-    # domain: (lower value, upper value); range_px: (lower pixel, upper pixel),
-    # with the baseline at 0 and positive upward.
 
     def to_px(self, value: float) -> float:
         """Data value -> pixels."""
@@ -22,12 +29,42 @@ class Scale:
 
     @classmethod
     def fit(cls, values: Sequence[float], extent_px: float, *, margin: float = 0.0) -> Scale:
-        """Build a scale mapping [min(values), max(values)] -> [0, extent_px], with margin on both ends."""
+        """Build a scale mapping [min(values), max(values)] -> [0, extent_px], with margin on both ends.
+
+        Raises:
+            ValueError: values is empty, contains non-finite numbers,
+                extent_px is not positive, margin is negative, or all values
+                are equal.
+        """
 ```
 
 ```python
 class BarPlot:
-    """Free-form bar plot: with the X axis as the baseline, leg positions and stocking heights are entirely specified by the caller in design pixels."""
+    """Free-form bar plot: with the X axis as the baseline, leg positions and stocking heights are entirely specified by the caller in design pixels.
+
+    `width_px` is the plot-area width; `extent_up` / `extent_down` reserve
+    height above/below the baseline for legs only, excluding the title, axis
+    names, tick numbers, x labels, and legend. The plot area expands when a
+    leg exceeds the reservation; axes, text, and the legend take separate
+    space, so the final canvas is usually larger than
+    `width_px × (extent_up + extent_down)`.
+
+    Args:
+        width_px: plot-area width and the x range used by legs and axes.
+        extent_up: design-pixel height reserved above the baseline for legs;
+            excludes title, legend, and other edge areas.
+        extent_down: design-pixel height reserved below the baseline for
+            downward legs; excludes x labels and other edge areas.
+        background: canvas background color.
+        axis_style: "clean" (default) draws straight axes and grid lines;
+            "handdrawn" uses hand-drawn wobble controlled by seed.
+        seed: random source for default bar textures, the baseline, and
+            hand-drawn wobble.
+
+    Raises:
+        ValueError: width_px is not positive, extent_up / extent_down is
+            negative, or axis_style is not an allowed value.
+    """
 
     def __init__(
         self,
@@ -38,15 +75,7 @@ class BarPlot:
         background: Color = DEFAULT_BACKGROUND,
         axis_style: Literal["clean", "handdrawn"] = "clean",
         seed: int | None = None,
-    ) -> None:
-        """Construct the plot area (margins for axes and labels are reserved separately inside).
-
-        extent_up / extent_down are the pixel heights reserved above and
-        below the baseline; the plot area expands automatically when legs
-        exceed the reserved height. `axis_style="clean"` (default) draws
-        straight axes and grid lines; `"handdrawn"` uses hand-drawn wobble
-        controlled by seed.
-        """
+    ) -> None: ...
 
     def add_bar(
         self,
@@ -65,6 +94,10 @@ class BarPlot:
             leg: the leg asset; with side="down" the asset is flipped
                 vertically with the foot on the baseline pointing down.
             style: a StockingStyle instance or a STYLES preset name.
+
+        Raises:
+            ValueError: style is an unknown preset name, side is not
+                "up" / "down", or x / height_px is not finite.
         """
 
     def add_y_axis(
@@ -80,9 +113,14 @@ class BarPlot:
         are mapped through scale to both sides of the baseline: when the
         domain contains negative values the spine extends downward and
         lower ticks are drawn as usual, with the arrowhead still at the
-        very top. With grid=True, horizontal dashed lines are drawn at each
-        tick (light-colored, layered beneath the legs and stockings).
+        very top. If a tick maps above extent_up, the top of the canvas
+        expands to keep the axis top and tick number inside. With grid=True,
+        horizontal dashed lines are drawn at each tick (light-colored,
+        layered beneath the legs and stockings).
         Axis names are added separately via add_y_axis_name().
+
+        Raises:
+            ValueError: ticks contains non-finite numbers.
         """
 
     def add_x_labels(
@@ -114,6 +152,10 @@ class BarPlot:
 
         xs defaults to an even spread across the width; when combined with
         the add_bars family it aligns to group centers automatically.
+
+        Raises:
+            ValueError: pos / rotation is invalid, xs and labels differ in
+                length, or xs contains non-finite numbers.
         """
 
     def add_title(

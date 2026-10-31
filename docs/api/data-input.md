@@ -16,7 +16,7 @@ The `data` of `bar` / `mirror_bar` is first normalized by `normalize_data` into 
 | pandas-style table object | has `index` + `to_numpy()`: with `columns` it is treated as a DataFrame (index -> x labels, columns -> series names), otherwise as a Series (index -> x labels) |
 | `PlotData` | already-normalized data, used as-is |
 
-pandas is **not** a runtime dependency and is never imported: DataFrame / Series are recognized structurally (`index` / `columns` / `to_numpy()`); the rest of the functionality is unaffected when pandas is not installed. Explicitly provided `labels` / `series_labels` override labels inferred from the data. Empty data, empty groups, ragged rows, and non-numeric values all raise `ValueError`.
+pandas is **not** a runtime dependency and is never imported: DataFrame / Series are recognized structurally (`index` / `columns` / `to_numpy()`); the rest of the functionality is unaffected when pandas is not installed. Explicitly provided `labels` / `series_labels` override labels inferred from the data. Empty data, empty groups, ragged rows, non-numeric values, and NaN / Infinity all raise `ValueError`.
 
 `DataInput` is a type alias for the forms above (table objects are described with structural protocols, without hard-depending on any specific library):
 
@@ -39,12 +39,18 @@ class PlotData:
 
     Attributes:
         values: per-group values for each series; row count = groups,
-            column count = series; rows must be non-empty and equal length.
+            column count = series; rows must be non-empty, equal length,
+            and contain only finite numbers.
         is_1d: whether the input was 1D (determines style cycling defaults
             and the like).
         labels: one x axis label per group; None means decided by the
             caller or an even default spread.
         series_labels: one name per series; None means no legend.
+
+    Raises:
+        ValueError: the matrix is empty, contains an empty group, ragged
+            rows, or non-finite numbers; is_1d conflicts with the series
+            count; or label counts do not match the data.
     """
 
     values: tuple[tuple[float, ...], ...]

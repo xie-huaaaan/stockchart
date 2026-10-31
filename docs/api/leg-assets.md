@@ -73,10 +73,20 @@ class Leg:
 
 ```python
 class LegLibrary:
-    """Library of built-in leg assets (26 legs / 13 pairs; each leg is a transparent SVG)."""
+    """Library of built-in leg assets (26 legs / 13 pairs; each leg is a transparent SVG).
 
-    def __init__(self, *, seed: int | None = None) -> None:
-        """seed is the random source for subsequent automatic leg selection; omit for a fresh random run."""
+    Leg objects are loaded lazily and cached on first access; seed only
+    affects automatic leg-selection order.
+
+    Args:
+        seed: random source for subsequent automatic leg selection; omit for
+            a fresh random run.
+
+    Raises:
+        ValueError: the packaged legs.json is missing or fails validation.
+    """
+
+    def __init__(self, *, seed: int | None = None) -> None: ...
 
     @property
     def leg_ids(self) -> tuple[str, ...]:
@@ -126,5 +136,9 @@ def load_leg(
     Returns:
         A Leg instance for the custom asset, passable directly to every
         layer's interfaces; `svg` is None and `pixels_per_unit` is 1.
+
+    Raises:
+        OSError: the file cannot be opened or is not a recognizable image.
+        ValueError: foot_center_x is outside the image width.
     """
 ```

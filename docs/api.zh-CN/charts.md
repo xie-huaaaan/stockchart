@@ -73,7 +73,8 @@ def bar(
 
     自动绘制 y 轴与基线（默认直线，axis_style="handdrawn" 改为手绘抖动）；
     labels 传入时 x 标签自动与各组对齐，过长时自动倾斜避让；画布宽缺省时
-    按腿、间距与标签宽度自适应。图例标签超过画布宽时自动折行。
+    按腿、间距与标签宽度自适应；最终画布会因轴、标签与标题更宽。图例标签
+    超过绘图区宽时自动折行。
     labels 传给 x 标签，series_labels 传给图例——后者区分"系列"（每组的
     第几根腿），前者区分"组"。
 
@@ -93,19 +94,19 @@ def bar(
             styles[i % len]，列表长度等于系列数时即"每系列一个样式"）；
             "sequence" 按全部柱子的绘制顺序循环；"auto"（默认）一维数据
             取 "sequence"（即每根柱按顺序取样式）、二维数据取 "group"。
-            二维数据下 "sequence" 与 series_labels 无法对应固定的系列样式，
+            二维数据下若 "sequence" 与 series_labels 无法对应固定的系列样式，
             同时传入抛 ValueError。
         paired: 选腿的配对策略。"auto"（默认）单系列用 "none"、多系列用
             "global"；"group" 每组独立取完整对：系列 0、1 同一对（左、右），
-            系列 2 起继续取下一对；"global" 整张图连续取对，配对可以跨组；
-            "none" 每条腿来自不同素材对。单系列下 "group" 也退化为 "none"，
-            避免全部使用左腿。
+            系列 2 起继续取下一对（单系列即每组取新素材对的左腿）；
+            "global" 整张图连续取对，配对可以跨组；"none" 每条腿来自不同
+            素材对。
         value_labels: True 时在袜口上方手写数值。
         max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
-        y_extent: 基线上方预留的像素高度。
-        width_px: 画布宽；缺省按腿数、间距与标签宽度自适应；图例在固定
-            宽度内自动折行。
+        y_extent: 柱区在基线上方预留的设计像素高度，不含标题、标签、图例等边缘。
+        width_px: 绘图区宽度；缺省按腿数、间距与标签宽度自适应，最终画布
+            会因轴、标签与标题更宽。
         options: 透传给下层的可选项，见 `ChartOptions` 表（grid、axis_style、
             legend_loc、bar_gap 等）。
 
@@ -114,7 +115,8 @@ def bar(
         - 无负值: height = v / max × max_fill × y_extent，0 值即裸腿。
         - 含负值: 整个值域 [min, max] 线性压缩到 [min_fill, max_fill]。
           此时 0 值的腿带一段丝袜、y 轴 0 刻度悬在丝袜中间某处——这是为完整
-          保留大小关系所做的既定取舍。全负数据同规则：值越大丝袜越高。
+          保留大小关系所做的既定取舍。全负数据同规则：值越大丝袜越高；
+          全负且所有值相同（没有大小关系）时统一取 min_fill。
     """
 
 
@@ -153,8 +155,8 @@ def mirror_bar(
         paired: 语义同 bar()；镜像图同样默认 "auto"。
         value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
         max_abs_fill: 最大绝对值映射到 y_extent 的比例（默认 0.8）。
-        y_extent: 基线上方预留的像素高度。
-        width_px: 画布宽；缺省自适应。
+        y_extent: 柱区在基线上方预留的设计像素高度，不含标题、标签、图例等边缘。
+        width_px: 绘图区宽度；缺省自适应，最终画布会因轴、标签与标题更宽。
         options: 语义同 bar()。x_label_pos 默认 "auto"：镜像图常有一侧全空，
             会把标签贴到没有腿的一侧的基线旁（如全负数据标签在基线上方）；
             两侧都有腿（正负混合或 mode="both"）时退回 "content"，画在全部
@@ -166,6 +168,10 @@ def mirror_bar(
         - 下方空间: "single" 仅在存在负值时保留；"both" 始终保留。
     """
 ```
+
+参数校验：`max_fill` / `max_abs_fill` 须为正的有限数，`0 <= min_fill < max_fill`，
+`y_extent` 须为正数，`cycle` 与 `mirror_bar` 的 `mode` 只接受文档列出的取值；
+数据中的 NaN / Infinity 会在归一阶段报 `ValueError`。
 
 ## 默认值集中定义
 

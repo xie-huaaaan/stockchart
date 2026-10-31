@@ -40,7 +40,15 @@ class Canvas:
     """最终渲染结果的载体：一块 RGBA 画布。
 
     通常由 `BarPlot.render()` 产生并绘制；自由绘制时也可直接构造，
-    配合 L1 原语（`draw_text` / `sketch_*`）在上面作画。
+    配合 L1 原语（`draw_text` / `sketch_*`）在上面作画。尺寸单位为输出像素。
+
+    Args:
+        width_px: 画布宽（输出像素），须为正数。
+        height_px: 画布高（输出像素），须为正数。
+        background: 背景色；缺省为米白纸面。
+
+    Raises:
+        ValueError: 宽或高不是正数。
     """
 
     def __init__(
@@ -49,8 +57,7 @@ class Canvas:
         height_px: int,
         *,
         background: Color = DEFAULT_BACKGROUND,
-    ) -> None:
-        """构造空白画布并填充背景色。尺寸单位为设计像素。"""
+    ) -> None: ...
 
     def save(self, path: str | Path) -> Path:
         """写出 PNG 文件。"""

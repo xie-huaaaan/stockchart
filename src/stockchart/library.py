@@ -1,8 +1,13 @@
-"""L0 素材层：LegLibrary 与 load_leg。"""
+"""L0 素材层：内置素材库与外部素材加载。
+
+`LegLibrary` 读取打包的 legs.json 与透明 SVG，懒加载并缓存 Leg；`load_leg`
+把外部 PNG 包装成同样的 Leg。编号、配对与元数据完整性在这里校验。
+"""
 
 from __future__ import annotations
 
 import json
+import math
 import random
 import re
 from dataclasses import dataclass
@@ -36,10 +41,16 @@ def load_leg(
 
     Returns:
         自定义素材的 Leg 实例，可直接传入各层接口。
+
+    Raises:
+        OSError: 文件无法打开或不是可识别的图片。
+        ValueError: foot_center_x 不在图像宽度范围内。
     """
     with Image.open(png) as source:
         img = np.asarray(source.convert("RGBA"))
     H, W = img.shape[:2]
+    if foot_center_x is not None and not 0 <= foot_center_x < W:
+        raise ValueError(f"foot_center_x 须在 [0, {W})，得到 {foot_center_x}")
 
     est_cx = _estimate_foot_center(img)
     return Leg(
@@ -51,7 +62,14 @@ def load_leg(
 
 
 def _estimate_foot_center(img: NDArray[np.uint8]) -> int:
-    """按底部若干行的 alpha 质心估计足底中心 x。"""
+    """按底部若干行的 alpha 质心估计足底中心 x。
+
+    Args:
+        img: (H, W, 4) RGBA 素材。
+
+    Returns:
+        估计的足底中心列；底部完全透明时返回图像水平中心。
+    """
     H, W = img.shape[:2]
     foot_rows = min(20, H)
     bot = img[H - foot_rows :, :, 3].astype(float)
@@ -59,7 +77,7 @@ def _estimate_foot_center(img: NDArray[np.uint8]) -> int:
     if col_sum.sum() < 1:
         return W // 2
     xs = np.arange(W, dtype=float)
-    return int((col_sum * xs).sum() / col_sum.sum())
+    return round(float((col_sum * xs).sum() / col_sum.sum()))
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +91,16 @@ _META_KEYS = frozenset({"leg_id", "pair_id", "side", "width", "height", "foot_ce
 
 @dataclass(slots=True, frozen=True)
 class _LegMeta:
-    """legs.json 中的一条素材元数据（设计像素）。"""
+    """legs.json 中的一条素材元数据（设计像素）。
+
+    Attributes:
+        leg_id: 腿编号，形如 leg_NN。
+        pair_id: 配对编号，形如 pair_NN。
+        side: 左腿或右腿。
+        width: 设计像素宽。
+        height: 设计像素高。
+        foot_center_x: 足底中心的设计像素 x。
+    """
 
     leg_id: str
     pair_id: str
@@ -84,7 +111,17 @@ class _LegMeta:
 
 
 def _parse_meta(raw: object) -> _LegMeta:
-    """校验并转换单条元数据。"""
+    """校验并转换单条 legs.json 元数据。
+
+    Args:
+        raw: JSON 解析后的单个对象。
+
+    Returns:
+        校验通过的 _LegMeta。
+
+    Raises:
+        ValueError: 不是对象、字段缺失/多余、字段类型或取值不合法。
+    """
     if not isinstance(raw, dict):
         raise ValueError("应为对象")
     entry = cast("dict[str, object]", raw)
@@ -98,12 +135,22 @@ def _parse_meta(raw: object) -> _LegMeta:
         raise ValueError(f"未知字段 {sorted(extra)}")
 
     def text(key: str) -> str:
+        """读取必填的非空字符串字段。
+
+        Raises:
+            ValueError: 字段缺失或不是非空字符串。
+        """
         value = entry[key]
         if not isinstance(value, str) or not value:
             raise ValueError(f"{key} 应为非空字符串")
         return value
 
     def integer(key: str) -> int:
+        """读取必填的整数字段（bool 不算整数）。
+
+        Raises:
+            ValueError: 字段缺失或不是整数。
+        """
         value = entry[key]
         if not isinstance(value, int) or isinstance(value, bool):
             raise ValueError(f"{key} 应为整数")
@@ -139,13 +186,27 @@ def _parse_meta(raw: object) -> _LegMeta:
 
 
 def _parse_metadata(raw: bytes) -> tuple[_LegMeta, ...]:
-    """解析并校验 legs.json，返回按 leg_id 排序的元数据。"""
+    """解析并校验 legs.json，返回按 leg_id 排序的元数据。
+
+    一次性收集全部错误，便于修复素材文件。
+
+    Args:
+        raw: legs.json 的原始字节。
+
+    Returns:
+        按 leg_id 排序的元数据元组。
+
+    Raises:
+        ValueError: JSON 非法、顶层不是非空数组，或任一条目/配对关系不合法。
+    """
     try:
         data = cast("object", json.loads(raw))
     except json.JSONDecodeError as exc:
         raise ValueError(f"legs.json 不是合法 JSON：{exc}") from exc
     if not isinstance(data, list):
         raise ValueError("legs.json 顶层应为数组")
+    if not data:
+        raise ValueError("legs.json 不能为空")
 
     metas: list[_LegMeta] = []
     errors: list[str] = []
@@ -190,10 +251,16 @@ class LegLibrary:
     """内置腿部素材库（26 条腿 / 13 对）。
 
     所有 Leg 对象在首次访问时懒加载并缓存；反复调用 get/pair 不会重复读磁盘。
+    seed 只影响自动选腿顺序，不影响素材本身。
+
+    Args:
+        seed: 后续自动选腿的随机源；不传则每次运行随机。
+
+    Raises:
+        ValueError: 打包的 legs.json 缺失或校验失败。
     """
 
     def __init__(self, *, seed: int | None = None) -> None:
-        """Seed 作为后续自动选腿的随机源；不传则每次运行随机。"""
         self._rng = random.Random(seed)
         self._meta = _parse_metadata(files("stockchart.assets").joinpath("legs.json").read_bytes())
         self._by_id = {meta.leg_id: meta for meta in self._meta}
@@ -209,15 +276,24 @@ class LegLibrary:
 
     @property
     def leg_ids(self) -> tuple[str, ...]:
-        """全部腿编号，按编号排序。"""
+        """全部腿编号。
+
+        Returns:
+            按编号升序排列的 leg_id 元组。
+        """
         return tuple(meta.leg_id for meta in self._meta)
 
     @property
     def pair_ids(self) -> tuple[str, ...]:
-        """全部配对编号，按编号排序。"""
+        """全部配对编号。
+
+        Returns:
+            按编号升序排列的 pair_id 元组。
+        """
         return self._pair_ids
 
     def __repr__(self) -> str:
+        """返回包含腿数与对数的简写形式。"""
         return f"LegLibrary({len(self._meta)} legs / {len(self._pair_ids)} pairs)"
 
     # ------------------------------------------------------------------
@@ -264,6 +340,8 @@ class LegLibrary:
     def alternate(self, n: int, *, paired: bool = False) -> list[Leg]:
         """按左、右、左、右……的顺序选出 n 条腿。
 
+        素材对超过 13 对后从已用素材继续复用。
+
         Args:
             n: 需要的腿数。
             paired: False（默认）时每条腿来自不同素材对；True 时相邻两条腿
@@ -273,7 +351,8 @@ class LegLibrary:
         Returns:
             长度为 n 的 Leg 列表，偶数下标为左腿，奇数下标为右腿（0-based）。
 
-        超过 13 对后从已用素材继续复用。
+        Raises:
+            ValueError: n 为负数。
         """
         if n < 0:
             raise ValueError(f"n 不能为负数，得到 {n}")
@@ -314,8 +393,11 @@ class LegLibrary:
 
         Returns:
             RGB 模式的 PIL Image。
+
+        Raises:
+            ValueError: scale 不是正的有限数。
         """
-        if scale <= 0:
+        if not math.isfinite(scale) or scale <= 0:
             raise ValueError(f"scale 须为正数，得到 {scale}")
 
         imgs: dict[str, Image.Image] = {
@@ -388,7 +470,14 @@ class LegLibrary:
     # ------------------------------------------------------------------
 
     def _load_leg(self, meta: _LegMeta) -> Leg:
-        """懒加载单条腿的 SVG，栅格化设计尺寸预览并缓存。"""
+        """懒加载单条腿的 SVG，栅格化设计尺寸预览并缓存。
+
+        Args:
+            meta: 该腿的元数据。
+
+        Returns:
+            已填充 image、svg 与编号信息的 Leg；同一对象后续直接复用。
+        """
         cached = self._cache.get(meta.leg_id)
         if cached is not None:
             return cached
@@ -410,7 +499,13 @@ class LegLibrary:
         return leg
 
     def _shuffled_pair_ids(self) -> list[str]:
-        """返回随机打乱顺序的配对 ID 列表（按 seed 确定性打乱）。"""
+        """返回随机打乱顺序的配对编号。
+
+        使用实例 RNG，因此会推进选腿的随机状态。
+
+        Returns:
+            配对编号列表，顺序由当前 seed 决定。
+        """
         ids = list(self._pair_ids)
         self._rng.shuffle(ids)
         return ids

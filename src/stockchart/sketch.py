@@ -1,4 +1,8 @@
-"""L1 渲染原语：手绘风线条与坐标轴（seed 控制的确定性抖动）。"""
+"""L1 渲染原语：手绘风线条与坐标轴。
+
+所有抖动都由 `seed` 确定性生成；`wobble=0` 时退化为普通直线。轴与刻度
+直接画在 Canvas 的输出像素坐标系里。
+"""
 
 from __future__ import annotations
 
@@ -43,7 +47,21 @@ _TICK_SIDE: dict[str, tuple[float, float]] = {
 def _jittered_points(
     x1: float, y1: float, x2: float, y2: float, wobble: float, rng: random.Random
 ) -> list[tuple[float, float]]:
-    """把线段细分成中频抖动的折线点列；端点保持原位。"""
+    """把线段细分成带中频抖动的折线点列。
+
+    端点保持原位；先对随机游走做两轮邻域平均，避免逐点独立噪声产生的锯齿感。
+
+    Args:
+        x1: 起点 x。
+        y1: 起点 y。
+        x2: 终点 x。
+        y2: 终点 y。
+        wobble: 法向抖动幅度（像素）；<= 0 时只返回两个端点。
+        rng: 随机源；同一 seed 生成同一点列。
+
+    Returns:
+        从起点到终点的点列；线段长度接近 0 时返回空列表。
+    """
     dx, dy = x2 - x1, y2 - y1
     length = math.hypot(dx, dy)
     if length < 1e-6:
@@ -83,7 +101,19 @@ def sketch_line(
     wobble: float = DEFAULT_WOBBLE,
     seed: int | None = None,
 ) -> None:
-    """手绘风直线：对线段做确定性细分抖动，两端点保持原位。wobble 为 0 时画直线。"""
+    """画一条手绘风直线。
+
+    Args:
+        canvas: 目标画布。
+        x1: 起点 x（画布输出像素）。
+        y1: 起点 y。
+        x2: 终点 x。
+        y2: 终点 y。
+        color: 线条颜色。
+        width_px: 线宽（像素）。
+        wobble: 法向抖动幅度（像素）；0 为直线。
+        seed: 随机源；同一 seed 结果可复现，不传则每次随机。
+    """
     rng = random.Random(seed)
     points = _jittered_points(x1, y1, x2, y2, wobble, rng)
     if not points:
@@ -100,7 +130,7 @@ def sketch_line(
         StrokeCap=skia.Paint.kRound_Cap,
         StrokeJoin=skia.Paint.kRound_Join,
     )
-    canvas.skia_canvas().drawPath(path, paint)
+    canvas._skia_canvas().drawPath(path, paint)  # pyright: ignore[reportPrivateUsage]
 
 
 def sketch_axis(
@@ -117,15 +147,28 @@ def sketch_axis(
     wobble: float = DEFAULT_WOBBLE,
     seed: int | None = None,
 ) -> None:
-    """手绘风坐标轴：抖动轴干线、箭头、刻度线与刻度数字。
+    """画一条手绘风坐标轴，可带箭头、刻度线与刻度数字。
 
-    (x, y) 为轴起点，干线向 direction 延伸 length 像素，箭头（可选）在远端；
-    ticks 为 (距起点的像素偏移, 标签文字)：垂直轴的刻度与数字在干线左侧，
-    水平轴的在其下侧。
+    (x, y) 为轴起点，干线向 direction 延伸 length 像素；箭头（可选）在远端。
+    垂直轴的刻度与数字在干线左侧，水平轴的在其下侧。
+
+    Args:
+        canvas: 目标画布。
+        direction: "up" / "down" / "right"；决定延伸方向与刻度侧。
+        x: 轴起点 x（画布输出像素）。
+        y: 轴起点 y。
+        length: 干线长度（像素）；<= 0 时不画箭头。
+        ticks: (距起点的像素偏移, 标签文字) 序列。
+        arrow: 是否在远端画箭头。
+        color: 轴、刻度与文字颜色。
+        width_px: 线条宽度（像素）。
+        wobble: 干线抖动幅度；箭头与刻度使用其一半。
+        seed: 随机源；同一 seed 结果可复现，不传则每次随机。
     """
     rng = random.Random(seed)
 
     def child_seed() -> int:
+        """从当前随机源派生一个子 seed，供各段线条独立使用。"""
         return rng.getrandbits(32)
 
     ux, uy = _DIRECTION_VECTORS[direction]

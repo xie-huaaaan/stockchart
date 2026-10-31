@@ -44,6 +44,33 @@ class TestBarMapping:
         hs = [b.height_px for b in p._bars]
         assert hs == sorted(hs)
 
+    def test_all_negative_equal_uses_min_fill(self) -> None:
+        p = bar([-5.0, -5.0], seed=1)
+        hs = [b.height_px for b in p._bars]
+        assert hs == pytest.approx([0.1 * 760, 0.1 * 760])
+
+    def test_invalid_fill_and_extent(self) -> None:
+        with pytest.raises(ValueError):
+            bar([1.0], max_fill=0)
+        with pytest.raises(ValueError):
+            bar([-1.0, 1.0], min_fill=-0.1)
+        with pytest.raises(ValueError):
+            bar([-1.0, 1.0], min_fill=0.9, max_fill=0.8)
+        with pytest.raises(ValueError):
+            bar([1.0], y_extent=0)
+
+    def test_invalid_cycle(self) -> None:
+        with pytest.raises(ValueError):
+            bar([1.0], cycle="bad")  # type: ignore[arg-type]
+
+    def test_mirror_invalid_mode_and_fill(self) -> None:
+        with pytest.raises(ValueError):
+            mirror_bar([1.0, -1.0], mode="bad")  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            mirror_bar([1.0], max_abs_fill=0)
+        with pytest.raises(ValueError):
+            mirror_bar([1.0], y_extent=0)
+
     def test_empty_data_raises(self) -> None:
         with pytest.raises(ValueError):
             bar([])
@@ -101,9 +128,11 @@ class TestPairing:
         assert len({leg.pair_id for leg in legs}) == 3
         assert [leg.side for leg in legs] == ["left", "right", "left"]
 
-    def test_single_series_group_falls_back_to_none(self) -> None:
+    def test_single_series_group_takes_left_leg_of_fresh_pairs(self) -> None:
         p = bar([1.0, 2.0, 3.0], paired="group", seed=1)
-        assert [b.leg.side for b in p._bars] == ["left", "right", "left"]
+        legs = [b.leg for b in p._bars]
+        assert [leg.side for leg in legs] == ["left", "left", "left"]
+        assert len({leg.pair_id for leg in legs}) == 3
 
     def test_two_series_group_is_same_pair_per_group(self) -> None:
         p = bar([[1.0, 2.0], [3.0, 4.0]], paired="group", seed=1)
@@ -202,6 +231,10 @@ class TestBarLayout:
     def test_value_labels_written(self) -> None:
         p = bar([12.0, 34.0], value_labels=True, seed=1)
         assert [b.value_label for b in p._bars] == ["12", "34"]
+
+    def test_value_labels_keep_precision(self) -> None:
+        p = bar([1234567.0, 0.123456789], value_labels=True, seed=1)
+        assert [b.value_label for b in p._bars] == ["1234567", "0.123456789"]
 
     def test_title_and_axis_present(self) -> None:
         p = bar([1.0, 2.0], title="标题", seed=1)

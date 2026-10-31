@@ -6,6 +6,7 @@ pandas 等第三方库不进入运行时依赖：带 ``index`` / ``columns`` / `
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import singledispatch
@@ -19,21 +20,31 @@ class _DataFrameLike(Protocol):
     """pandas DataFrame 等表格对象的最小结构。"""
 
     @property
-    def columns(self) -> Iterable[object]: ...
+    def columns(self) -> Iterable[object]:
+        """列标签。"""
+        ...
 
     @property
-    def index(self) -> Iterable[object]: ...
+    def index(self) -> Iterable[object]:
+        """行标签。"""
+        ...
 
-    def to_numpy(self) -> object: ...
+    def to_numpy(self) -> object:
+        """导出底层数组。"""
+        ...
 
 
 class _SeriesLike(Protocol):
     """pandas Series 等带索引的一维对象的最小结构。"""
 
     @property
-    def index(self) -> Iterable[object]: ...
+    def index(self) -> Iterable[object]:
+        """索引标签。"""
+        ...
 
-    def to_numpy(self) -> object: ...
+    def to_numpy(self) -> object:
+        """导出底层数组。"""
+        ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -41,10 +52,15 @@ class PlotData:
     """归一后的数据：(组数, 系列数) 的浮点矩阵与可选标签。
 
     Attributes:
-        values: 每组的各系列数值；行数即组数、列数即系列数，行不能为空且等长。
+        values: 每组的各系列数值；行数即组数、列数即系列数，行不能为空、
+            等长且全部为有限数值。
         is_1d: 输入是否为一维（决定样式循环默认值等）。
         labels: 每组一个 x 轴标签；None 表示由调用方或默认均分决定。
         series_labels: 每系列一个名字；None 表示不出图例。
+
+    Raises:
+        ValueError: 矩阵为空、存在空组、各组长度不一致、is_1d 与系列数
+            矛盾、含非有限数值，或标签/系列名数量与数据不符。
     """
 
     values: tuple[tuple[float, ...], ...]
@@ -62,6 +78,12 @@ class PlotData:
             raise ValueError("values 各组系列数须一致")
         if self.is_1d and series != 1:
             raise ValueError("is_1d=True 时每组只能有 1 个值")
+        try:
+            finite = all(math.isfinite(float(v)) for row in self.values for v in row)
+        except (TypeError, ValueError):
+            raise ValueError("values 含非数值元素") from None
+        if not finite:
+            raise ValueError("values 含非有限数值（NaN / Infinity）")
         if self.labels is not None and len(self.labels) != len(self.values):
             raise ValueError(f"labels 与组数不一致：{len(self.labels)} != {len(self.values)}")
         if self.series_labels is not None and len(self.series_labels) != series:
@@ -82,11 +104,21 @@ type DataInput = (
 
 @singledispatch
 def normalize_data(data: object) -> PlotData:
-    """把各种数据格式归一为 `PlotData`。
+    """把各种数据格式归一为 PlotData。
 
     支持一维/二维序列、`numpy.ndarray`、`dict` / `Mapping`、已归一化的
     `PlotData`，以及带 `index` + `to_numpy()` 的表对象（pandas DataFrame /
-    Series 等）。无法识别或数值非法时抛 `ValueError` / `TypeError`。
+    Series 等）。
+
+    Args:
+        data: 待归一的数据；具体形式见 DataInput。
+
+    Returns:
+        统一形状的 PlotData。
+
+    Raises:
+        TypeError: 数据类型不受支持。
+        ValueError: 数据结构或数值不合法（空数据、维度过多、非数值等）。
     """
     if isinstance(data, np.ndarray):
         return _from_numpy(cast(NDArray[np.generic], data))
@@ -104,21 +136,31 @@ def normalize_data(data: object) -> PlotData:
 
 
 def register_data_type[T](cls: type[T], handler: Callable[[T], PlotData]) -> None:
-    """为自定义数据类型注册归一化函数（等价于 `normalize_data.register`）。"""
+    """为自定义数据类型注册归一化函数。
+
+    等价于 `normalize_data.register(cls, handler)`。
+
+    Args:
+        cls: 要注册的类型。
+        handler: 把该类型转换为 PlotData 的函数。
+    """
     normalize_data.register(cls, handler)
 
 
 def _normalize_sequence(data: object) -> PlotData:
+    """处理 list/tuple 类型的归一化入口。"""
     assert isinstance(data, Sequence)
     return _from_sequence(cast(Sequence[object], data))
 
 
 def _normalize_mapping(data: object) -> PlotData:
+    """处理 dict 类型的归一化入口。"""
     assert isinstance(data, Mapping)
     return _from_mapping(cast(Mapping[object, object], data))
 
 
 def _normalize_plotdata(data: object) -> PlotData:
+    """PlotData 已归一，直接返回。"""
     assert isinstance(data, PlotData)
     return data
 
@@ -130,15 +172,36 @@ normalize_data.register(PlotData, _normalize_plotdata)
 
 
 def _as_float(value: object) -> float:
-    """转成 float，非数值给出统一错误信息。"""
+    """把单个值转换为 float。
+
+    Args:
+        value: 任意可转换为浮点数的值。
+
+    Returns:
+        转换后的浮点数。
+
+    Raises:
+        ValueError: 无法转换为有限数值；错误信息包含原值，便于定位。
+    """
     try:
-        return float(cast(str | SupportsFloat, value))
+        result = float(cast(str | SupportsFloat, value))
     except (TypeError, ValueError):
         raise ValueError(f"数据包含非数值元素：{value!r}") from None
+    if not math.isfinite(result):
+        raise ValueError(f"数据包含非有限数值：{value!r}")
+    return result
 
 
 def _is_row(value: object) -> bool:
-    """该值是否可视为一行（序列）数据；字符串、字典与 0 维数组不算。"""
+    """判断一个值是否应视为“一行”（数值序列）。
+
+    Args:
+        value: 待判断的值。
+
+    Returns:
+        序列、非 0 维数组或一维带索引对象返回 True；字符串、字典、标量与
+        二维表对象返回 False。
+    """
     if isinstance(value, Mapping):
         return False
     if isinstance(value, np.ndarray):
@@ -152,7 +215,14 @@ def _is_row(value: object) -> bool:
 
 
 def _row_values(value: object) -> list[object]:
-    """把一组数据内的行统一取成 Python 列表。"""
+    """把一行数据统一取成 Python 列表。
+
+    Args:
+        value: 序列、数组或带 `to_numpy()` 的一维对象。
+
+    Returns:
+        行内各元素组成的列表。
+    """
     to_numpy = getattr(value, "to_numpy", None)
     if callable(to_numpy):
         return list(np.asarray(cast(Callable[[], object], to_numpy)()).tolist())
@@ -160,7 +230,17 @@ def _row_values(value: object) -> list[object]:
 
 
 def _from_rows(raw_rows: Iterable[object]) -> PlotData:
-    """由“每组一个值”或“每组一行值”的序列构造 PlotData。"""
+    """由“每组一个值”或“每组一行值”的序列构造 PlotData。
+
+    Args:
+        raw_rows: 外层按组排列；每个元素要么是标量，要么是数值序列。
+
+    Returns:
+        一维输入得到 (组数, 1)，二维输入得到 (组数, 系列数)。
+
+    Raises:
+        ValueError: 数据为空、行类型混杂、存在空组或各组长度不一致。
+    """
     rows = list(raw_rows)
     if not rows:
         raise ValueError("data 为空")
@@ -181,11 +261,25 @@ def _from_rows(raw_rows: Iterable[object]) -> PlotData:
 
 
 def _from_sequence(data: Sequence[object]) -> PlotData:
+    """把顶层序列交给 `_from_rows` 处理。"""
     return _from_rows(data)
 
 
 def _from_mapping(data: Mapping[object, object]) -> PlotData:
-    """字典：值全为标量→键作 x 标签；值全为等长序列→键作系列名并转置。"""
+    """把字典归一为 PlotData。
+
+    值全为标量时键作 x 标签；值全为等长序列时键作系列名，并把“列优先”
+    的字典转置为按组排列。
+
+    Args:
+        data: 键为标签/系列名、值为标量或序列的映射。
+
+    Returns:
+        一维（标量值）或二维（序列值）的 PlotData。
+
+    Raises:
+        ValueError: 数据为空、嵌套字典、值类型混杂、序列为空或长度不一致。
+    """
     items = list(data.items())
     if not items:
         raise ValueError("data 为空")
@@ -218,6 +312,17 @@ def _from_mapping(data: Mapping[object, object]) -> PlotData:
 
 
 def _from_numpy(data: NDArray[np.generic]) -> PlotData:
+    """把 0–2 维 NumPy 数组归一为 PlotData。
+
+    Args:
+        data: 一维或二维数组。
+
+    Returns:
+        与数组形状对应的 PlotData。
+
+    Raises:
+        ValueError: 数组为 0 维或超过 2 维。
+    """
     if data.ndim == 0:
         raise ValueError("data 须为 1 维或 2 维数组")
     if data.ndim > 2:
@@ -226,7 +331,17 @@ def _from_numpy(data: NDArray[np.generic]) -> PlotData:
 
 
 def _from_table_like(data: object) -> PlotData | None:
-    """识别 pandas 风格表对象；不像表时返回 None。"""
+    """识别 pandas 风格的 1–2 维表对象并归一。
+
+    Args:
+        data: 任意对象；只检查 `to_numpy()` 与 `index` 结构，不 import pandas。
+
+    Returns:
+        表对象对应的 PlotData；结构不像表时返回 None。
+
+    Raises:
+        ValueError: 表对象导出 0 维或超过 2 维的数组。
+    """
     to_numpy = getattr(data, "to_numpy", None)
     index = getattr(data, "index", None)
     if not callable(to_numpy) or index is None:

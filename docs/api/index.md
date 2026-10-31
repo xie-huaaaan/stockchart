@@ -40,7 +40,15 @@ class Canvas:
 
     Usually produced and drawn into by `BarPlot.render()`; for free-form
     drawing it can also be constructed directly and painted on with the
-    L1 primitives (`draw_text` / `sketch_*`).
+    L1 primitives (`draw_text` / `sketch_*`). Sizes are in output pixels.
+
+    Args:
+        width_px: canvas width in output pixels; must be positive.
+        height_px: canvas height in output pixels; must be positive.
+        background: background color; defaults to an off-white paper tone.
+
+    Raises:
+        ValueError: width or height is not positive.
     """
 
     def __init__(
@@ -49,8 +57,7 @@ class Canvas:
         height_px: int,
         *,
         background: Color = DEFAULT_BACKGROUND,
-    ) -> None:
-        """Construct a blank canvas filled with the background color. Sizes are in design pixels."""
+    ) -> None: ...
 
     def save(self, path: str | Path) -> Path:
         """Write out a PNG file."""

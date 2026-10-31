@@ -1,4 +1,9 @@
-"""L1 渲染原语：文字绘制与测量（逐字符字体回退，见 docs/design.zh-CN.md"字体"）。"""
+"""L1 渲染原语：文字绘制与测量。
+
+逐字符解析字体回退：主字体缺字形时改查系统回退字体，仍找不到则画
+“豆腐块”而不抛异常。所有坐标与字号都以 Canvas 的输出像素计；排版规则
+见 docs/design.zh-CN.md 的“字体”一节。
+"""
 
 from __future__ import annotations
 
@@ -38,10 +43,16 @@ _fallback_cache: dict[int, skia.Typeface | None] = {}
 
 
 def _typeface_from_name(name: str) -> skia.Typeface | None:
-    """按家族名或文件路径解析 Typeface。
+    """按家族名或字体文件路径解析 Typeface，并缓存结果。
 
-    MakeFromName 对未知家族会静默返回系统默认字体，
-    因此家族名先经 FontMgr 存在性检查。
+    `MakeFromName` 对未知家族会静默返回系统默认字体，因此家族名先经
+    FontMgr 做存在性检查；None 表示该名字不可用。
+
+    Args:
+        name: 字体家族名或字体文件路径。
+
+    Returns:
+        解析到的 Typeface；名字不可用时返回 None。
     """
     if name in _typeface_cache:
         return _typeface_cache[name]
@@ -56,7 +67,16 @@ def _typeface_from_name(name: str) -> skia.Typeface | None:
 
 
 def _resolve_typeface(spec: FontSpec | None) -> skia.Typeface:
-    """解析 FontSpec 为 Typeface；全部解析失败时退到系统默认字体，不抛异常。"""
+    """把 FontSpec 解析为 Typeface。
+
+    按顺序尝试候选字体，全部失败时退回系统默认字体，不抛异常。
+
+    Args:
+        spec: 字体家族名、文件路径、候选列表或 None（使用内置回退链）。
+
+    Returns:
+        可用的 Typeface；兜底为 skia 的默认字体。
+    """
     names: Sequence[str]
     if spec is None:
         names = _DEFAULT_FAMILIES
@@ -74,7 +94,14 @@ def _resolve_typeface(spec: FontSpec | None) -> skia.Typeface:
 
 
 def _fallback_typeface(ch: str) -> skia.Typeface | None:
-    """按系统回退字体找一个含该字形的 Typeface（design.zh-CN.md"字体"第 3 步）。"""
+    """查找包含指定字符的系统回退字体。
+
+    Args:
+        ch: 需要显示的单个字符。
+
+    Returns:
+        含该字形的 Typeface；系统没有可用字体时返回 None。
+    """
     cp = ord(ch)
     if cp in _fallback_cache:
         return _fallback_cache[cp]
@@ -84,9 +111,16 @@ def _fallback_typeface(ch: str) -> skia.Typeface | None:
 
 
 def _layout_runs(text: str, base: skia.Font) -> list[tuple[str, skia.Font, float]]:
-    """把文本切成逐字符 run。
+    """把文本切成逐字符的绘制 run。
 
-    主字体缺字形的字符改用系统回退字体，仍找不到则保留主字体（绘出"豆腐块"）。
+    主字体缺字形时改用系统回退字体，仍找不到则保留主字体（最终画“豆腐块”）。
+
+    Args:
+        text: 待排版的单行文本。
+        base: 主字体。
+
+    Returns:
+        (字符, 实际字体, 该字符前进宽度) 的列表；每个字符一项。
     """
     runs: list[tuple[str, skia.Font, float]] = []
     for ch in text:
@@ -106,7 +140,18 @@ def _anchor_point(
     metrics: skia.FontMetrics,
     anchor: TextAnchor,
 ) -> tuple[float, float]:
-    """把用户锚点换算为绘制基线起点。"""
+    """把用户锚点换算为文字包围盒的绘制起点。
+
+    Args:
+        x: 用户给定的锚点 x。
+        y: 用户给定的锚点 y（基线或包围盒边缘）。
+        width: 文字总宽度。
+        metrics: 主字体度量，用于推算顶/底/垂直居中。
+        anchor: (水平, 垂直) 锚点组合。
+
+    Returns:
+        文字绘制的起始 x 与基线 y。
+    """
     h, v = anchor
     if h == "left":
         x0 = x
@@ -139,11 +184,21 @@ def draw_text(
 ) -> None:
     """画一段单行文字。
 
-    逐字符字体回退保证中文可显示；缺字形画"豆腐块"，不抛异常。
-    font 为家族名列表或字体文件路径；缺省走内置回退链（docs/design.zh-CN.md"字体"）。
-    anchor 指定 (x, y) 对应文字包围盒的哪一处（水平 left/center/right、
-    垂直 top/middle/baseline/bottom）。不处理换行，文本按单行绘制。
-    rotation 为绕 (x, y) 顺时针旋转的角度（度），用于旋转的轴标签等。
+    逐字符字体回退保证中文可显示；缺字形画“豆腐块”，不抛异常。不处理换行。
+
+    Args:
+        canvas: 目标画布。
+        text: 待绘制文本；空串直接返回。
+        x: 锚点 x（画布输出像素）。
+        y: 锚点 y（画布输出像素）。
+        size_px: 字号（像素）。
+        color: 文字颜色。
+        font: 字体家族名、文件路径、候选列表或 None（内置回退链）。
+        anchor: (x, y) 对应文字包围盒的哪一处；垂直 baseline 指文字基线。
+        rotation: 绕 (x, y) 顺时针旋转的角度（度）。
+
+    Raises:
+        ValueError: color 不是合法的 RGB/RGBA 元组。
     """
     if not text:
         return
@@ -152,7 +207,7 @@ def draw_text(
     width = sum(adv for _, _, adv in runs)
     x0, y0 = _anchor_point(x, y, width, base.getMetrics(), anchor)
     paint = skia.Paint(AntiAlias=True, Color=skia_color(color))
-    sc = canvas.skia_canvas()
+    sc = canvas._skia_canvas()  # pyright: ignore[reportPrivateUsage]
     if rotation:
         sc.save()
         sc.translate(x, y)
@@ -175,7 +230,16 @@ def measure_text(
     size_px: float,
     font: FontSpec | None = None,
 ) -> float:
-    """测量一段文字按 `draw_text` 相同回退规则绘制后的宽度（像素）。空串为 0。"""
+    """测量一段文字按 `draw_text` 相同规则绘制后的宽度。
+
+    Args:
+        text: 待测量文本；空串返回 0。
+        size_px: 字号（像素）。
+        font: 字体家族名、文件路径、候选列表或 None（内置回退链）。
+
+    Returns:
+        文字前进宽度（像素）。
+    """
     if not text:
         return 0.0
     base = skia.Font(_resolve_typeface(font), size_px)
@@ -188,7 +252,16 @@ def measure_text_height(
     size_px: float,
     font: FontSpec | None = None,
 ) -> float:
-    """测量单行文字的字面高度（升部到降部，像素）。空串按当前字号估算。"""
+    """测量单行文字的字面高度。
+
+    Args:
+        text: 待测量文本；空串按当前字号估算。
+        size_px: 字号（像素）。
+        font: 字体家族名、文件路径、候选列表或 None（内置回退链）。
+
+    Returns:
+        升部到降部的高度（像素）。
+    """
     base = skia.Font(_resolve_typeface(font), size_px)
     metrics = base.getMetrics()
     return float(metrics.fDescent - metrics.fAscent)
@@ -200,12 +273,29 @@ _BREAK_AFTER = frozenset(" \t,，、;；:：/\\|-—")
 
 
 def _run_width(text: str, base: skia.Font) -> float:
-    """按给定字体（含逐字符回退）测量宽度。"""
+    """按给定主字体（含逐字回退）测量整段文字宽度。
+
+    Args:
+        text: 待测量文本。
+        base: 主字体。
+
+    Returns:
+        前进宽度（像素）。
+    """
     return sum(_measure_chars(ch, base) for ch in text)
 
 
 def _truncate_to_width(text: str, max_width: float, base: skia.Font) -> str:
-    """把文本截到 max_width 内并加省略号；max_width 不足时只留省略号。"""
+    """把文本截到指定宽度并追加省略号。
+
+    Args:
+        text: 待截断文本。
+        max_width: 最大宽度（像素）。
+        base: 主字体。
+
+    Returns:
+        不超过 max_width 的文本；宽度不足时只保留省略号。
+    """
     if _run_width(text, base) <= max_width:
         return text
     ell = _EMPTY_ELLIPSIS
@@ -231,10 +321,21 @@ def wrap_text(
     font: FontSpec | None = None,
     max_lines: int | None = None,
 ) -> list[str]:
-    """按像素宽度把单行文本折成多行（贪心、优先在空白/标点后断行）。
+    """按像素宽度把单行文本折成多行。
 
-    中文可按字断行；英文单词过长时仍会断开。超过 max_lines 时末行加省略号，
-    保证任何一行都不超过 max_width（单个字形本身超宽时除外）。空串返回 [""]。
+    采用贪心断行，优先在空白或常见标点之后断开；中文可按字断行，英文单词
+    过长时仍会断开。超过 max_lines 时末行加省略号；除单个字形本身超宽外，
+    每行都不超过 max_width。
+
+    Args:
+        text: 待折行文本；空串返回 [""]。
+        max_width: 每行最大宽度（像素）。
+        size_px: 字号（像素）。
+        font: 字体家族名、文件路径、候选列表或 None（内置回退链）。
+        max_lines: 最多行数；None 表示不限。
+
+    Returns:
+        折行后的文本列表，至少包含一个元素。
     """
     if not text:
         return [""]
@@ -271,7 +372,15 @@ def wrap_text(
 
 
 def _measure_chars(ch: str, base: skia.Font) -> float:
-    """单个字符的绘制宽度（含字体回退）。"""
+    """测量单个字符在字体回退后的前进宽度。
+
+    Args:
+        ch: 单个字符。
+        base: 主字体。
+
+    Returns:
+        字符前进宽度（像素）。
+    """
     if base.unicharToGlyph(ord(ch)) == 0:
         tf = _fallback_typeface(ch)
         if tf is not None:
