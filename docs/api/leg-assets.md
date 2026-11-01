@@ -51,6 +51,11 @@ class Leg:
         svg: built-in transparent SVG source; None for external assets.
             Rasterized at the target scale during rendering.
 
+    Raises:
+        ValueError: width/height not positive, `pixels_per_unit` not positive,
+            `foot_center_x` out of range, or `image` is not a uint8 RGBA array
+            matching the design size/density.
+
     Methods:
         raster_at(pixels_per_unit): rasterize `svg` directly at the target
             density, caching the result on the Leg. External assets without

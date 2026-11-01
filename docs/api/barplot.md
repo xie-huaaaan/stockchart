@@ -201,9 +201,10 @@ class BarPlot:
         Chinese/Japanese/Korean characters are laid out vertically one
         character at a time (matching their writing conventions); Latin
         letters, digits, and similar text are rotated 90 degrees as a
-        whole, read bottom-up. Vertically it is centered on the y axis's
-        vertical extent; it occupies the left margin and does not affect
-        plot-area coordinates.
+        whole, read bottom-up. When the name is longer than the axis trunk
+        it continues in additional columns/lines and stays vertically
+        centered on the trunk; it occupies the left margin and does not
+        affect plot-area coordinates.
         """
 
     def add_legend(
@@ -218,11 +219,12 @@ class BarPlot:
         loc="top" (default) draws below the title and above the plot area;
         "bottom" draws at the very bottom; ncol is the number of items per
         row, auto by default: one row if it fits, otherwise wrapped by
-        width. When ncol is given, all columns are equally wide. A single
-        label wider than the available row width is wrapped onto multiple
-        lines (at most 3; if it still does not fit, the last line is
-        elided); under a given ncol it wraps by column width so columns
-        stay aligned. The height the legend occupies and the wrapped line
+        width. When ncol is given, all columns are equally wide and each
+        row is centered as a whole; a short last row may therefore not line
+        up with the columns above. A single label wider than the available
+        row width is wrapped onto multiple lines (at most 3; if it still
+        does not fit, the last line is elided); under a given ncol it wraps
+        by column width. The height the legend occupies and the wrapped line
         heights are counted into layout automatically.
         """
 

@@ -23,6 +23,8 @@ class ChartOptions(TypedDict, total=False):
     axis_name_size_px: float
     legend_loc: Literal["top", "bottom"]
     legend_ncol: int | None
+    height_px: int | None
+    width_px: int | None
 ```
 
 | Option | Default | Goes to |
@@ -40,6 +42,8 @@ class ChartOptions(TypedDict, total=False):
 | `axis_name_size_px` | `DEFAULT_AXIS_NAME_SIZE` (30) | both axis-name font sizes |
 | `legend_loc` | `"top"` | `add_legend(loc=)` |
 | `legend_ncol` | `None` (automatic) | `add_legend(ncol=)` |
+| `height_px` | `None` (tallest full leg + 10% headroom) | `BarPlot(extent_up=)` / y-axis length; a smaller explicit value still expands to the full leg height |
+| `width_px` | `None` (legs, gaps, labels) | `BarPlot(width_px=)` / x-axis length |
 
 Unknown keys raise `TypeError` at runtime and list the available options; static typing is checked by the `TypedDict`. Older keywords such as `axis_style` / `grid` / `x_label_pos` are still accepted as before; they simply no longer appear in the function signatures.
 
@@ -58,10 +62,8 @@ def bar(
     cycle: Literal["auto", "group", "sequence"] = "auto",
     paired: Literal["auto", "none", "group", "global"] = "auto",
     value_labels: bool = False,
-    max_fill: float = 0.8,
+    max_fill: float = 0.85,
     min_fill: float = 0.1,
-    y_extent: int = DEFAULT_Y_EXTENT,
-    width_px: int | None = None,
     seed: int | None = None,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
@@ -113,22 +115,20 @@ def bar(
             pair for each group.
         value_labels: when True, handwritten value labels above the
             stocking tops.
-        max_fill: fraction of y_extent the maximum maps to (default 0.8).
+        max_fill: fraction of the asset design height the maximum maps to,
+            in (0, 1] (default 0.85).
         min_fill: only enabled when the data contains negatives
             (default 0.1); see below.
-        y_extent: design-pixel height reserved above the baseline for the bar
-            area; excludes title, labels, legend, and other edge areas.
-        width_px: plot-area width; by default adapts to the leg count,
-            spacing, and label widths. The final canvas is wider because of
-            axes, labels, and title.
         options: optional parameters passed through to lower layers; see
             the `ChartOptions` table (grid, axis_style, legend_loc,
-            bar_gap, etc.).
+            bar_gap, height_px, width_px, etc.).
 
     Data -> stocking height (the data value at the baseline defaults to 0):
+        - The reference height is the smallest design height among the
+          selected legs, so no leg is clipped; built-in assets are all 720.
         - All values are 0: all legs bare.
-        - No negatives: height = v / max x max_fill x y_extent; a value of 0
-          means a bare leg.
+        - No negatives: height = v / max x max_fill x reference height;
+          a value of 0 means a bare leg.
         - Negatives present: the entire value range [min, max] is linearly
           compressed into [min_fill, max_fill]. A value of 0 then gets a
           leg with some stocking, and the y axis's 0 tick floats somewhere
@@ -153,9 +153,7 @@ def mirror_bar(
     cycle: Literal["auto", "group", "sequence"] = "auto",
     paired: Literal["auto", "none", "group", "global"] = "auto",
     value_labels: bool = False,
-    max_abs_fill: float = 0.8,
-    y_extent: int = DEFAULT_Y_EXTENT,
-    width_px: int | None = None,
+    max_abs_fill: float = 0.85,
     seed: int | None = None,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
@@ -178,22 +176,22 @@ def mirror_bar(
         paired: same semantics as bar(); mirrored charts also default to "auto".
         value_labels: when True, handwritten value labels — above the
             stocking top for upper legs, below it for lower legs.
-        max_abs_fill: fraction of y_extent the largest absolute value maps
-            to (default 0.8).
-        y_extent: design-pixel height reserved above the baseline for the bar
-            area; excludes title, labels, legend, and other edge areas.
-        width_px: plot-area width; adapts by default. The final canvas is
-            wider because of axes, labels, and title.
-        options: same semantics as bar(). x_label_pos defaults to "auto":
-            mirrored charts often leave one side entirely empty, so labels
-            sit by the baseline on the side without legs (e.g. above the
-            baseline for all-negative data); when both sides have legs
-            (mixed signs or mode="both") it falls back to "content",
+        max_abs_fill: fraction of the asset design height the largest
+            absolute value maps to, in (0, 1] (default 0.85).
+        options: same semantics as bar(). height_px controls the bar-area
+            height above the baseline, defaulting to the tallest leg's design
+            height plus 10% headroom; width_px controls the plot-area width and
+            adapts to content by default. x_label_pos defaults
+            to "auto": mirrored charts often leave one side entirely empty,
+            so labels sit by the baseline on the side without legs (e.g.
+            above the baseline for all-negative data); when both sides have
+            legs (mixed signs or mode="both") it falls back to "content",
             drawn below the lowest point of all content.
 
     Rules:
-        - Scale = max_abs_fill x y_extent / max|v|, the same for positive
-          and negative.
+        - The reference height is the smallest design height among the
+          selected legs; scale = max_abs_fill x reference height / max|v|,
+          the same for positive and negative.
         - 0 counts as +0: under "single" one bare leg pointing up is drawn;
           under "both" bare legs are drawn on both sides (the upper one is
           the data side).
@@ -202,16 +200,18 @@ def mirror_bar(
     """
 ```
 
-Parameter checks: `max_fill` / `max_abs_fill` must be finite and positive,
-`0 <= min_fill < max_fill`, `y_extent` must be positive, and `cycle` plus
-`mirror_bar`'s `mode` only accept the documented values. NaN / Infinity in
+Parameter checks: `max_fill` / `max_abs_fill` must be in (0, 1],
+`0 <= min_fill < max_fill`, explicit `height_px` / `width_px` must be
+positive, and `cycle` plus `mirror_bar`'s `mode` only accept the documented
+values. NaN / Infinity in
 the data raise `ValueError` during normalization.
 
 ## Centralized defaults
 
-All `DEFAULT_*` constants are collected in `src/stockchart/defaults.py`: `DEFAULT_Y_EXTENT` (760),
+All `DEFAULT_*` constants are collected in `src/stockchart/defaults.py`: `DEFAULT_MAX_FILL` (0.85),
 `DEFAULT_BAR_GAP` (28), `DEFAULT_GROUP_GAP` (120), `DEFAULT_OUTPUT_SCALE`, the background/ink/text colors,
 `DEFAULT_AXIS_STYLE` (clean), wobble amplitudes, font sizes (ticks 26 / x labels 30 / title 52 /
 axis names 30 / legend 28 / value labels 26), `DEFAULT_TITLE_ALIGN` (center), axis-name spacing and line height,
 x-label avoidance angles, legend wrap line counts and line heights, legend swatch size and spacing, grid line colors, and so on.
 Drawing code carries no magic numbers of its own; tuning means changing one place.
+L2's `BarPlot.extent_up` still defaults to `DEFAULT_Y_EXTENT` (760).

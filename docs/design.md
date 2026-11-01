@@ -51,24 +51,29 @@ super-resolution masters. The library itself only ships transparent SVGs
 - The mapping happens only at the top layer (`bar` / `mirror_bar`); everything
   below works in design pixels (see "Assets and Output"). The data value
   corresponding to the baseline defaults to 0 and is adjustable.
-- **The y-axis maximum** `y_extent` is a pixel height for the bar area, not a
-  ratio and not including title, labels, legend, or other edge areas. Default 760
-  (leg height 720, leaving a little headroom), confirmed during review. All
-  legs have the same height, so bars are directly comparable to each other.
+- **Bar-area height** `height_px` is a pixel height above the baseline, not a
+  ratio, and excludes title, labels, legend, or other edge areas. It is a
+  `ChartOptions` passthrough; when omitted it uses the tallest selected leg's
+  design height plus 10% headroom (792 for the 720 built-ins). `width_px` is
+  the analogous plot-area width; both reach `BarPlot` and axis drawing. L2's
+  `BarPlot.extent_up` still defaults to 760; L4 no longer uses `y_extent`.
+- All bars share the **smallest design height among the selected legs** as the
+  reference height, so no leg is clipped; built-in legs have equal heights, so
+  bars remain directly comparable.
 - Branch A (`bar`, everything upward):
-  - No negative values: `height = v / max × max_fill × y_extent` (`max_fill`
-    defaults to 0.8); a value of 0 means a bare leg;
+  - No negative values: `height = v / max × max_fill × reference height`
+    (`max_fill` defaults to 0.85, range (0, 1]); a value of 0 means a bare leg;
   - With negative values: the whole value range is linearly compressed into
-    `[min_fill, max_fill]` (defaults 0.1 / 0.8). A leg at value 0 then carries
+    `[min_fill, max_fill]` (defaults 0.1 / 0.85). A leg at value 0 then carries
     a band of stocking and the y-axis 0 tick hangs somewhere in the middle of
     the stocking — a deliberate trade-off to fully preserve size ordering;
   - All-zero data: all bare legs; all-negative data follows the same rule, with
     larger values meaning higher stockings. When all negative values are equal
     there is no ordering to preserve, so every leg uses `min_fill`.
 - Branch B (`mirror_bar`, mirrored positive/negative): ratio =
-  `max_abs_fill` (default 0.8) × y_extent / max|v|; positive values draw the
-  upper leg, negative values draw the flipped lower leg (foot against the
-  baseline), and 0 counts as +0. `mode="single"` draws only the data side;
+  `max_abs_fill` (default 0.85, range (0, 1]) × reference height / max|v|;
+  positive values draw the upper leg, negative values draw the flipped lower
+  leg (foot against the baseline), and 0 counts as +0. `mode="single"` draws only the data side;
   `mode="both"` draws both sides with a bare leg on the other. Space below is
   reserved only when needed (single with negative values, or both). By default
   x labels are not anchored to the baseline but to a point below **the lowest
@@ -141,10 +146,12 @@ combinable parts; 19 presets, see the API reference.
 
 ### Design Trade-offs (From Review Iterations)
 
-- **Perspective compression of stripes/ribbing/fishnet**: patterns are
-  generated in the leg's "unwrapped surface coordinates" (u × half-width), so
-  they naturally densify toward the sides; band boundaries get about 1.2px of
-  sub-pixel softening to avoid stairstepping from per-column phase rounding;
+- **Perspective compression of stripes/ribbing/fishnet/prints**: patterns are
+  generated in the leg's "unwrapped surface coordinates", blending screen
+  coordinate `u` with cylindrical arc length `arcsin(u)` by `perspective`
+  (0 = uniform, 1 = full cylinder, default 0.8), so they naturally densify
+  toward the sides; band boundaries get about 1.2px of sub-pixel softening to
+  avoid stairstepping from per-column phase rounding;
 - **Relationship between the top edge and the fabric**: an earlier attempt
   filled the dead zone with plain fabric in the dominant color, which blurred
   into a wide band of the same color as the lace. The correct model is that
@@ -263,7 +270,8 @@ matplotlib's font configuration, so none of its caching/configuration issues app
   `add_y_axis_name` writes it to the left of the tick numbers, vertically
   centered over the y axis's full vertical extent — CJK text is set vertically
   character by character, while Latin letters/digits are rotated 90° as a
-  whole and read bottom-to-top.
+  whole and read bottom-to-top. A name longer than the trunk continues in
+  additional columns/lines instead of overflowing.
   Font sizes: title 52, axis names 30 (ticks 26 / x labels 30). L4's `title` /
   `xlabel` / `ylabel` map directly onto these three methods.
 
@@ -289,8 +297,9 @@ later if needed.
 - **Automatic wrapping of overly long legend labels**: when a single label is
   wider than the available line width, it wraps by character/word into multiple
   lines (up to 3; if it still does not fit, the last line gets an ellipsis).
-  When `ncol` is given, labels wrap into equal-width columns that never drift
-  out of alignment. The swatch is vertically centered against the multi-line
+  When `ncol` is given, labels wrap into equal-width columns and each row is
+  centered as a whole; a short last row may therefore not line up with the
+  columns above. The swatch is vertically centered against the multi-line
   text block, and the row height grows accordingly.
 - The legend's height is automatically added to the top/bottom canvas margins;
   its width no longer stretches the canvas — it wraps to fit the existing
@@ -316,9 +325,9 @@ later if needed.
 
 - **Design pixels are the layout coordinate system**: `Leg`'s
   `width/height/foot_center_x` are always in design pixels (leg height 720),
-  and spacing, font sizes, and `y_extent` all live in this unit. Callers never
-  pass design sizes, and should never change them — they belong to the asset,
-  provided by `LegLibrary`.
+  and spacing, font sizes, and `height_px` / `width_px` all live in this unit.
+  Callers never pass design sizes, and should never change them — they belong
+  to the asset, provided by `LegLibrary`.
 - **Pixel density is a separate matter**: `Leg.pixels_per_unit` means
   "`image` pixels / design pixels". The bundled assets' `image` is only a
   design-size layout preview (1); `render_stocking(scale=k)` scales the
@@ -444,8 +453,9 @@ Five layers; full signatures and semantics in the [API reference](api/index.md):
 
 - The default style is `black_sheer` (black sheer); `gray_sheer` matches the
   reference image's color scheme; 19 presets, see the API reference;
-- `y_extent` defaults to 760 (leg height 720, leaving a little headroom),
-  kept after review;
+- `max_fill` / `max_abs_fill` default to 0.85 relative to the asset design
+  height; `height_px` defaults to the tallest selected leg's design height plus
+  10% headroom, and `width_px` adapts to content;
 - Series naming uses the legend (fabric texture swatch markers); how a `style`
   list cycles is controlled by `cycle` — `group` (position within the group,
   the default for 2-D) / `sequence` (overall draw order, the default for 1-D);

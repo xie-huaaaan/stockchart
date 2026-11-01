@@ -463,6 +463,7 @@ class _Layout:
         y_name_x: y 轴名称中心的画布 x。
         y_name_y: y 轴名称中心的画布 y。
         y_up_len: y 轴干线向上长度。
+        y_name_span: y 轴名称可用的垂直长度（轴干线上下总跨度）。
         title_x: 标题锚点的画布 x。
         title_y: 标题锚点的画布 y。
         x_name_x: x 轴名称中心的画布 x。
@@ -485,6 +486,7 @@ class _Layout:
     y_name_x: float = 0.0  # y 轴名称（纵向排列）中心的画布 x
     y_name_y: float = 0.0  # y 轴名称中心的画布 y
     y_up_len: float = 0.0  # y 轴干线向上长度（名称纵向居中用）
+    y_name_span: float = 0.0  # y 轴名称可用垂直长度（干线上下总跨度）
     title_x: float = 0.0  # 标题绘制锚点的画布 x
     title_y: float = 0.0  # 标题绘制锚点的画布 y
     x_name_x: float = 0.0  # x 轴名称中心的画布 x
@@ -495,6 +497,38 @@ class _Layout:
     x_label_angle: float = 0.0  # 已解析的旋转角：正角顺时针，基线下标签取负角
     x_label_height: float = 0.0  # 标签块垂直占位（旋转后的投影高度）
     legend_bottom_y: float | None = None
+
+
+def _layout_axis_name(name: _AxisNameRecord, available_px: float) -> tuple[list[str], float]:
+    """把 y 轴名称拆成能放进轴长度的列/行，并返回水平占位宽度。
+
+    中日韩文字按字符拆成竖排列（首列靠轴、后续列向左）；其余文字旋转 90°
+    后按可用长度折行。名称块整体在轴干线上垂直居中。
+
+    Args:
+        name: y 轴名称记录。
+        available_px: 轴干线可用的垂直长度（设计像素）。
+
+    Returns:
+        `(列/行文本, 名称块的水平占位宽度)`。
+    """
+    if not name.text:
+        return [], 0.0
+    step = name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
+    if name.rotate:
+        lines = wrap_text(
+            name.text,
+            max_width=max(1.0, available_px),
+            size_px=name.size_px,
+        )
+        thickness = measure_text_height(name.text, size_px=name.size_px)
+    else:
+        per_column = max(1, int(available_px // step))
+        lines = [
+            name.text[start : start + per_column] for start in range(0, len(name.text), per_column)
+        ]
+        thickness = name.size_px
+    return lines, thickness + (len(lines) - 1) * step
 
 
 def _format_tick(value: float) -> str:
@@ -803,7 +837,8 @@ class BarPlot:
     ) -> BarPlot:
         """添加 y 轴名称。
 
-        中日韩文字逐字竖排，其余文字旋转 90° 写在刻度数字左侧。
+        中日韩文字逐字竖排，其余文字旋转 90° 写在刻度数字左侧；名称长于
+        轴干线时自动续列/折行，并沿轴干线整体垂直居中。
 
         Args:
             text: 轴名称。
@@ -1316,7 +1351,7 @@ class BarPlot:
         """计算图例的分行、折行与整体高度。
 
         单个标签超过一行宽时按词/字换行（最多 DEFAULT_LEGEND_MAX_LINES 行，
-        仍放不下则末行省略）；ncol 指定时按等宽列折行，避免列错位。
+        仍放不下则末行省略）；ncol 指定时按等宽列折行，每行整体居中。
 
         Args:
             rec: 图例记录。
@@ -1533,14 +1568,11 @@ class BarPlot:
             tick_px = [axis.scale.to_px(v) for v in axis.ticks]
             up_len = max([0.0, eff_up, *tick_px])
             down_len = max([0.0, *(-p for p in tick_px if p < 0)])
+        y_name_span = up_len + max(eff_down, down_len)
         left = float(DEFAULT_PLOT_LEFT_PAD)
         if self._y_axis_name is not None:
             name = self._y_axis_name
-            name_w = (
-                measure_text_height(name.text, size_px=name.size_px)
-                if name.rotate
-                else name.size_px
-            )
+            _, name_w = _layout_axis_name(name, y_name_span)
             y_name_x = left + name_w / 2
             left += name_w + DEFAULT_AXIS_NAME_GAP
         if axis is not None:
@@ -1568,6 +1600,7 @@ class BarPlot:
         # 顶部带：标题 + 顶部图例；标签写在基线上方时若超出预留高度，补足顶部空间
         top_band = 0.0
         legend_top_y = 0.0
+        # 空字符串标题/轴名仍会占完整布局空间；已知边界，暂不处理。
         if self._title is not None:
             top_band = DEFAULT_TITLE_INSET_Y + self._title.size_px * DEFAULT_TITLE_LINE_FACTOR
         if self._legend is not None and self._legend.loc == "top":
@@ -1668,6 +1701,7 @@ class BarPlot:
             y_name_x=y_name_x,
             y_name_y=y_name_y,
             y_up_len=up_len,
+            y_name_span=y_name_span,
             title_x=title_x,
             title_y=DEFAULT_TITLE_INSET_Y,
             x_name_x=x_name_x,
@@ -1854,32 +1888,37 @@ class BarPlot:
         """
         y_name = self._y_axis_name
         if y_name is not None and y_name.text:
+            lines, block_w = _layout_axis_name(y_name, layout.y_name_span)
+            step = y_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
             if y_name.rotate:
-                # 拉丁等文字按常规旋转 90°，自下而上阅读
-                draw_text(
-                    canvas,
-                    y_name.text,
-                    layout.y_name_x,
-                    layout.y_name_y,
-                    size_px=y_name.size_px,
-                    color=y_name.color,
-                    anchor=("center", "middle"),
-                    rotation=-90,
-                )
-            else:
-                # 中日韩文字逐字竖排（契合书写习惯），在轴干线上下之间居中
-                cell = y_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
-                start = layout.y_name_y - len(y_name.text) * cell / 2
-                for i, ch in enumerate(y_name.text):
+                # 拉丁等文字旋转 90° 自下而上阅读；多行时首行靠轴、后续行向左
+                thickness = measure_text_height(y_name.text, size_px=y_name.size_px)
+                for k, line in enumerate(lines):
                     draw_text(
                         canvas,
-                        ch,
-                        layout.y_name_x,
-                        start + (i + 0.5) * cell,
+                        line,
+                        layout.y_name_x + block_w / 2 - thickness / 2 - k * step,
+                        layout.y_name_y,
                         size_px=y_name.size_px,
                         color=y_name.color,
                         anchor=("center", "middle"),
+                        rotation=-90,
                     )
+            else:
+                # 中日韩文字逐字竖排；首列靠轴，超长时向左续列
+                for k, column in enumerate(lines):
+                    x = layout.y_name_x + block_w / 2 - y_name.size_px / 2 - k * step
+                    start = layout.y_name_y - len(column) * step / 2
+                    for i, ch in enumerate(column):
+                        draw_text(
+                            canvas,
+                            ch,
+                            x,
+                            start + (i + 0.5) * step,
+                            size_px=y_name.size_px,
+                            color=y_name.color,
+                            anchor=("center", "middle"),
+                        )
         x_name = self._x_axis_name
         if x_name is not None and layout.x_name_y is not None:
             draw_text(
@@ -1937,6 +1976,7 @@ class BarPlot:
                 (self._width_px - (rec.ncol - 1) * DEFAULT_LEGEND_ITEM_GAP) / rec.ncol,
             )
         for row, row_h in zip(idx_rows, row_heights, strict=True):
+            full_ncol_row = rec.ncol is not None and len(row) == rec.ncol
             widths: list[float] = []
             for i in row:
                 text_w = max(
@@ -1945,11 +1985,12 @@ class BarPlot:
                 )
                 widths.append(
                     col_w
-                    if rec.ncol is not None
+                    if full_ncol_row
                     else DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_TEXT_GAP + text_w
                 )
             row_w = sum(widths) + DEFAULT_LEGEND_ITEM_GAP * (len(row) - 1)
-            x = layout.plot_left + (0.0 if rec.ncol is not None else (self._width_px - row_w) / 2)
+            # 每行整体居中；ncol 末行按实际内容宽度居中，不再与上方列对齐。
+            x = layout.plot_left + (self._width_px - row_w) / 2
             for i, item_w in zip(row, widths, strict=True):
                 label_lines = lines_all[i]
                 swatch_y = y + (row_h - DEFAULT_LEGEND_SWATCH) / 2

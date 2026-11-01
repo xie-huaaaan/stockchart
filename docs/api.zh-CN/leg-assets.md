@@ -43,6 +43,10 @@ class Leg:
         side: "left" / "right"；外部素材为 None。
         svg: 内置透明 SVG 源；外部素材为 None。渲染时按目标倍率栅格化。
 
+    Raises:
+        ValueError: 宽高非正、`pixels_per_unit` 非正、`foot_center_x` 越界，
+            或 `image` 不是与设计尺寸/密度匹配的 uint8 RGBA。
+
     Methods:
         raster_at(pixels_per_unit): 按目标密度直接把 `svg` 渲染成位图，
             结果缓存在 Leg 上。没有 `svg` 的外部素材抛 ValueError。

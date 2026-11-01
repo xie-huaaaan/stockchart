@@ -99,9 +99,10 @@ class Ribbed:
         opacity: 织物遮盖率（0–1）。
         rib_width: 腿正面中线处相邻罗纹的间距（设计像素）。
         depth: 罗纹凹凸产生的明暗对比度（0 无纹理，1 最强）。
+        perspective: 圆柱透视压缩强度（0 均匀间距，1 完全按圆柱弧长压缩）。
 
     Raises:
-        ValueError: color 非法、opacity/depth 不在 [0, 1]，或
+        ValueError: color 非法、opacity/depth/perspective 不在 [0, 1]，或
             rib_width <= 0。
     """
 
@@ -109,6 +110,7 @@ class Ribbed:
     opacity: float = 1.0
     rib_width: float = 6.0
     depth: float = 0.35
+    perspective: float = 0.8
 
     def __post_init__(self) -> None:
         check_color(self.color, "Ribbed.color")
@@ -118,6 +120,8 @@ class Ribbed:
             raise ValueError(f"Ribbed.rib_width 须 > 0，得到 {self.rib_width}")
         if not 0.0 <= self.depth <= 1.0:
             raise ValueError(f"Ribbed.depth 须在 [0, 1]，得到 {self.depth}")
+        if not 0.0 <= self.perspective <= 1.0:
+            raise ValueError(f"Ribbed.perspective 须在 [0, 1]，得到 {self.perspective}")
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -130,9 +134,11 @@ class Fishnet:
         line_width: 网线宽度（设计像素）。
         angle: 网格旋转角度（度）；45 为菱形，0 为方格。
         underlay: 网格下方叠的底袜；None 表示仅网格、皮肤直接透出。
+        perspective: 圆柱透视压缩强度（0 均匀间距，1 完全按圆柱弧长压缩）。
 
     Raises:
-        ValueError: color 非法、cell <= 0，或 line_width <= 0。
+        ValueError: color 非法、cell <= 0、line_width <= 0，或 perspective
+            不在 [0, 1]。
     """
 
     color: Color
@@ -140,6 +146,7 @@ class Fishnet:
     line_width: float = 1.6
     angle: float = 45.0
     underlay: Plain | None = None
+    perspective: float = 0.8
 
     def __post_init__(self) -> None:
         check_color(self.color, "Fishnet.color")
@@ -147,6 +154,8 @@ class Fishnet:
             raise ValueError(f"Fishnet.cell 须 > 0，得到 {self.cell}")
         if self.line_width <= 0:
             raise ValueError(f"Fishnet.line_width 须 > 0，得到 {self.line_width}")
+        if not 0.0 <= self.perspective <= 1.0:
+            raise ValueError(f"Fishnet.perspective 须在 [0, 1]，得到 {self.perspective}")
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -161,10 +170,11 @@ class Dotted:
         spacing: 相邻图案中心的距离（设计像素）。
         layout: "grid" 为错位网格，"scatter" 为由 seed 随机散布。
         opacity: 图案遮盖率（0–1）。
+        perspective: 圆柱透视压缩强度（0 均匀间距，1 完全按圆柱弧长压缩）。
 
     Raises:
-        ValueError: color 非法、size/spacing <= 0、opacity 不在 [0, 1]，
-            或 shape / layout 不是允许值。
+        ValueError: color 非法、size/spacing <= 0、opacity/perspective 不在
+            [0, 1]，或 shape / layout 不是允许值。
     """
 
     base: Plain
@@ -174,6 +184,7 @@ class Dotted:
     spacing: float = 18.0
     layout: Literal["grid", "scatter"] = "grid"
     opacity: float = 1.0
+    perspective: float = 0.8
 
     def __post_init__(self) -> None:
         check_color(self.color, "Dotted.color")
@@ -187,6 +198,8 @@ class Dotted:
             raise ValueError(f"Dotted.spacing 须 > 0，得到 {self.spacing}")
         if not 0.0 <= self.opacity <= 1.0:
             raise ValueError(f"Dotted.opacity 须在 [0, 1]，得到 {self.opacity}")
+        if not 0.0 <= self.perspective <= 1.0:
+            raise ValueError(f"Dotted.perspective 须在 [0, 1]，得到 {self.perspective}")
 
 
 type Fabric = Plain | Striped | Ribbed | Fishnet | Dotted
@@ -245,7 +258,8 @@ class Lace:
         holes: 是否在蕾丝带上叠加孔点。
 
     Raises:
-        ValueError: height/scallop <= 0、color 非法，或 opacity 不在 [0, 1]。
+        ValueError: height <= 0、scallop < 20、color 非法，或 opacity 不在
+            [0, 1]。
     """
 
     height: float = 28.0
@@ -257,8 +271,8 @@ class Lace:
     def __post_init__(self) -> None:
         if self.height <= 0:
             raise ValueError(f"Lace.height 须 > 0，得到 {self.height}")
-        if self.scallop <= 0:
-            raise ValueError(f"Lace.scallop 须 > 0，得到 {self.scallop}")
+        if self.scallop < 20:
+            raise ValueError(f"Lace.scallop 须 >= 20，得到 {self.scallop}")
         if self.color is not None:
             check_color(self.color, "Lace.color")
         if not 0.0 <= self.opacity <= 1.0:
@@ -419,7 +433,12 @@ def scale_style(style: StockingStyle, factor: float) -> StockingStyle:
         if isinstance(t, Welt):
             return replace(t, height=t.height * factor)
         if isinstance(t, Lace):
-            return replace(t, height=t.height * factor, scallop=t.scallop * factor)
+            # 低输出密度下缩放后的周期仍需保留足够的采样点数。
+            return replace(
+                t,
+                height=t.height * factor,
+                scallop=max(t.scallop * factor, 20.0),
+            )
         if isinstance(t, Fade):
             return replace(t, length=t.length * factor)
         return t

@@ -450,6 +450,32 @@ def _curve_dip(
     return curve * half_w * (1.0 - u * u)
 
 
+def _surface_abs_x(
+    u: NDArray[np.float64],
+    alpha: NDArray[np.float64],
+    perspective: float,
+) -> NDArray[np.float64]:
+    """把屏幕归一化坐标映射到圆柱表面的横向绝对坐标。
+
+    0 保持屏幕坐标（图案均匀），1 使用 arcsin 映射（越靠两侧越密）；
+    中间值线性混合，便于调节压缩强度。
+
+    Args:
+        u: (H, W) 横向归一化坐标。
+        alpha: (H, W) 腿的 alpha 覆盖。
+        perspective: 压缩强度（0–1）。
+
+    Returns:
+        (H, W) 图案使用的横向绝对坐标（像素）。
+    """
+    half_w = np.where(alpha > 0.05, 1, 0).sum(axis=1) / 2.0
+    if perspective <= 0.0:
+        surface_u = u
+    else:
+        surface_u = (1.0 - perspective) * u + perspective * np.arcsin(np.clip(u, -1.0, 1.0))
+    return surface_u * half_w[:, np.newaxis]
+
+
 def _lace_wave(
     top: Lace,
     y0: int,
@@ -474,7 +500,7 @@ def _lace_wave(
     Returns:
         `(wave_bot, scallop, amplitude, phase)`：每列下沿 y、周期、振幅与相位。
     """
-    scallop = max(top.scallop, 20.0)
+    scallop = top.scallop
     amplitude = min(scallop * 0.15, top.height * 0.25)
     phase = rng.uniform(0, scallop)
     dip_bot = dip[min(y0 + int(top.height), H - 1)] if dip is not None else np.zeros(W)
@@ -693,11 +719,8 @@ def _fabric_ribbed(
     layer = np.zeros((H, W, 4), dtype=np.float64)
     rgb = color_rgb(f.color)
 
-    # 将 u（-1~1）映射到腿上的绝对像素列位置，决定罗纹频率
-    # 腿最宽处（大腿）的半宽作为参考宽度
-    row_half_w = np.where(alpha > 0.05, 1, 0).sum(axis=1) / 2.0  # (H,)
-    # 按每行半宽还原到 "腿上绝对列坐标"
-    abs_x = u * row_half_w[:, np.newaxis]  # (H, W)
+    # 将屏幕坐标映射到圆柱表面；perspective 越大，两侧图案越密。
+    abs_x = _surface_abs_x(u, alpha, f.perspective)
 
     # cos 罗纹：每 rib_width 像素一个周期（双倍：一凸一凹）
     wave = np.cos(abs_x * (2 * math.pi / f.rib_width))
@@ -775,8 +798,7 @@ def _fabric_fishnet(
     """
     layer = np.zeros((H, W, 4), dtype=np.float64)
 
-    row_half_w = np.where(alpha > 0.05, 1, 0).sum(axis=1) / 2.0
-    abs_x = u * row_half_w[:, np.newaxis]
+    abs_x = _surface_abs_x(u, alpha, f.perspective)
     ys = np.arange(H, dtype=np.float64).reshape(H, 1) * np.ones((1, W))
     if dip is not None:
         ys = ys - dip
@@ -905,8 +927,7 @@ def _fabric_dotted(
     """
     base = _fabric_plain(f.base, src, alpha, u, y0, H, W)
 
-    row_half_w = np.where(alpha > 0.05, 1, 0).sum(axis=1) / 2.0
-    abs_x = u * row_half_w[:, np.newaxis]
+    abs_x = _surface_abs_x(u, alpha, f.perspective)
     ys = (np.arange(H, dtype=np.float64) - y0 - pattern_offset).reshape(H, 1) * np.ones((1, W))
     if dip is not None:
         ys = ys - dip
@@ -1064,7 +1085,8 @@ def _resize_rgba(
 ) -> NDArray[np.uint8]:
     """按预乘 alpha 缩放 RGBA。
 
-    先乘 alpha 再插值，避免透明区的黑色被拉进边缘形成暗边。
+    先乘 alpha 再插值，避免透明区的黑色被拉进边缘形成暗边；通道以浮点
+    缩放，避免预乘后先量化到 8 位造成低透明度区域的色带。
 
     Args:
         image: (H, W, 4) uint8 RGBA。
@@ -1075,23 +1097,20 @@ def _resize_rgba(
     Returns:
         (height, width, 4) uint8 RGBA。
     """
+
+    def resize_float(channel: NDArray[np.float64]) -> NDArray[np.float64]:
+        """把单通道浮点图缩放为目标尺寸。"""
+        img = Image.fromarray(channel.astype(np.float32), mode="F")
+        return np.asarray(img.resize((width, height), resample), dtype=np.float64)
+
     src = image.astype(np.float64) / 255.0
-    alpha = src[..., 3:4]
-    premultiplied = src[..., :3] * alpha
-    rgb = Image.fromarray((np.clip(premultiplied, 0, 1) * 255).round().astype(np.uint8)).resize(
-        (width, height), resample
-    )
-    a = Image.fromarray((np.clip(alpha[..., 0], 0, 1) * 255).round().astype(np.uint8)).resize(
-        (width, height), resample
-    )
-    out = np.dstack(
-        [
-            np.asarray(rgb).astype(np.float64) / 255.0,
-            np.asarray(a).astype(np.float64)[..., np.newaxis] / 255.0,
-        ]
-    )
-    out[..., :3] /= np.maximum(out[..., 3:4], 1e-6)
-    return (np.clip(out, 0, 1) * 255).round().astype(np.uint8)
+    alpha = src[..., 3]
+    premultiplied = src[..., :3] * alpha[..., np.newaxis]
+    rgb = np.stack([resize_float(premultiplied[..., i]) for i in range(3)], axis=-1)
+    a = resize_float(alpha)
+    rgb /= np.maximum(a[..., np.newaxis], 1e-6)
+    out = np.dstack([np.clip(rgb, 0.0, 1.0), np.clip(a, 0.0, 1.0)[..., np.newaxis]])
+    return (out * 255).round().astype(np.uint8)
 
 
 def _downsample_rendered(

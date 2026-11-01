@@ -24,6 +24,8 @@ class ChartOptions(TypedDict, total=False):
     axis_name_size_px: float
     legend_loc: Literal["top", "bottom"]
     legend_ncol: int | None
+    height_px: int | None
+    width_px: int | None
 ```
 
 | 选项 | 默认 | 去向 |
@@ -41,6 +43,8 @@ class ChartOptions(TypedDict, total=False):
 | `axis_name_size_px` | `DEFAULT_AXIS_NAME_SIZE`（30） | 两个轴名字号 |
 | `legend_loc` | `"top"` | `add_legend(loc=)` |
 | `legend_ncol` | `None`（自动） | `add_legend(ncol=)` |
+| `height_px` | `None`（最高整腿 + 10% 留白） | `BarPlot(extent_up=)` / y 轴长度；显式值小于整腿高时仍会扩到整腿高 |
+| `width_px` | `None`（按腿、间距与标签自动） | `BarPlot(width_px=)` / x 轴长度 |
 
 未知键在运行时报 `TypeError` 并列出可用选项；静态类型由 `TypedDict` 检查。
 `axis_style` / `grid` / `x_label_pos` 等旧关键字仍可照常传入，只是不再出现在
@@ -61,10 +65,8 @@ def bar(
     cycle: Literal["auto", "group", "sequence"] = "auto",
     paired: Literal["auto", "none", "group", "global"] = "auto",
     value_labels: bool = False,
-    max_fill: float = 0.8,
+    max_fill: float = 0.85,
     min_fill: float = 0.1,
-    y_extent: int = DEFAULT_Y_EXTENT,
-    width_px: int | None = None,
     seed: int | None = None,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
@@ -102,17 +104,16 @@ def bar(
             "global" 整张图连续取对，配对可以跨组；"none" 每条腿来自不同
             素材对。
         value_labels: True 时在袜口上方手写数值。
-        max_fill: 最大值映射到 y_extent 的比例（默认 0.8）。
+        max_fill: 最大值映射到素材设计高度的比例，须在 (0, 1]（默认 0.85）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
-        y_extent: 柱区在基线上方预留的设计像素高度，不含标题、标签、图例等边缘。
-        width_px: 绘图区宽度；缺省按腿数、间距与标签宽度自适应，最终画布
-            会因轴、标签与标题更宽。
         options: 透传给下层的可选项，见 `ChartOptions` 表（grid、axis_style、
-            legend_loc、bar_gap 等）。
+            legend_loc、bar_gap、height_px、width_px 等）。
 
     数据 → 丝袜高度（基线对应的数据值默认 0）:
+        - 参考高度取本次选中腿中最小的设计高度，保证所有腿都不截顶；
+          内置素材均为 720。
         - 全部数据为 0: 全部裸腿。
-        - 无负值: height = v / max × max_fill × y_extent，0 值即裸腿。
+        - 无负值: height = v / max × max_fill × 参考高度，0 值即裸腿。
         - 含负值: 整个值域 [min, max] 线性压缩到 [min_fill, max_fill]。
           此时 0 值的腿带一段丝袜、y 轴 0 刻度悬在丝袜中间某处——这是为完整
           保留大小关系所做的既定取舍。全负数据同规则：值越大丝袜越高；
@@ -133,9 +134,7 @@ def mirror_bar(
     cycle: Literal["auto", "group", "sequence"] = "auto",
     paired: Literal["auto", "none", "group", "global"] = "auto",
     value_labels: bool = False,
-    max_abs_fill: float = 0.8,
-    y_extent: int = DEFAULT_Y_EXTENT,
-    width_px: int | None = None,
+    max_abs_fill: float = 0.85,
     seed: int | None = None,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
@@ -154,30 +153,33 @@ def mirror_bar(
         cycle: 语义同 bar()。
         paired: 语义同 bar()；镜像图同样默认 "auto"。
         value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
-        max_abs_fill: 最大绝对值映射到 y_extent 的比例（默认 0.8）。
-        y_extent: 柱区在基线上方预留的设计像素高度，不含标题、标签、图例等边缘。
-        width_px: 绘图区宽度；缺省自适应，最终画布会因轴、标签与标题更宽。
-        options: 语义同 bar()。x_label_pos 默认 "auto"：镜像图常有一侧全空，
-            会把标签贴到没有腿的一侧的基线旁（如全负数据标签在基线上方）；
-            两侧都有腿（正负混合或 mode="both"）时退回 "content"，画在全部
-            内容最低点之下。
+        max_abs_fill: 最大绝对值映射到素材设计高度的比例，须在 (0, 1]
+            （默认 0.85）。
+        options: 语义同 bar()。height_px 控制基线上方柱区高度，缺省按最高腿设计高度
+            再加 10% 留白；width_px 控制绘图区宽度，缺省自适应；x_label_pos 默认 "auto"：
+            镜像图常有一侧全空，会把标签贴到没有腿的一侧的基线旁（如全负
+            数据标签在基线上方）；两侧都有腿（正负混合或 mode="both"）时
+            退回 "content"，画在全部内容最低点之下。
 
     规则:
-        - 比例 = max_abs_fill × y_extent / max|v|，正负同比例。
+        - 参考高度取本次选中腿中最小的设计高度；比例 =
+          max_abs_fill × 参考高度 / max|v|，正负同比例。
         - 0 视为 +0: "single" 下画一条朝上裸腿；"both" 下上下均画裸腿（上为数据侧）。
         - 下方空间: "single" 仅在存在负值时保留；"both" 始终保留。
     """
 ```
 
-参数校验：`max_fill` / `max_abs_fill` 须为正的有限数，`0 <= min_fill < max_fill`，
-`y_extent` 须为正数，`cycle` 与 `mirror_bar` 的 `mode` 只接受文档列出的取值；
-数据中的 NaN / Infinity 会在归一阶段报 `ValueError`。
+参数校验：`max_fill` / `max_abs_fill` 须在 (0, 1]，
+`0 <= min_fill < max_fill`，`height_px` / `width_px` 显式传入时须为正数，
+`cycle` 与 `mirror_bar` 的 `mode` 只接受文档列出的取值；数据中的
+NaN / Infinity 会在归一阶段报 `ValueError`。
 
 ## 默认值集中定义
 
-所有 `DEFAULT_*` 常量集中放在 `src/stockchart/defaults.py`：`DEFAULT_Y_EXTENT`（760）、
+所有 `DEFAULT_*` 常量集中放在 `src/stockchart/defaults.py`：`DEFAULT_MAX_FILL`（0.85）、
 `DEFAULT_BAR_GAP`（28）、`DEFAULT_GROUP_GAP`（120）、`DEFAULT_OUTPUT_SCALE`、背景色、墨色、
 文字色、`DEFAULT_AXIS_STYLE`（clean）、抖动幅度、字号（刻度 26 / x 标签 30 / 标题 52 /
 轴名 30 / 图例 28 / 数值标签 26）、`DEFAULT_TITLE_ALIGN`（center）、轴名间距与行高、
 x 标签避让角度、图例折行行数与行高、图例色块尺寸与间距、网格线颜色等。
-绘制代码里不自带魔法数字，调参改一处。
+绘制代码里不自带魔法数字，调参改一处。L2 的 `BarPlot.extent_up` 默认值仍是
+`DEFAULT_Y_EXTENT`（760）。

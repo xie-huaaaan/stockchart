@@ -23,13 +23,13 @@ from stockchart.defaults import (
     DEFAULT_BACKGROUND,
     DEFAULT_BAR_GAP,
     DEFAULT_GROUP_GAP,
+    DEFAULT_HEIGHT_HEADROOM_RATIO,
     DEFAULT_MAX_FILL,
     DEFAULT_MIN_FILL,
     DEFAULT_STOCKING_STYLE,
     DEFAULT_TITLE_ALIGN,
     DEFAULT_TITLE_SIZE,
     DEFAULT_X_LABEL_SIZE,
-    DEFAULT_Y_EXTENT,
 )
 from stockchart.legs import Leg
 from stockchart.plot import (
@@ -71,6 +71,8 @@ class ChartOptions(TypedDict, total=False):
         axis_name_size_px: 轴名称字号（设计像素）。
         legend_loc: 图例在顶部或底部。
         legend_ncol: 图例列数；None 表示自动换行。
+        height_px: 基线上方柱区高度；None 表示按最高腿设计高度再加 10% 留白。
+        width_px: 绘图区宽度；None 表示按腿、间距与标签宽度自动计算。
     """
 
     axis_style: AxisStyle
@@ -86,6 +88,8 @@ class ChartOptions(TypedDict, total=False):
     axis_name_size_px: float
     legend_loc: LegendLoc
     legend_ncol: int | None
+    height_px: int | None
+    width_px: int | None
 
 
 _OPTION_KEYS: frozenset[str] = frozenset(
@@ -103,6 +107,8 @@ _OPTION_KEYS: frozenset[str] = frozenset(
         "axis_name_size_px",
         "legend_loc",
         "legend_ncol",
+        "height_px",
+        "width_px",
     }
 )
 
@@ -231,9 +237,6 @@ def _assemble(
     xlabel: str | None,
     bar_gap: float,
     slot_gap: float,
-    width_px: int | None,
-    extent_up: int,
-    extent_down: int,
     x_label_pos: XLabelPos,
     seed: int | None,
     options: ChartOptions,
@@ -247,27 +250,34 @@ def _assemble(
         xlabel: x 轴名称；None 表示不加。
         bar_gap: 同槽相邻列之间的空隙。
         slot_gap: 相邻槽之间的空隙。
-        width_px: 显式绘图区宽度；None 时按槽宽与边距自适应。
-        extent_up: 基线以上为腿预留的高度；不含标题、标签等边缘。
-        extent_down: 基线以下为向下腿预留的高度。
         x_label_pos: x 标签位置策略。
         seed: BarPlot 与选腿的随机源。
-        options: 其余 L2 透传选项。
+        options: 其余 L2 透传选项，含 height_px / width_px。
 
     Returns:
         `(BarPlot, 与 specs 同构的柱记录)`。
     """
     slots_px = _plan_slots(specs, labels=labels, bar_gap=bar_gap)
+    width_px = options.get("width_px")
+    if width_px is not None and width_px <= 0:
+        raise ValueError(f"width_px 须为正数，得到 {width_px!r}")
     # 显式 width_px 不做内容宽度校验：过小时腿会超出画布被裁，已知边界，暂不处理。
     width = (
         width_px
         if width_px is not None
         else round(2 * _EDGE_PAD + sum(slots_px) + (len(specs) - 1) * slot_gap)
     )
+    height_px = options.get("height_px")
+    if height_px is None:
+        # 腿始终按整腿高度绘制；在最高腿之上再留 10%，避免轴顶与腿口齐平。
+        tallest_leg = max(spec.leg.height for slot in specs for column in slot for spec in column)
+        height_px = tallest_leg + round(tallest_leg * DEFAULT_HEIGHT_HEADROOM_RATIO)
+    elif height_px <= 0:
+        raise ValueError(f"height_px 须为正数，得到 {height_px!r}")
     plot = BarPlot(
         width,
-        extent_up=extent_up,
-        extent_down=extent_down,
+        extent_up=height_px,
+        extent_down=0,
         background=options.get("background", DEFAULT_BACKGROUND),
         axis_style=options.get("axis_style", DEFAULT_AXIS_STYLE),
         seed=seed,
@@ -387,8 +397,6 @@ def bar(
     value_labels: bool = False,
     max_fill: float = DEFAULT_MAX_FILL,
     min_fill: float = DEFAULT_MIN_FILL,
-    y_extent: int = DEFAULT_Y_EXTENT,
-    width_px: int | None = None,
     seed: int | None = None,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
@@ -421,14 +429,13 @@ def bar(
             "global" 整张图连续取对，配对可以跨组；"none" 每条腿来自不同
             素材对。
         value_labels: True 时在袜口上方手写数值。
-        max_fill: 最大值映射到 y_extent 的比例，须在 (0, 1]（默认 0.8）。
+        max_fill: 最大值映射到素材设计高度的比例，须在 (0, 1]（默认 0.85）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
-        y_extent: 柱区在基线上方预留的设计像素高度，不含标题、标签、图例等
-            边缘区域。
-        width_px: 绘图区宽度；缺省按腿数、间距与标签宽度自适应。最终画布会
-            因轴、标签与标题更宽。
-        options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap
-            等），见 docs/api.zh-CN/charts.md 的 ChartOptions 表。
+        options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap、
+            height_px、width_px 等），见 docs/api.zh-CN/charts.md 的
+            ChartOptions 表。height_px 为基线上方柱区高度，缺省按最高腿设计高度
+            再加 10% 留白；显式值小于整腿高度时仍会扩到整腿高。width_px
+            为绘图区宽度，缺省自适应。
 
     Returns:
         已布局并添加图例/轴/标题的 BarPlot；可直接 `.save()` / `.render()`，
@@ -437,19 +444,20 @@ def bar(
     Raises:
         TypeError: 数据类型不受支持，或 options 含未知键。
         ValueError: 标签长度不符、series_labels 用于一维数据、cycle 不合法、
-            max_fill/min_fill/y_extent 不合法、样式列表为空/未知预设，或
-            数据内容不合法。
+            max_fill/min_fill/height_px/width_px 不合法、样式列表为空/未知预设，
+            或数据内容不合法。
 
     数据 → 丝袜高度（基线对应的数据值默认 0）:
+        - 参考高度取本次选中腿中最小的设计高度，保证所有腿都不截顶；
+          内置素材均为 720。
         - 全部数据为 0: 全部裸腿。
-        - 无负值: height = v / max × max_fill × y_extent，0 值即裸腿。
+        - 无负值: height = v / max × max_fill × 参考高度，0 值即裸腿。
         - 含负值: 整个值域 [min, max] 线性压缩到 [min_fill, max_fill]。
           此时 0 值的腿带一段丝袜、y 轴 0 刻度悬在丝袜中间某处——这是为完整
           保留大小关系所做的既定取舍。全负数据同规则：值越大丝袜越高；
           全负且所有值相同（没有大小关系）时统一取 min_fill。
     """
     _check_options(options)
-    _check_positive("y_extent", float(y_extent))
     _check_fill_bounds(max_fill, min_fill)
     normalized = normalize_data(data)
     rows = [list(row) for row in normalized.values]
@@ -470,34 +478,38 @@ def bar(
     rng = random.Random(seed)
     legs = _select_legs(rows, paired=paired, seed=rng.getrandbits(32))
     styles = _normalize_style_seq(style)
+    # 所有柱共用最矮腿的设计高度作为 100%，排序在截顶保护下仍可直接比较；
+    # 内置素材高度均为 720，因此等价于以 720 为参考。
+    design_height = float(min(leg.height for row in legs for leg in row))
 
     flat = [v for row in rows for v in row]
     vmin, vmax = min(flat), max(flat)
     if vmax == 0 and vmin == 0:
         heights = [[0.0] * len(row) for row in rows]
-        scale = Scale((0.0, 1.0), (0.0, float(y_extent)))
+        scale = Scale((0.0, 1.0), (0.0, design_height))
         ticks: list[float] | None = [0.0]
     elif vmin >= 0:
-        heights = [[v / vmax * max_fill * y_extent for v in row] for row in rows]
-        scale = Scale((0.0, vmax), (0.0, max_fill * y_extent))
+        heights = [[v / vmax * max_fill * design_height for v in row] for row in rows]
+        scale = Scale((0.0, vmax), (0.0, max_fill * design_height))
         ticks = None
     else:
         span = vmax - vmin
         if span == 0:
             # 全部为同一负值：没有可压缩的大小关系，统一取下界；刻度按
             # [vmin, 0] 展开，避免除零并让 0 刻度落在正常位置。
-            heights = [[min_fill * y_extent] * len(row) for row in rows]
-            scale = Scale((vmin, 0.0), (min_fill * y_extent, max_fill * y_extent))
+            heights = [[min_fill * design_height] * len(row) for row in rows]
+            scale = Scale((vmin, 0.0), (min_fill * design_height, max_fill * design_height))
             ticks = None
         else:
             heights = [
                 [
-                    (v - vmin) / span * (max_fill - min_fill) * y_extent + min_fill * y_extent
+                    (v - vmin) / span * (max_fill - min_fill) * design_height
+                    + min_fill * design_height
                     for v in row
                 ]
                 for row in rows
             ]
-            scale = Scale((vmin, vmax), (min_fill * y_extent, max_fill * y_extent))
+            scale = Scale((vmin, vmax), (min_fill * design_height, max_fill * design_height))
             ticks = None
 
     specs: list[list[list[_LegSpec]]] = []
@@ -517,9 +529,6 @@ def bar(
         xlabel=xlabel,
         bar_gap=bar_gap,
         slot_gap=slot_gap,
-        width_px=width_px,
-        extent_up=y_extent,
-        extent_down=0,
         x_label_pos=options.get("x_label_pos", "content"),
         seed=seed,
         options=options,
@@ -556,8 +565,6 @@ def mirror_bar(
     paired: Pairing = "auto",
     value_labels: bool = False,
     max_abs_fill: float = DEFAULT_MAX_FILL,
-    y_extent: int = DEFAULT_Y_EXTENT,
-    width_px: int | None = None,
     seed: int | None = None,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
@@ -578,14 +585,14 @@ def mirror_bar(
         cycle: 语义同 bar()。
         paired: 语义同 bar()；镜像图同样默认 "auto"。
         value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
-        max_abs_fill: 最大绝对值映射到 y_extent 的比例，须在 (0, 1]（默认 0.8）。
-        y_extent: 柱区在基线上方预留的设计像素高度，不含标题、标签、图例等
-            边缘区域。
-        width_px: 绘图区宽度；缺省自适应。最终画布会因轴、标签与标题更宽。
-        options: 语义同 bar()。x_label_pos 默认 "auto"：镜像图常有一侧全空，
-            会把标签贴到没有腿的一侧的基线旁（如全负数据标签在基线上方）；
-            两侧都有腿（正负混合或 mode="both"）时退回 "content"，画在全部
-            内容最低点之下。
+        max_abs_fill: 最大绝对值映射到素材设计高度的比例，须在 (0, 1]
+            （默认 0.85）。
+        options: 语义同 bar()。height_px 控制基线上方柱区高度，缺省按最高腿设计高度
+            再加 10% 留白；width_px 控制绘图区宽度，缺省自适应。显式 height_px
+            小于整腿高度时仍会扩到整腿高。x_label_pos 默认 "auto"：
+            镜像图常有一侧全空，会把标签贴到没有腿的一侧的基线旁（如全负
+            数据标签在基线上方）；两侧都有腿（正负混合或 mode="both"）时
+            退回 "content"，画在全部内容最低点之下。
 
     Returns:
         已布局并添加图例/轴/标题的 BarPlot；可直接 `.save()` / `.render()`，
@@ -594,18 +601,18 @@ def mirror_bar(
     Raises:
         TypeError: 数据类型不受支持，或 options 含未知键。
         ValueError: 标签长度不符、series_labels 用于一维数据、mode/cycle
-            不合法、max_abs_fill/y_extent 不合法、样式列表为空/未知预设，
-            或数据内容不合法。
+            不合法、max_abs_fill/height_px/width_px 不合法、样式列表为空/
+            未知预设，或数据内容不合法。
 
     规则:
-        - 比例 = max_abs_fill × y_extent / max|v|，正负同比例。
+        - 参考高度取本次选中腿中最小的设计高度；比例 =
+          max_abs_fill × 参考高度 / max|v|，正负同比例。
         - 0 视为 +0: "single" 下画一条朝上裸腿；"both" 下上下均画裸腿（上为数据侧）。
         - 下方空间: "single" 仅在存在负值时保留；"both" 始终保留。
     """
     _check_options(options)
     if mode not in ("single", "both"):
         raise ValueError(f"mode 须为 'single' 或 'both'，得到 {mode!r}")
-    _check_positive("y_extent", float(y_extent))
     _check_positive("max_abs_fill", max_abs_fill)
     if max_abs_fill > 1.0:
         raise ValueError(f"max_abs_fill 须在 (0, 1]，得到 {max_abs_fill!r}")
@@ -628,6 +635,8 @@ def mirror_bar(
     rng = random.Random(seed)
     legs = _select_legs(rows, paired=paired, seed=rng.getrandbits(32))
     styles = _normalize_style_seq(style)
+    # 与 bar() 相同：取最矮腿的设计高度作统一参考，避免矮腿截顶。
+    design_height = float(min(leg.height for row in legs for leg in row))
 
     flat = [v for row in rows for v in row]
     vmax_abs = max(abs(v) for v in flat)
@@ -635,10 +644,10 @@ def mirror_bar(
     if vmax_abs == 0:
         # 全 0：比例无定义，按裸腿处理，刻度只留 0
         ratio = 0.0
-        scale = Scale((0.0, 1.0), (0.0, float(y_extent)))
+        scale = Scale((0.0, 1.0), (0.0, design_height))
         ticks: list[float] | None = [0.0]
     else:
-        ratio = max_abs_fill * y_extent / vmax_abs
+        ratio = max_abs_fill * design_height / vmax_abs
         lo = min(0.0, vmin)
         hi = max(0.0, vmax)
         scale = Scale((lo, hi), (lo * ratio, hi * ratio))
@@ -663,7 +672,8 @@ def mirror_bar(
 
     bar_gap = options.get("bar_gap", DEFAULT_BAR_GAP)
     slot_gap = options.get("group_gap", DEFAULT_BAR_GAP if is_1d else DEFAULT_GROUP_GAP)
-    # 全负数据没有上方腿，但仍预留完整 y_extent，会留出空白顶部；已知取舍，暂不处理。
+    # 全负数据没有上方腿，但 height_px 自动仍取整腿高度并加顶部留白，
+    # 会留出更大空白顶部；已知取舍，暂不处理。
     plot, records = _assemble(
         specs,
         labels=labels,
@@ -671,9 +681,6 @@ def mirror_bar(
         xlabel=xlabel,
         bar_gap=bar_gap,
         slot_gap=slot_gap,
-        width_px=width_px,
-        extent_up=y_extent,
-        extent_down=0,
         x_label_pos=options.get("x_label_pos", "auto"),
         seed=seed,
         options=options,

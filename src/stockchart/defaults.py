@@ -98,11 +98,14 @@ DEFAULT_AXIS_NAME_LINE_FACTOR = 1.25
 DEFAULT_BAR_GAP = 28
 """组内相邻腿边缘之间的空隙。"""
 
-DEFAULT_MAX_FILL = 0.8
-"""最大值映射到 y_extent 的比例（L4 bar）。"""
+DEFAULT_MAX_FILL = 0.85
+"""最大值映射到素材设计高度的比例（L4 bar / mirror_bar）。"""
 
 DEFAULT_MIN_FILL = 0.1
 """含负值时值域压缩的下界比例（L4 bar）。"""
+
+DEFAULT_HEIGHT_HEADROOM_RATIO = 0.1
+"""L4 自动 height_px 在最高腿设计高度之上额外预留的顶部留白比例。"""
 
 DEFAULT_GROUP_GAP = 120
 """相邻组边缘之间的空隙。"""

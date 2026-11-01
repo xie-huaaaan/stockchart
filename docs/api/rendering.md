@@ -7,7 +7,7 @@
 A stocking = fabric kind (`Fabric`) + top edge (`TopEdge`) + shading (`Shading`). All three are
 `dataclass(slots=True, frozen=True, kw_only=True)`; invalid parameters raise `ValueError` at construction.
 Length units are design pixels and refer to dimensions at the front of the leg (the sides are compressed
-automatically by cylindrical perspective). Colors are `Color`; when an alpha component is present,
+by cylindrical `perspective`, default 0.8). Colors are `Color`; when an alpha component is present,
 it is multiplied into the corresponding opacity.
 
 ```python
@@ -28,11 +28,11 @@ type TopEdge = Bare | Welt | Lace | Fade
 | --- | --- | --- |
 | `Plain` | Solid-color stocking: ultra-sheer to fully opaque | `color`; `opacity`(0.6) coverage over the front of the leg; `rim`(1.0) how much the sides thicken and turn opaque, 0 disables; `stretch`(0.5) how much the stocking stretches thinner and more sheer on thicker legs, 0 disables |
 | `Striped` | Horizontal stripes | `stripes: tuple[Stripe, ...]` bands within one cycle, top to bottom, `Stripe(color, width, opacity=1.0)`; `offset`(0) phase. Stripes are laid out downward from the welt |
-| `Ribbed` | Vertical ribbed knit | `color`; `opacity`(1.0); `rib_width`(6) rib spacing; `depth`(0.35) light-dark contrast |
-| `Fishnet` | Fishnet stocking | `color`; `cell`(14) mesh cell size; `line_width`(1.6); `angle`(45) 45 for diamonds, 0 for a square grid; `underlay: Plain \| None`(None) a stocking layer underneath |
-| `Dotted` | Printed pattern | `base: Plain` base stocking (required); `color`; `shape`("dot") `"dot"/"heart"/"star"`; `size`(3) motif radius; `spacing`(18); `layout`("grid") `"grid"` staggered grid / `"scatter"` random scatter by seed; `opacity`(1.0) |
+| `Ribbed` | Vertical ribbed knit | `color`; `opacity`(1.0); `rib_width`(6) rib spacing; `depth`(0.35) light-dark contrast; `perspective`(0.8) perspective compression |
+| `Fishnet` | Fishnet stocking | `color`; `cell`(14) mesh cell size; `line_width`(1.6); `angle`(45) 45 for diamonds, 0 for a square grid; `underlay: Plain \| None`(None) a stocking layer underneath; `perspective`(0.8) perspective compression |
+| `Dotted` | Printed pattern | `base: Plain` base stocking (required); `color`; `shape`("dot") `"dot"/"heart"/"star"`; `size`(3) motif radius; `spacing`(18); `layout`("grid") `"grid"` staggered grid / `"scatter"` random scatter by seed; `opacity`(1.0); `perspective`(0.8) perspective compression |
 
-The horizontal density of ribs, mesh, and printed patterns is handled as "a fixed number of stitches around the leg": sparser on thick thighs, denser at the ankle.
+The horizontal density of ribs, mesh, and printed patterns uses cylindrical perspective: `perspective=0` is uniform, `1` is full arc-length compression; the default is 0.8.
 
 **Top edges**
 
@@ -40,7 +40,7 @@ The horizontal density of ribs, mesh, and printed patterns is handled as "a fixe
 | --- | --- | --- |
 | `Bare` | Plain cut edge, just a thin outline | none |
 | `Welt` | Elastic welt: a thickened band around the top | `height`(20); `color`(None: darkens one step from the fabric's main color); `opacity`(None: two fabric layers are treated as opaque); `pinch`(0.4) the faint shadow the welt presses into the skin above it, 0 disables |
-| `Lace` | Lace trim | `height`(28); `scallop`(28) wave period; `color`(None: taken from the fabric's main color); `opacity`(0.85, openwork fabric lets the skin show through); `holes`(True) hole-dot pattern |
+| `Lace` | Lace trim | `height`(28); `scallop`(28, minimum 20) wave period; `color`(None: taken from the fabric's main color); `opacity`(0.85, openwork fabric lets the skin show through); `holes`(True) hole-dot pattern |
 | `Fade` | Pantyhose-style fade with no distinct edge | `length`(60) length of the gradient region |
 
 **Definition of data height**: the distance from the top of the stocking's top edge to the tip of the foot, measured at the leg's centerline; for `Lace` it is the average position of the waves; for `Fade` the fade completes within `length` pixels below the top of the stocking (transparent at the top, no boundary line).

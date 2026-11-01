@@ -37,6 +37,10 @@ class Leg:
         pair_id: 所属配对编号（如 "pair_02"）；外部素材为 None。
         side: "left" / "right"；外部素材为 None。
         svg: 内置透明 SVG 源；外部素材为 None。渲染时按目标倍率栅格化。
+
+    Raises:
+        ValueError: 宽高非正、pixels_per_unit 非正、foot_center_x 越界，
+            或 image 不是与设计尺寸/密度匹配的 uint8 RGBA。
     """
 
     image: NDArray[np.uint8]
@@ -53,6 +57,22 @@ class Leg:
         repr=False,
         compare=False,
     )
+
+    def __post_init__(self) -> None:
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError(f"Leg 的宽高须为正数，得到 {self.width}×{self.height}")
+        if not math.isfinite(self.pixels_per_unit) or self.pixels_per_unit <= 0:
+            raise ValueError(f"Leg.pixels_per_unit 须为正数，得到 {self.pixels_per_unit!r}")
+        if not 0 <= self.foot_center_x < self.width:
+            raise ValueError(f"Leg.foot_center_x 须在 [0, {self.width})，得到 {self.foot_center_x}")
+        image = self.image
+        expected_h = max(1, round(self.height * self.pixels_per_unit))
+        expected_w = max(1, round(self.width * self.pixels_per_unit))
+        if image.ndim != 3 or image.shape[2] != 4 or image.dtype != np.uint8:
+            raise ValueError(f"Leg.image 须为 uint8 RGBA，得到 {image.shape} / {image.dtype}")
+        if image.shape[:2] != (expected_h, expected_w):
+            got_h, got_w = image.shape[:2]
+            raise ValueError(f"Leg.image 尺寸须为 {expected_h}×{expected_w}，得到 {got_h}×{got_w}")
 
     def raster_at(self, pixels_per_unit: float) -> NDArray[np.uint8]:
         """按目标密度把矢量源直接渲染成位图，并缓存在当前 Leg 上。

@@ -13,9 +13,11 @@ import stockchart
 import stockchart.stocking.render as render_module
 from stockchart import (
     STYLES,
+    Dotted,
     Fishnet,
     LegLibrary,
     Plain,
+    Ribbed,
     StockingStyle,
     Striped,
     load_leg,
@@ -258,7 +260,16 @@ class TestStockingStyleValidation:
 
     def test_lace_bad_scallop(self) -> None:
         with pytest.raises(ValueError):
-            Lace(scallop=0)
+            Lace(scallop=19)
+        assert Lace(scallop=20).scallop == 20
+
+    def test_perspective_range(self) -> None:
+        with pytest.raises(ValueError):
+            Ribbed(color=(0, 0, 0), perspective=-0.1)
+        with pytest.raises(ValueError):
+            Fishnet(color=(0, 0, 0), perspective=1.1)
+        with pytest.raises(ValueError):
+            Dotted(base=Plain(color=(0, 0, 0)), color=(0, 0, 0), perspective=1.1)
 
     def test_fade_bad_length(self) -> None:
         with pytest.raises(ValueError):
@@ -433,6 +444,23 @@ class TestStyles:
 # ---------------------------------------------------------------------------
 
 
+class TestLegValidation:
+    def test_mismatched_image_size_rejected(self) -> None:
+        img = np.zeros((10, 10, 4), dtype=np.uint8)
+        with pytest.raises(ValueError):
+            stockchart.Leg(image=img, width=20, height=20, foot_center_x=5)
+
+    def test_bad_foot_center_rejected(self) -> None:
+        img = np.zeros((10, 10, 4), dtype=np.uint8)
+        with pytest.raises(ValueError):
+            stockchart.Leg(image=img, width=10, height=10, foot_center_x=10)
+
+    def test_bad_density_rejected(self) -> None:
+        img = np.zeros((10, 10, 4), dtype=np.uint8)
+        with pytest.raises(ValueError):
+            stockchart.Leg(image=img, width=10, height=10, foot_center_x=5, pixels_per_unit=0)
+
+
 class TestRenderStocking:
     @pytest.fixture
     def leg(self) -> "stockchart.Leg":
@@ -459,6 +487,15 @@ class TestRenderStocking:
         assert result.width == leg.width
         assert result.height == leg.height
         assert result.foot_center_x == leg.foot_center_x
+
+    def test_perspective_changes_pattern(self, leg: "stockchart.Leg") -> None:
+        uniform = StockingStyle(fabric=Ribbed(color=(20, 20, 20), rib_width=18, perspective=0.0))
+        cylindrical = StockingStyle(
+            fabric=Ribbed(color=(20, 20, 20), rib_width=18, perspective=1.0)
+        )
+        a = render_stocking(leg, uniform, leg.height, seed=0).image
+        b = render_stocking(leg, cylindrical, leg.height, seed=0).image
+        assert not np.array_equal(a, b)
 
     def test_seed_reproducibility(self, leg: "stockchart.Leg") -> None:
         r1 = render_stocking(leg, STYLES["black_sheer"], 150, seed=99)

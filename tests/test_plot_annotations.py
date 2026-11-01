@@ -9,13 +9,15 @@ from tests.test_plot_core import BG, make_leg
 
 from stockchart import BarPlot, Scale, measure_text
 from stockchart.defaults import (
+    DEFAULT_AXIS_NAME_LINE_FACTOR,
     DEFAULT_LABEL_LINE_FACTOR,
     DEFAULT_LEGEND_MAX_LINES,
+    DEFAULT_LEGEND_ROW_GAP,
     DEFAULT_LEGEND_SWATCH,
     DEFAULT_PLOT_LEFT_PAD,
     DEFAULT_X_LABEL_SIZE,
 )
-from stockchart.plot import _format_tick
+from stockchart.plot import _format_tick, _layout_axis_name
 
 INK = np.array((72, 72, 72), dtype=int)
 
@@ -305,6 +307,25 @@ class TestTitleAndLegend:
         arr = p.render(scale=1).to_numpy()
         assert inked(arr).any()
 
+    def test_legend_ncol_last_row_is_centered(self) -> None:
+        p = BarPlot(600)
+        p.add_legend(
+            [("甲", "black_sheer"), ("乙", "black_sheer"), ("丙", "black_sheer")],
+            ncol=2,
+        )
+        assert p._legend is not None
+        idx_rows, row_heights, _, _ = p._legend_layout(p._legend)
+        assert [len(row) for row in idx_rows] == [2, 1]
+        layout = p._layout()
+        arr = p.render(scale=1).to_numpy()
+        last_y0 = round(layout.legend_top_y + row_heights[0] + DEFAULT_LEGEND_ROW_GAP)
+        last_y1 = round(last_y0 + row_heights[1])
+        xs = np.where(inked(arr)[last_y0:last_y1, :].any(axis=0))[0]
+        assert xs.size > 0
+        center = (xs[0] + xs[-1]) / 2
+        plot_center = layout.plot_left + p.width_px / 2
+        assert center == pytest.approx(plot_center, abs=6)
+
     def test_legend_bottom_loc(self) -> None:
         p = BarPlot(600)
         p.add_bar(300, 0, make_leg())
@@ -383,6 +404,28 @@ class TestAxisNames:
         assert p._y_axis_name is not None
         assert p._y_axis_name.rotate
         p.render(scale=1)
+
+    def test_long_cjk_y_axis_name_wraps_into_columns(self) -> None:
+        p = BarPlot(600, extent_up=120).add_y_axis_name("非常长的纵轴名称示例")
+        assert p._y_axis_name is not None
+        layout = p._layout()
+        columns, block_w = _layout_axis_name(p._y_axis_name, layout.y_name_span)
+        assert len(columns) > 1
+        assert block_w > p._y_axis_name.size_px
+        cell = p._y_axis_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
+        assert all(len(column) * cell <= layout.y_name_span + 1e-6 for column in columns)
+
+    def test_long_latin_y_axis_name_wraps_into_lines(self) -> None:
+        p = BarPlot(600, extent_up=120).add_y_axis_name("A very long vertical axis name")
+        assert p._y_axis_name is not None
+        layout = p._layout()
+        lines, block_w = _layout_axis_name(p._y_axis_name, layout.y_name_span)
+        assert len(lines) > 1
+        assert block_w > p._y_axis_name.size_px
+        assert all(
+            measure_text(line, size_px=p._y_axis_name.size_px) <= layout.y_name_span + 1.0
+            for line in lines
+        )
 
     def test_y_axis_no_longer_takes_label(self) -> None:
         p = BarPlot(600)

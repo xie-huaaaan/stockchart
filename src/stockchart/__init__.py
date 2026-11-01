@@ -4,7 +4,7 @@
 常用入口是 `bar()` / `mirror_bar()` 与 `render_stocking()`。
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from stockchart.canvas import Canvas
 from stockchart.color import Color

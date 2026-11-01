@@ -30,10 +30,10 @@ class TestBarMapping:
         assert all(b.height_px == 0 for b in p._bars)
 
     def test_mixed_compressed_into_band(self) -> None:
-        extent = 760
+        extent = 720
         p = bar([-10.0, 0.0, 5.0, 30.0], seed=1)
         hs = [b.height_px for b in p._bars]
-        assert all(0.1 * extent - 1 <= h <= 0.8 * extent + 1 for h in hs)
+        assert all(0.1 * extent - 1 <= h <= 0.85 * extent + 1 for h in hs)
         # 单调：值越大丝袜越高
         assert hs == sorted(hs)
         # 0 值带一段丝袜（不为 0）
@@ -47,17 +47,32 @@ class TestBarMapping:
     def test_all_negative_equal_uses_min_fill(self) -> None:
         p = bar([-5.0, -5.0], seed=1)
         hs = [b.height_px for b in p._bars]
-        assert hs == pytest.approx([0.1 * 760, 0.1 * 760])
+        assert hs == pytest.approx([0.1 * 720, 0.1 * 720])
 
     def test_invalid_fill_and_extent(self) -> None:
         with pytest.raises(ValueError):
             bar([1.0], max_fill=0)
         with pytest.raises(ValueError):
+            bar([1.0], max_fill=1.01)
+        with pytest.raises(ValueError):
             bar([-1.0, 1.0], min_fill=-0.1)
         with pytest.raises(ValueError):
             bar([-1.0, 1.0], min_fill=0.9, max_fill=0.8)
         with pytest.raises(ValueError):
-            bar([1.0], y_extent=0)
+            bar([1.0], height_px=0)
+        with pytest.raises(ValueError):
+            bar([1.0], width_px=0)
+
+    def test_max_fill_upper_bound_is_inclusive(self) -> None:
+        p = bar([1.0], max_fill=1.0, seed=1)
+        assert p._bars[0].height_px == pytest.approx(720)
+
+    def test_height_px_auto_and_override(self) -> None:
+        p = bar([1.0], seed=1)
+        assert p._bars[0].height_px == pytest.approx(0.85 * 720)
+        assert p._layout().y_up_len == pytest.approx(792)
+        q = bar([1.0], height_px=900, seed=1)
+        assert q._layout().y_up_len == pytest.approx(900)
 
     def test_invalid_cycle(self) -> None:
         with pytest.raises(ValueError):
@@ -69,7 +84,9 @@ class TestBarMapping:
         with pytest.raises(ValueError):
             mirror_bar([1.0], max_abs_fill=0)
         with pytest.raises(ValueError):
-            mirror_bar([1.0], y_extent=0)
+            mirror_bar([1.0], max_abs_fill=1.01)
+        with pytest.raises(ValueError):
+            mirror_bar([1.0], height_px=0)
 
     def test_empty_data_raises(self) -> None:
         with pytest.raises(ValueError):

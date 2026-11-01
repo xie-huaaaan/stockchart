@@ -6,7 +6,8 @@
 
 袜子 = 袜身种类（`Fabric`）+ 上沿（`TopEdge`）+ 光影（`Shading`）。三者都是
 `dataclass(slots=True, frozen=True, kw_only=True)`，非法参数在构造时抛 `ValueError`。
-长度单位均为设计像素，指腿正面处的尺寸（两侧按圆柱透视自动压缩）。
+长度单位均为设计像素，指腿正面处的尺寸（两侧按 `perspective` 做圆柱透视压缩，
+默认 0.8）。
 颜色为 `Color`；带 alpha 分量时，alpha 乘到对应的 opacity 上。
 
 ```python
@@ -27,11 +28,12 @@ type TopEdge = Bare | Welt | Lace | Fade
 | --- | --- | --- |
 | `Plain` | 纯色袜：极薄透肉 ~ 完全不透 | `color`；`opacity`(0.6) 腿正面遮盖率；`rim`(1.0) 侧缘变厚变不透的程度，0 关闭；`stretch`(0.5) 腿越粗袜子被撑得越薄越透的程度，0 关闭 |
 | `Striped` | 横条纹 | `stripes: tuple[Stripe, ...]` 一个周期内从上到下的条带，`Stripe(color, width, opacity=1.0)`；`offset`(0) 相位。条纹从袜口往下排 |
-| `Ribbed` | 竖罗纹针织 | `color`；`opacity`(1.0)；`rib_width`(6) 罗纹间距；`depth`(0.35) 明暗对比 |
-| `Fishnet` | 网袜 | `color`；`cell`(14) 网眼大小；`line_width`(1.6)；`angle`(45) 45 菱形、0 方格；`underlay: Plain \| None`(None) 底下叠的一层袜 |
-| `Dotted` | 印花 | `base: Plain` 底袜（必填）；`color`；`shape`("dot") `"dot"/"heart"/"star"`；`size`(3) 图案半径；`spacing`(18)；`layout`("grid") `"grid"` 错位网格 / `"scatter"` 按 seed 随机散布；`opacity`(1.0) |
+| `Ribbed` | 竖罗纹针织 | `color`；`opacity`(1.0)；`rib_width`(6) 罗纹间距；`depth`(0.35) 明暗对比；`perspective`(0.8) 透视压缩 |
+| `Fishnet` | 网袜 | `color`；`cell`(14) 网眼大小；`line_width`(1.6)；`angle`(45) 45 菱形、0 方格；`underlay: Plain \| None`(None) 底下叠的一层袜；`perspective`(0.8) 透视压缩 |
+| `Dotted` | 印花 | `base: Plain` 底袜（必填）；`color`；`shape`("dot") `"dot"/"heart"/"star"`；`size`(3) 图案半径；`spacing`(18)；`layout`("grid") `"grid"` 错位网格 / `"scatter"` 按 seed 随机散布；`opacity`(1.0)；`perspective`(0.8) 透视压缩 |
 
-罗纹、网眼、印花的横向疏密按“绕腿一圈的针数固定”处理：腿粗处稀、脚踝处密。
+罗纹、网眼、印花的横向疏密使用圆柱透视：`perspective=0` 为均匀间距，`1` 为完全
+按圆柱弧长压缩，默认 0.8。
 
 **上沿**
 
@@ -39,7 +41,7 @@ type TopEdge = Bare | Welt | Lace | Fade
 | --- | --- | --- |
 | `Bare` | 平口，只有一条细边线 | 无 |
 | `Welt` | 松紧袜口：一圈加厚条带 | `height`(20)；`color`(None：取袜身主色加深一档)；`opacity`(None：双层织物视为不透明)；`pinch`(0.4) 袜口上方皮肤被勒出的浅阴影，0 关闭 |
-| `Lace` | 蕾丝边 | `height`(28)；`scallop`(28) 波浪周期；`color`(None：取袜身主色)；`opacity`(0.85，镂空织物透出皮肤)；`holes`(True) 孔点图案 |
+| `Lace` | 蕾丝边 | `height`(28)；`scallop`(28，最小 20) 波浪周期；`color`(None：取袜身主色)；`opacity`(0.85，镂空织物透出皮肤)；`holes`(True) 孔点图案 |
 | `Fade` | 连裤袜式渐隐，无明显边 | `length`(60) 渐变区长度 |
 
 **数据高度的定义**：腿中线处袜口顶端到脚端的距离；`Lace` 按波浪平均位置；

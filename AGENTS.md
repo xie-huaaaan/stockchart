@@ -41,7 +41,8 @@ L4 的下层参数通过 `ChartOptions` 透传。新会话先看 `git log --onel
   不传 seed 则每次随机。
 - `BarPlot.extent_up` / `extent_down` 只表示基线上下给柱子（腿）预留的高度，
   不含标题、轴名称、刻度数字、x 标签、图例等边缘区域；这些空间由布局另行计算。
-  L4 的 `y_extent` 同样只描述柱区高度。
+  L4 的 `height_px`（`ChartOptions`）同样只描述柱区高度，`width_px` 只描述绘图区
+  宽度；`max_fill` / `max_abs_fill` 则相对素材设计高度，不与柱区尺寸混用。
 - pandas 只按 `index` / `columns` / `to_numpy()` 结构识别，不 import、不进依赖。
 - 公开 API 的 docstring 与 `docs/api.zh-CN/`（及英文版 `docs/api/`）同步；改签名先改文档。
 - 新增 L4 透传参数时同步 `ChartOptions`、`_OPTION_KEYS` 与 `docs/api.zh-CN/charts.md`
