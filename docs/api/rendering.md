@@ -149,6 +149,19 @@ def render_stocking(
 ## Text and hand-drawn lines
 
 ```python
+type FontSpec = str | Path | Sequence[str | Path]
+"""Font: a family name, a font file path, or an ordered candidate list (family
+names and paths may be mixed); candidate order is priority. None uses the
+platform default chain (see [design notes](../design.md), "Fonts")."""
+
+type TextAnchor = tuple[
+    Literal["left", "center", "right"],
+    Literal["top", "middle", "baseline", "bottom"],
+]
+"""Where (x, y) anchors the text block: the vertical component refers to the
+whole block, and baseline means the first line's baseline."""
+
+
 def draw_text(
     canvas: Canvas,
     text: str,
@@ -160,16 +173,34 @@ def draw_text(
     font: FontSpec | None = None,
     anchor: TextAnchor = ("left", "baseline"),
     rotation: float = 0.0,
+    max_width: float | None = None,
+    max_lines: int | None = None,
+    line_height: float | None = None,
 ) -> None:
-    """Draw a piece of text. Per-character font fallback keeps Chinese renderable;
-    missing glyphs are drawn as a "tofu box" instead of raising.
+    """Draw a piece of text, with `\n` multi-line support and wrapping by width.
 
-    font is a list of family names or a font file path; by default the
-    built-in fallback chain is used (see [design notes](../design.md), "Fonts"). Details
-    of anchor and other parameters may be tweaked with the implementation;
-    semantics are unchanged. rotation is the clockwise rotation angle
-    (degrees) around (x, y); 0 means no rotation. The text is first
-    positioned by anchor, then rotated as a whole.
+    The text is split into segments by font and shaped through
+    skia.textlayout: kerning, ligatures (fi and other Latin ligatures),
+    intra-segment RTL, and composite emoji are all handled correctly. Missing
+    glyphs fall back per code point through system fonts; if nothing has the
+    glyph, a stroked placeholder box is drawn instead of raising. `\n`
+    hard-splits lines; `max_width` then greedily soft-wraps by pixel width
+    (preferring breaks after whitespace/punctuation, CJK breaking per
+    character); `max_lines` caps the line count, with a U+2026 ellipsis on
+    the last line when exceeded; `line_height` is the line-spacing factor,
+    None for the natural line height.
+
+    In the anchor nine-grid, the vertical component refers to the whole text
+    block (baseline means the first line's baseline) while the horizontal
+    component applies per line (center / right center or right-align each
+    line). rotation is the clockwise angle (degrees) around (x, y); 0 means
+    no rotation. The block is first positioned by anchor, then rotated as a
+    whole based on its exact bounding box.
+
+    Raises:
+        ValueError: color is not a valid color, size_px is not positive,
+            anchor is not an allowed value, or the font candidate list is
+            empty / contains an empty name.
     """
 
 
@@ -179,7 +210,55 @@ def measure_text(
     size_px: float,
     font: FontSpec | None = None,
 ) -> float:
-    """Measure the width (pixels) of text drawn with the same fallback rules as `draw_text`. 0 for the empty string."""
+    """Measure the width (pixels) of text laid out under the same rules as `draw_text`.
+
+    Returns the advance width after shaping, including kerning and ligatures;
+    it is not the sum of per-character widths. Multi-line text takes the
+    widest line; the empty string is 0. Font fallback is per code point (see
+    [design notes](../design.md), "Fonts").
+
+    Raises:
+        ValueError: the font candidate list is empty or contains an empty name.
+    """
+
+
+def measure_text_height(
+    text: str,
+    *,
+    size_px: float,
+    font: FontSpec | None = None,
+    line_height: float | None = None,
+) -> float:
+    """Measure the real height (pixels) of a text block, computed from the fonts
+    actually resolved; multi-line blocks include line spacing.
+
+    `line_height` is the line-spacing factor, None for the natural line
+    height; the empty string is estimated as a single empty line.
+
+    Raises:
+        ValueError: the font candidate list is empty or contains an empty name.
+    """
+
+
+def wrap_text(
+    text: str,
+    *,
+    max_width: float,
+    size_px: float,
+    font: FontSpec | None = None,
+    max_lines: int | None = None,
+) -> list[str]:
+    """Wrap text into multiple lines by pixel width and return the list of lines.
+
+    Same rules as `draw_text`'s `max_width` wrapping: greedy line breaking,
+    preferring breaks after whitespace or common punctuation, CJK breaking
+    per character; `\n` participates in splitting; when `max_lines` is
+    exceeded the last line gets a U+2026 ellipsis. The empty string returns
+    `[""]`; the result has at least one element.
+
+    Raises:
+        ValueError: the font candidate list is empty or contains an empty name.
+    """
 
 
 def sketch_line(
@@ -210,6 +289,7 @@ def sketch_axis(
     width_px: float = DEFAULT_STROKE_WIDTH,
     wobble: float = DEFAULT_WOBBLE,
     seed: int | None = None,
+    font: FontSpec | None = None,
 ) -> None:
     """Hand-drawn-style axis: wobbles the axis spine, arrowhead, tick marks, and tick numbers.
 
@@ -217,7 +297,8 @@ def sketch_axis(
     length pixels, with the arrowhead (optional) at the far end; ticks is a
     sequence of (pixel offset from the origin, label text): tick marks are
     perpendicular to the spine, and numbers are drawn to the left of the
-    spine (vertical axis) or below it (horizontal axis).
+    spine (vertical axis) or below it (horizontal axis). font sets the
+    tick-number font; None (default) uses the platform default chain.
     """
 ```
 

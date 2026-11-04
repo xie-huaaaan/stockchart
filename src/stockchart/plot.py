@@ -78,6 +78,7 @@ from stockchart.stocking import (
     render_stocking,
 )
 from stockchart.text import (
+    FontSpec,
     TextAnchor,
     draw_text,
     measure_text,
@@ -350,12 +351,14 @@ class _YAxisRecord:
         ticks: 要绘制的刻度值。
         grid: 是否画水平网格线。
         seed: 轴与网格抖动的随机源。
+        font: 刻度数字字体；None 用平台默认链。
     """
 
     scale: Scale
     ticks: list[float]
     grid: bool
     seed: int
+    font: FontSpec | None = None
 
 
 @dataclass(slots=True)
@@ -367,12 +370,14 @@ class _TitleRecord:
         align: 相对绘图区居中或靠左。
         size_px: 字号（设计像素）。
         color: 文字颜色。
+        font: 标题字体；None 用平台默认链。
     """
 
     text: str
     align: TitleAlign = DEFAULT_TITLE_ALIGN
     size_px: float = DEFAULT_TITLE_SIZE
     color: Color = DEFAULT_TEXT_COLOR
+    font: FontSpec | None = None
 
 
 @dataclass(slots=True)
@@ -384,12 +389,14 @@ class _AxisNameRecord:
         size_px: 字号（设计像素）。
         color: 文字颜色。
         rotate: True 时整体旋转 90°；False 时逐字竖排。
+        font: 轴名称字体；None 用平台默认链。
     """
 
     text: str
     size_px: float = DEFAULT_AXIS_NAME_SIZE
     color: Color = DEFAULT_TEXT_COLOR
     rotate: bool = False
+    font: FontSpec | None = None
 
 
 def _is_cjk_text(text: str) -> bool:
@@ -423,12 +430,14 @@ class _XLabelsRecord:
         xs: 标签锚点在绘图区坐标中的位置；None 表示按组中心或均分自动决定。
         pos: "content" / "auto" / "above" / "below"。
         rotation: "auto" 或固定角度（度）。
+        font: 标签字体；None 用平台默认链。
     """
 
     labels: list[str]
     xs: list[float] | None
     pos: XLabelPos = "content"
     rotation: XLabelRotation = "auto"
+    font: FontSpec | None = None
 
 
 @dataclass(slots=True)
@@ -440,12 +449,14 @@ class _LegendRecord:
         ncol: 指定列数；None 表示按宽度自动换行。
         loc: "top" 或 "bottom"。
         seed: 色块纹理的随机源。
+        font: 图例文字字体；None 用平台默认链。
     """
 
     items: list[tuple[str, StockingStyle]]
     ncol: int | None
     loc: LegendLoc
     seed: int
+    font: FontSpec | None = None
 
 
 @dataclass(slots=True)
@@ -499,11 +510,66 @@ class _Layout:
     legend_bottom_y: float | None = None
 
 
+def _axis_name_step(name: _AxisNameRecord) -> float:
+    """计算 y 轴名称相邻列/行的步进：名称内最高字符的实测行高 × 系数。
+
+    混合文字（如中英文混排）时不同字体的自然行高不同，取名称内所有
+    字符的最大值，保证相邻列/行互不重叠；布局与绘制共用同一份计算。
+
+    Args:
+        name: y 轴名称记录；text 须非空（调用点已保证）。
+
+    Returns:
+        步进（设计像素）。
+    """
+    return max(
+        measure_text_height(
+            ch, size_px=name.size_px, font=name.font, line_height=DEFAULT_AXIS_NAME_LINE_FACTOR
+        )
+        for ch in set(name.text)
+    )
+
+
+def _axis_name_metrics(
+    name: _AxisNameRecord, available_px: float
+) -> tuple[list[str], float, float, float]:
+    """把 y 轴名称拆成能放进轴长度的列/行，并给出占位度量。
+
+    中日韩文字按字符拆成竖排列（首列靠轴、后续列向左），厚度为一个字面
+    宽度；其余文字旋转 90° 后按可用长度折行，厚度为实测自然行高。
+
+    Args:
+        name: y 轴名称记录。
+        available_px: 轴干线可用的垂直长度（设计像素）。
+
+    Returns:
+        `(列/行文本, 名称块的水平占位宽度, 单列/单行厚度, 相邻列/行步进)`，
+        均为设计像素。
+    """
+    if not name.text:
+        return [], 0.0, 0.0, 0.0
+    step = _axis_name_step(name)
+    if name.rotate:
+        lines = wrap_text(
+            name.text,
+            max_width=max(1.0, available_px),
+            size_px=name.size_px,
+            font=name.font,
+        )
+        thickness = measure_text_height(name.text, size_px=name.size_px, font=name.font)
+    else:
+        per_column = max(1, int(available_px // step))
+        lines = [
+            name.text[start : start + per_column] for start in range(0, len(name.text), per_column)
+        ]
+        thickness = name.size_px
+    return lines, thickness + (len(lines) - 1) * step, thickness, step
+
+
 def _layout_axis_name(name: _AxisNameRecord, available_px: float) -> tuple[list[str], float]:
     """把 y 轴名称拆成能放进轴长度的列/行，并返回水平占位宽度。
 
-    中日韩文字按字符拆成竖排列（首列靠轴、后续列向左）；其余文字旋转 90°
-    后按可用长度折行。名称块整体在轴干线上垂直居中。
+    名称块整体在轴干线上垂直居中；完整度量见 `_axis_name_metrics`。
 
     Args:
         name: y 轴名称记录。
@@ -512,23 +578,8 @@ def _layout_axis_name(name: _AxisNameRecord, available_px: float) -> tuple[list[
     Returns:
         `(列/行文本, 名称块的水平占位宽度)`。
     """
-    if not name.text:
-        return [], 0.0
-    step = name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
-    if name.rotate:
-        lines = wrap_text(
-            name.text,
-            max_width=max(1.0, available_px),
-            size_px=name.size_px,
-        )
-        thickness = measure_text_height(name.text, size_px=name.size_px)
-    else:
-        per_column = max(1, int(available_px // step))
-        lines = [
-            name.text[start : start + per_column] for start in range(0, len(name.text), per_column)
-        ]
-        thickness = name.size_px
-    return lines, thickness + (len(lines) - 1) * step
+    lines, width, _, _ = _axis_name_metrics(name, available_px)
+    return lines, width
 
 
 def _format_tick(value: float) -> str:
@@ -685,6 +736,8 @@ class BarPlot:
         background: 画布背景色。
         axis_style: "clean" 画直线坐标轴与网格；"handdrawn" 使用 seed
             控制的手绘抖动。
+        font: 全图默认字体（家族名、字体文件路径或候选列表）；各 add_*
+            方法与数值标签不另指定 font 时使用，None 用平台默认链。
         seed: 随机源；影响默认的柱纹理、基线与手绘抖动，不传则每次随机。
 
     腿高于 extent_up / extent_down 时，柱区会自动向上/向下扩张；轴、标题、
@@ -705,6 +758,7 @@ class BarPlot:
         extent_down: int = 0,
         background: Color = DEFAULT_BACKGROUND,
         axis_style: AxisStyle = DEFAULT_AXIS_STYLE,
+        font: FontSpec | None = None,
         seed: int | None = None,
     ) -> None:
         if width_px <= 0:
@@ -718,6 +772,7 @@ class BarPlot:
         self._extent_down = extent_down
         self._background = background
         self._axis_style = axis_style
+        self._font = font
         self._rng = random.Random(seed)
         self._bars: list[_BarRecord] = []
         self._group_centers: list[float] = []
@@ -743,6 +798,17 @@ class BarPlot:
             宽度（设计像素）；不等于最终画布宽度。
         """
         return self._width_px
+
+    def _resolve_font(self, font: FontSpec | None) -> FontSpec | None:
+        """解析元素级字体的两级继承链：元素 font → 全图 font → None。
+
+        Args:
+            font: add_* 方法传入的元素级字体。
+
+        Returns:
+            元素级字体非空时原样返回，否则回落到构造时的全图默认。
+        """
+        return font if font is not None else self._font
 
     def add_bar(
         self,
@@ -797,6 +863,7 @@ class BarPlot:
         *,
         ticks: Sequence[float] | None = None,
         grid: bool = False,
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """添加 y 轴（含刻度数字）。
 
@@ -808,6 +875,7 @@ class BarPlot:
             scale: 数据值到像素的换算；刻度位置与下方延伸都来自它。
             ticks: 要绘制的刻度值；None 时由 scale.domain 自动生成。
             grid: 是否沿各刻度画横向虚线（压在腿与袜之下）。
+            font: 刻度数字字体；None 继承全图默认。
 
         Returns:
             self，便于链式调用。
@@ -825,6 +893,7 @@ class BarPlot:
             ticks=tick_values,
             grid=grid,
             seed=self._rng.getrandbits(32),
+            font=self._resolve_font(font),
         )
         return self
 
@@ -834,6 +903,7 @@ class BarPlot:
         *,
         size_px: float = DEFAULT_AXIS_NAME_SIZE,
         color: Color = DEFAULT_TEXT_COLOR,
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """添加 y 轴名称。
 
@@ -844,6 +914,7 @@ class BarPlot:
             text: 轴名称。
             size_px: 字号（设计像素）。
             color: 文字颜色。
+            font: 轴名称字体；None 继承全图默认。
 
         Returns:
             self，便于链式调用。
@@ -853,6 +924,7 @@ class BarPlot:
             size_px=size_px,
             color=color,
             rotate=not _is_cjk_text(text),
+            font=self._resolve_font(font),
         )
         return self
 
@@ -863,6 +935,7 @@ class BarPlot:
         xs: Sequence[float] | None = None,
         pos: XLabelPos = "content",
         rotation: XLabelRotation = "auto",
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """添加 x 轴标签。
 
@@ -881,6 +954,7 @@ class BarPlot:
                 使用 `add_bars` 系列记录的组中心，否则沿绘图区宽度均分。
             pos: 标签位置策略。
             rotation: "auto" 或 0–90 的固定角度。
+            font: 标签字体；None 继承全图默认。
 
         Returns:
             self，便于链式调用。
@@ -902,6 +976,7 @@ class BarPlot:
             xs=[float(v) for v in xs] if xs is not None else None,
             pos=pos,
             rotation=rotation,
+            font=self._resolve_font(font),
         )
         return self
 
@@ -911,6 +986,7 @@ class BarPlot:
         *,
         size_px: float = DEFAULT_AXIS_NAME_SIZE,
         color: Color = DEFAULT_TEXT_COLOR,
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """添加 x 轴名称，横向居中写在 x 标签之下（底部图例之上）。
 
@@ -918,11 +994,17 @@ class BarPlot:
             text: 轴名称。
             size_px: 字号（设计像素）。
             color: 文字颜色。
+            font: 轴名称字体；None 继承全图默认。
 
         Returns:
             self，便于链式调用。
         """
-        self._x_axis_name = _AxisNameRecord(text=text, size_px=size_px, color=color)
+        self._x_axis_name = _AxisNameRecord(
+            text=text,
+            size_px=size_px,
+            color=color,
+            font=self._resolve_font(font),
+        )
         return self
 
     def add_title(
@@ -932,6 +1014,7 @@ class BarPlot:
         align: TitleAlign = DEFAULT_TITLE_ALIGN,
         size_px: float = DEFAULT_TITLE_SIZE,
         color: Color = DEFAULT_TEXT_COLOR,
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """添加整图标题。
 
@@ -940,6 +1023,7 @@ class BarPlot:
             align: "center" 在绘图区上方居中；"left" 与绘图区左缘对齐。
             size_px: 字号（设计像素）。
             color: 文字颜色。
+            font: 标题字体；None 继承全图默认。
 
         Returns:
             self，便于链式调用。
@@ -949,7 +1033,13 @@ class BarPlot:
         """
         if align not in ("center", "left"):
             raise ValueError(f"align 须为 'center' 或 'left'，得到 {align!r}")
-        self._title = _TitleRecord(text=text, align=align, size_px=size_px, color=color)
+        self._title = _TitleRecord(
+            text=text,
+            align=align,
+            size_px=size_px,
+            color=color,
+            font=self._resolve_font(font),
+        )
         return self
 
     def add_legend(
@@ -958,6 +1048,7 @@ class BarPlot:
         *,
         ncol: int | None = None,
         loc: LegendLoc = "top",
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """添加图例。
 
@@ -968,6 +1059,7 @@ class BarPlot:
             items: (标签, 样式) 列表；样式可为 StockingStyle 或预设名。
             ncol: 一行几项；None 表示单行放得下就单行，否则按宽度换行。
             loc: "top" 画在标题下方、绘图区上方；"bottom" 画在最底部。
+            font: 图例文字字体；None 继承全图默认。
 
         Returns:
             self，便于链式调用；items 为空时直接返回。
@@ -986,6 +1078,7 @@ class BarPlot:
             ncol=ncol,
             loc=loc,
             seed=self._rng.getrandbits(32),
+            font=self._resolve_font(font),
         )
         return self
 
@@ -1345,6 +1438,23 @@ class BarPlot:
         eff_down = max(float(self._extent_down), float(max(down_legs, default=0)))
         return eff_up, eff_down
 
+    def _legend_line_height(self, label: str, font: FontSpec | None) -> float:
+        """图例单行文字的占位高度：实测自然行高 × 行高系数。
+
+        Args:
+            label: 图例标签（按单行文本度量自然行高）。
+            font: 图例字体。
+
+        Returns:
+            单行占位高度（设计像素）。
+        """
+        return measure_text_height(
+            label,
+            size_px=DEFAULT_LEGEND_TEXT_SIZE,
+            font=font,
+            line_height=DEFAULT_LEGEND_LINE_FACTOR,
+        )
+
     def _legend_layout(
         self, rec: _LegendRecord
     ) -> tuple[list[list[int]], list[float], float, list[list[str]]]:
@@ -1352,6 +1462,7 @@ class BarPlot:
 
         单个标签超过一行宽时按词/字换行（最多 DEFAULT_LEGEND_MAX_LINES 行，
         仍放不下则末行省略）；ncol 指定时按等宽列折行，每行整体居中。
+        行高按各标签的实测自然行高计算，与绘制共用同一字体。
 
         Args:
             rec: 图例记录。
@@ -1359,7 +1470,6 @@ class BarPlot:
         Returns:
             `(行内项下标, 各行高, 图例带总高, 每项折行文本)`。
         """
-        line_h = DEFAULT_LEGEND_TEXT_SIZE * DEFAULT_LEGEND_LINE_FACTOR
         if rec.ncol is not None:
             # ncol 过大时最小列宽会让整行超出 width_px；已知边界，暂不处理。
             col_w = max(
@@ -1375,19 +1485,24 @@ class BarPlot:
                 label,
                 max_width=label_max,
                 size_px=DEFAULT_LEGEND_TEXT_SIZE,
+                font=rec.font,
                 max_lines=DEFAULT_LEGEND_MAX_LINES,
             )
             for label, _ in rec.items
         ]
         widths: list[float] = []
         heights: list[float] = []
-        for lines in lines_all:
+        for i, lines in enumerate(lines_all):
             text_w = max(
-                (measure_text(line, size_px=DEFAULT_LEGEND_TEXT_SIZE) for line in lines),
+                (
+                    measure_text(line, size_px=DEFAULT_LEGEND_TEXT_SIZE, font=rec.font)
+                    for line in lines
+                ),
                 default=0.0,
             )
             width = DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_TEXT_GAP + text_w
             widths.append(width if rec.ncol is None else col_w)
+            line_h = self._legend_line_height(rec.items[i][0], rec.font)
             heights.append(max(DEFAULT_LEGEND_SWATCH, len(lines) * line_h))
 
         idx_rows: list[list[int]] = []
@@ -1433,14 +1548,25 @@ class BarPlot:
         n = len(rec.labels)
         return [(i + 0.5) * self._width_px / n for i in range(n)]
 
-    @staticmethod
-    def _x_label_line_height() -> float:
-        """返回 x 标签单行占位高度（旋转包围盒计算用）。
+    def _x_label_line_heights(self, labels: Sequence[str], font: FontSpec | None) -> list[float]:
+        """逐标签实测单行占位高度（旋转包围盒与避让判定用）。
+
+        Args:
+            labels: x 标签文本。
+            font: x 标签字体。
 
         Returns:
-            单行高度（设计像素）。
+            与 labels 等长的单行占位高度列表（自然行高 × 行高系数）。
         """
-        return DEFAULT_X_LABEL_SIZE * DEFAULT_LABEL_LINE_FACTOR
+        return [
+            measure_text_height(
+                label,
+                size_px=DEFAULT_X_LABEL_SIZE,
+                font=font,
+                line_height=DEFAULT_LABEL_LINE_FACTOR,
+            )
+            for label in labels
+        ]
 
     def _x_labels_fit_horizontal(self, xs: Sequence[float], widths: Sequence[float]) -> bool:
         """判断水平排布时相邻标签是否互不重叠。
@@ -1459,7 +1585,7 @@ class BarPlot:
         )
 
     def _x_labels_fit_rotated(
-        self, xs: Sequence[float], widths: Sequence[float], angle: float, line_h: float
+        self, xs: Sequence[float], widths: Sequence[float], angle: float, line_hs: Sequence[float]
     ) -> bool:
         """判断旋转指定角度后相邻标签是否互不重叠。
 
@@ -1467,7 +1593,7 @@ class BarPlot:
             xs: 标签锚点 x。
             widths: 各标签宽度。
             angle: 旋转角度（度）。
-            line_h: 单行高度。
+            line_hs: 各标签的单行占位高度，与 xs 等长。
 
         Returns:
             所有相邻标签都留出最小空隙时返回 True。
@@ -1476,7 +1602,7 @@ class BarPlot:
         s = math.sin(math.radians(angle))
         order = sorted(range(len(xs)), key=lambda i: xs[i])
         return all(
-            xs[b] - xs[a] >= widths[b] * c + line_h * s + DEFAULT_X_LABEL_ITEM_GAP
+            xs[b] - xs[a] >= widths[b] * c + line_hs[b] * s + DEFAULT_X_LABEL_ITEM_GAP
             for a, b in itertools.pairwise(order)
         )
 
@@ -1485,6 +1611,7 @@ class BarPlot:
 
         rotation="auto" 时逐级尝试 DEFAULT_X_LABEL_ROTATIONS，取第一个不重叠
         的角度；都放不下时用最大角度。标签在基线下方取负角、上方取正角。
+        宽度与行高都按标签字体实测（含 kerning 与真实字体度量）。
 
         Args:
             above: 标签是否写在基线上方。
@@ -1495,15 +1622,17 @@ class BarPlot:
         rec = self._x_labels
         assert rec is not None  # 调用点已保证
         xs = self._x_label_xs()
-        widths = [measure_text(label, size_px=DEFAULT_X_LABEL_SIZE) for label in rec.labels]
-        line_h = self._x_label_line_height()
+        widths = [
+            measure_text(label, size_px=DEFAULT_X_LABEL_SIZE, font=rec.font) for label in rec.labels
+        ]
+        line_hs = self._x_label_line_heights(rec.labels, rec.font)
         if rec.rotation == "auto":
             angle = DEFAULT_X_LABEL_ROTATIONS[-1]
             for candidate in DEFAULT_X_LABEL_ROTATIONS:
                 if candidate == 0.0:
                     fits = self._x_labels_fit_horizontal(xs, widths)
                 else:
-                    fits = self._x_labels_fit_rotated(xs, widths, candidate, line_h)
+                    fits = self._x_labels_fit_rotated(xs, widths, candidate, line_hs)
                 if fits:
                     angle = candidate
                     break
@@ -1511,7 +1640,7 @@ class BarPlot:
             angle = float(rec.rotation)
 
         if angle == 0.0:
-            height = line_h
+            height = max(line_hs, default=0.0)
             left = max((w / 2 - x for w, x in zip(widths, xs, strict=True)), default=0.0)
             right = max(
                 (w / 2 - (self._width_px - x) for w, x in zip(widths, xs, strict=True)),
@@ -1521,15 +1650,24 @@ class BarPlot:
 
         c = math.cos(math.radians(angle))
         s = math.sin(math.radians(angle))
-        height = max((w * s + line_h * c for w in widths), default=line_h)
+        height = max((w * s + lh * c for w, lh in zip(widths, line_hs, strict=True)), default=0.0)
         if angle >= 89.999:
-            # 竖排时按旋转后的字面高度居中，左右各占半行高
-            left = max((line_h / 2 - x for x in xs), default=0.0)
-            right = max((line_h / 2 - (self._width_px - x) for x in xs), default=0.0)
+            # 90° 字列绘制时按实测自然行高把锚点左移半行、水平居中于刻度
+            # （见 _draw_x_labels），左右各占半个自然行高；注意这里不带
+            # 行高系数——draw_text 的 90° 字列宽就是自然单行块高
+            natural_hs = [
+                measure_text_height(label, size_px=DEFAULT_X_LABEL_SIZE, font=rec.font)
+                for label in rec.labels
+            ]
+            left = max((nh / 2 - x for nh, x in zip(natural_hs, xs, strict=True)), default=0.0)
+            right = max(
+                (nh / 2 - (self._width_px - x) for nh, x in zip(natural_hs, xs, strict=True)),
+                default=0.0,
+            )
         elif above:
             # 上方标签向左上展开：左边多出字面高度，右边不越界
             left = max(
-                (w * c + line_h * s - x for w, x in zip(widths, xs, strict=True)),
+                (w * c + lh * s - x for w, lh, x in zip(widths, line_hs, xs, strict=True)),
                 default=0.0,
             )
             right = 0.0
@@ -1537,7 +1675,7 @@ class BarPlot:
             # 下方标签向左下展开：左边占文字宽，右边多出字面高度
             left = max((w * c - x for w, x in zip(widths, xs, strict=True)), default=0.0)
             right = max(
-                (line_h * s - (self._width_px - x) for x in xs),
+                (lh * s - (self._width_px - x) for lh, x in zip(line_hs, xs, strict=True)),
                 default=0.0,
             )
         signed = angle if above else -angle
@@ -1578,7 +1716,7 @@ class BarPlot:
         if axis is not None:
             label_w = max(
                 (
-                    measure_text(_format_tick(v), size_px=DEFAULT_TICK_LABEL_SIZE)
+                    measure_text(_format_tick(v), size_px=DEFAULT_TICK_LABEL_SIZE, font=axis.font)
                     for v in axis.ticks
                 ),
                 default=0.0,
@@ -1602,7 +1740,13 @@ class BarPlot:
         legend_top_y = 0.0
         # 空字符串标题/轴名仍会占完整布局空间；已知边界，暂不处理。
         if self._title is not None:
-            top_band = DEFAULT_TITLE_INSET_Y + self._title.size_px * DEFAULT_TITLE_LINE_FACTOR
+            title = self._title
+            top_band = DEFAULT_TITLE_INSET_Y + measure_text_height(
+                title.text,
+                size_px=title.size_px,
+                font=title.font,
+                line_height=DEFAULT_TITLE_LINE_FACTOR,
+            )
         if self._legend is not None and self._legend.loc == "top":
             _, _, legend_h, _ = self._legend_layout(self._legend)
             legend_top_y = top_band if self._title is not None else DEFAULT_LEGEND_MARGIN
@@ -1614,7 +1758,9 @@ class BarPlot:
             top_band += max(0.0, x_height + 2 * DEFAULT_X_LABEL_GAP - eff_up)
         if axis is not None and tick_px:
             # 刻度映射可能高于 extent_up：把轴顶与最上方刻度数字移进画布
-            tick_label_half = measure_text_height("0", size_px=DEFAULT_TICK_LABEL_SIZE) / 2
+            tick_label_half = (
+                measure_text_height("0", size_px=DEFAULT_TICK_LABEL_SIZE, font=axis.font) / 2
+            )
             top_tick = max((p for p in tick_px if p > 0), default=0.0)
             top_band += max(0.0, top_tick + tick_label_half - eff_up)
 
@@ -1637,8 +1783,14 @@ class BarPlot:
 
         x_name_y: float | None = None
         if self._x_axis_name is not None:
+            x_name = self._x_axis_name
             x_name_y = bottom + DEFAULT_AXIS_NAME_GAP
-            bottom = x_name_y + self._x_axis_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
+            bottom = x_name_y + measure_text_height(
+                x_name.text,
+                size_px=x_name.size_px,
+                font=x_name.font,
+                line_height=DEFAULT_AXIS_NAME_LINE_FACTOR,
+            )
 
         legend_bottom_y: float | None = None
         if self._legend is not None and self._legend.loc == "bottom":
@@ -1654,7 +1806,9 @@ class BarPlot:
         # 标题与 x 轴名称比画布宽时对称扩宽：左溢出整体右移绘图区，右溢出补画布
         centered = [plot_left + self._width_px / 2] if self._x_axis_name is not None else []
         if self._title is not None:
-            title_w = measure_text(self._title.text, size_px=self._title.size_px)
+            title_w = measure_text(
+                self._title.text, size_px=self._title.size_px, font=self._title.font
+            )
             if self._title.align == "center":
                 title_x = plot_left + self._width_px / 2
                 title_center = title_x
@@ -1666,7 +1820,13 @@ class BarPlot:
             title_w = 0.0
             title_x = plot_left
         text_widths = (
-            [measure_text(self._x_axis_name.text, size_px=self._x_axis_name.size_px)]
+            [
+                measure_text(
+                    self._x_axis_name.text,
+                    size_px=self._x_axis_name.size_px,
+                    font=self._x_axis_name.font,
+                )
+            ]
             if self._x_axis_name is not None
             else []
         )
@@ -1806,6 +1966,7 @@ class BarPlot:
             arrow=True,
             wobble=DEFAULT_WOBBLE if self._axis_style == "handdrawn" else 0.0,
             seed=self._baseline_seed,
+            font=self._font,
         )
 
     def _draw_bars(self, canvas: Canvas, layout: _Layout, *, scale: float = 1.0) -> None:
@@ -1865,6 +2026,7 @@ class BarPlot:
             arrow=True,
             wobble=DEFAULT_WOBBLE if self._axis_style == "handdrawn" else 0.0,
             seed=rng.getrandbits(32),
+            font=axis.font,
         )
         if down_len > 0:
             sketch_axis(
@@ -1877,6 +2039,7 @@ class BarPlot:
                 arrow=False,
                 wobble=DEFAULT_WOBBLE if self._axis_style == "handdrawn" else 0.0,
                 seed=rng.getrandbits(32),
+                font=axis.font,
             )
 
     def _draw_axis_names(self, canvas: Canvas, layout: _Layout) -> None:
@@ -1888,11 +2051,10 @@ class BarPlot:
         """
         y_name = self._y_axis_name
         if y_name is not None and y_name.text:
-            lines, block_w = _layout_axis_name(y_name, layout.y_name_span)
-            step = y_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
+            # 与布局阶段共用 _axis_name_metrics，保证占位与步进一致
+            lines, block_w, thickness, step = _axis_name_metrics(y_name, layout.y_name_span)
             if y_name.rotate:
                 # 拉丁等文字旋转 90° 自下而上阅读；多行时首行靠轴、后续行向左
-                thickness = measure_text_height(y_name.text, size_px=y_name.size_px)
                 for k, line in enumerate(lines):
                     draw_text(
                         canvas,
@@ -1901,6 +2063,7 @@ class BarPlot:
                         layout.y_name_y,
                         size_px=y_name.size_px,
                         color=y_name.color,
+                        font=y_name.font,
                         anchor=("center", "middle"),
                         rotation=-90,
                     )
@@ -1917,6 +2080,7 @@ class BarPlot:
                             start + (i + 0.5) * step,
                             size_px=y_name.size_px,
                             color=y_name.color,
+                            font=y_name.font,
                             anchor=("center", "middle"),
                         )
         x_name = self._x_axis_name
@@ -1928,6 +2092,7 @@ class BarPlot:
                 layout.x_name_y,
                 size_px=x_name.size_px,
                 color=x_name.color,
+                font=x_name.font,
                 anchor=("center", "top"),
             )
 
@@ -1947,6 +2112,7 @@ class BarPlot:
             layout.title_y,
             size_px=self._title.size_px,
             color=self._title.color,
+            font=self._title.font,
             anchor=("center" if self._title.align == "center" else "left", "top"),
         )
 
@@ -1968,7 +2134,6 @@ class BarPlot:
             assert layout.legend_bottom_y is not None  # _layout 保证已填
             y = layout.legend_bottom_y
         sc = canvas._skia_canvas()  # pyright: ignore[reportPrivateUsage]
-        line_h = DEFAULT_LEGEND_TEXT_SIZE * DEFAULT_LEGEND_LINE_FACTOR
         col_w = 0.0
         if rec.ncol is not None:
             col_w = max(
@@ -2018,6 +2183,7 @@ class BarPlot:
                         StrokeWidth=DEFAULT_SWATCH_STROKE,
                     ),
                 )
+                line_h = self._legend_line_height(rec.items[i][0], rec.font)
                 text_h = len(label_lines) * line_h
                 text_top = y + (row_h - text_h) / 2
                 for j, line in enumerate(label_lines):
@@ -2027,6 +2193,7 @@ class BarPlot:
                         x + DEFAULT_LEGEND_SWATCH + DEFAULT_LEGEND_TEXT_GAP,
                         text_top + (j + 0.5) * line_h,
                         size_px=DEFAULT_LEGEND_TEXT_SIZE,
+                        font=rec.font,
                         anchor=("left", "middle"),
                     )
                 x += item_w + DEFAULT_LEGEND_ITEM_GAP
@@ -2045,7 +2212,6 @@ class BarPlot:
         xs = self._x_label_xs()
         above = layout.x_label_baseline
         angle = layout.x_label_angle
-        line_h = self._x_label_line_height()
         for label, x in zip(rec.labels, xs, strict=True):
             px = layout.plot_left + x
             if angle == 0.0:
@@ -2056,17 +2222,24 @@ class BarPlot:
                     px,
                     layout.x_label_y,
                     size_px=DEFAULT_X_LABEL_SIZE,
+                    font=rec.font,
                     anchor=anchor,
                 )
                 continue
-            # 90° 旋转后文字块落在锚点右侧；把旋转中心左移半行高使其左右居中
-            pivot = px - line_h / 2 if abs(angle) >= 89.999 else px
+            if abs(angle) >= 89.999:
+                # 90° 字列以 ("right", ·) 锚定时，墨迹在锚点右侧占一个自然
+                # 单行块高（新引擎按精确 bbox 锚定、旋转绕锚点进行）；与
+                # _x_label_fit 的 90° 分支一致，按实测自然行高把锚点左移
+                # 半行，使字列水平居中于刻度
+                natural_h = measure_text_height(label, size_px=DEFAULT_X_LABEL_SIZE, font=rec.font)
+                px -= natural_h / 2
             draw_text(
                 canvas,
                 label,
-                pivot,
+                px,
                 layout.x_label_y,
                 size_px=DEFAULT_X_LABEL_SIZE,
+                font=rec.font,
                 anchor=("right", "bottom" if above else "top"),
                 rotation=angle,
             )
@@ -2105,5 +2278,6 @@ class BarPlot:
                 x,
                 y,
                 size_px=DEFAULT_VALUE_LABEL_SIZE,
+                font=self._font,
                 anchor=anchor,
             )

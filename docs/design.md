@@ -183,25 +183,36 @@ C/C++ extensions for now.
 
 ## Fonts
 
-No fonts are bundled. Selection flow (via skia's `FontMgr`):
+No fonts are bundled. Fonts are specified through a `FontSpec`: a family name,
+a font file path, or a candidate list of both (they may be mixed), in priority
+order; `font=None` uses the platform default chain
+(`defaults.DEFAULT_FONT_FAMILIES`, favoring handwriting/regular-script faces:
+Windows: `楷体`, `华文行楷`, `Ink Free`, `Segoe Print`; macOS: `Kaiti SC`,
+`Bradley Hand`, `Marker Felt`; Linux: `Noto Serif CJK`, `WenQuanYi`,
+`Noto Sans CJK`). This path never touches matplotlib's font configuration, so
+none of its caching/configuration issues apply.
 
-1. If the user passes `font` (a list of family names or a file path), use it
-   first;
-2. Otherwise, search installed system fonts against a preference list favoring
-   handwriting/regular-script styles (Windows: `楷体`, `华文行楷`, `Ink Free`,
-   `Segoe Print`; macOS: `Kaiti SC`, `Bradley Hand`, `Marker Felt`; Linux:
-   `Noto Serif CJK`, `WenQuanYi`, `Noto Sans CJK`, etc.); the list is
-   extensible;
-3. Check glyph coverage character by character (`unicharToGlyph != 0`); when a
-   glyph is missing, use `FontMgr.matchFamilyStyleCharacter` to find a system
-   fallback font that has it, splitting the text into multiple runs by font and
-   drawing each run separately;
-4. If nothing is found, draw that font's missing-glyph box instead of raising.
+Glyph resolution is per code point: the first font in the candidate stack that
+has the glyph wins; if none does, the system's per-code-point fallback takes
+over (skia `FontMgr.matchFamilyStyleCharacter`, win=DirectWrite /
+mac=CoreText / linux=FontConfig); if that fails too, a stroked placeholder box
+is drawn instead of raising.
 
-Verified locally: skia's font manager enumerates system fonts, and `脱` / `天`
-resolve to Microsoft YaHei UI through the system fallback; this machine has
-`楷体`, `华文行楷`, `Ink Free`, `Segoe Print`. This path never touches
-matplotlib's font configuration, so none of its caching/configuration issues apply.
+Drawing is implemented by the `src/stockchart/text/` package: each line is
+split into segments by font, and each segment is shaped through
+skia.textlayout (HarfBuzz + ICU inside) — kerning, ligatures (fi and other
+Latin ligatures unrelated to CJK), intra-segment RTL, and composite emoji are
+all handled correctly; full bidi reordering across segments is not supported
+yet (a known boundary). Layout and drawing share one TextLayout cache, so
+repeated measurement never re-shapes.
+
+Multi-line text: hard splits at `\n`, then greedy soft wrapping by pixel width
+(preferring breaks after whitespace/punctuation, CJK breaking per character),
+with a U+2026 ellipsis on the last line when `max_lines` is exceeded.
+Measurements use real font metrics (a mixed-font text block takes the largest
+ascent/descent); the line-height factors such as `DEFAULT_TITLE_LINE_FACTOR`
+mean **natural line height × factor**, and layout reserves space from those
+real metrics.
 
 ## Layout and Grouping
 
@@ -285,7 +296,7 @@ categories" (sub-labels under group labels), which is a separate feature to add
 later if needed.
 
 - The marker is a **fabric texture swatch**: a small piece of fabric cut from
-  the middle of a stocking rendered in that style (about 48px square, small
+  the middle of a stocking rendered in that style (44px square, small
   corner radius, thin outline), conveying both texture and color scheme; no
   mini legs are drawn — compact, and not confusable with the bars. In paired
   mode the swatch still uses the series' style; left/right information is

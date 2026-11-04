@@ -26,7 +26,7 @@ from stockchart.defaults import (
     DEFAULT_TICK_SIZE,
     DEFAULT_WOBBLE,
 )
-from stockchart.text import TextAnchor, draw_text
+from stockchart.text import FontSpec, TextAnchor, draw_text
 
 type AxisDirection = Literal["up", "down", "right"]
 
@@ -146,6 +146,7 @@ def sketch_axis(
     width_px: float = DEFAULT_STROKE_WIDTH,
     wobble: float = DEFAULT_WOBBLE,
     seed: int | None = None,
+    font: FontSpec | None = None,
 ) -> None:
     """画一条手绘风坐标轴，可带箭头、刻度线与刻度数字。
 
@@ -164,6 +165,8 @@ def sketch_axis(
         width_px: 线条宽度（像素）。
         wobble: 干线抖动幅度；箭头与刻度使用其一半。
         seed: 随机源；同一 seed 结果可复现，不传则每次随机。
+        font: 刻度数字字体（家族名、字体文件路径或候选列表）；None 用
+            平台默认链。
     """
     rng = random.Random(seed)
 
@@ -235,5 +238,6 @@ def sketch_axis(
             label_pos[1],
             size_px=DEFAULT_TICK_LABEL_SIZE,
             color=color,
+            font=font,
             anchor=label_anchor,
         )

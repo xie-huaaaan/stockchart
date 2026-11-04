@@ -21,6 +21,7 @@ class ChartOptions(TypedDict, total=False):
     title_align: Literal["center", "left"]
     title_size_px: float
     axis_name_size_px: float
+    font: FontSpec | None
     legend_loc: Literal["top", "bottom"]
     legend_ncol: int | None
     height_px: int | None
@@ -40,11 +41,17 @@ class ChartOptions(TypedDict, total=False):
 | `title_align` | `"center"` | `add_title(align=)` |
 | `title_size_px` | `DEFAULT_TITLE_SIZE` (52) | `add_title(size_px=)` |
 | `axis_name_size_px` | `DEFAULT_AXIS_NAME_SIZE` (30) | both axis-name font sizes |
+| `font` | `None` (platform default chain) | `BarPlot(font=)`, the chart-wide text font; e.g. `font=["MiSans", "Microsoft YaHei"]` or a font file path |
 | `legend_loc` | `"top"` | `add_legend(loc=)` |
 | `legend_ncol` | `None` (automatic) | `add_legend(ncol=)` |
 | `height_px` | `None` (tallest full leg + 10% headroom) | `BarPlot(extent_up=)` / y-axis length; a smaller explicit value still expands to the full leg height |
 | `width_px` | `None` (legs, gaps, labels) | `BarPlot(width_px=)` / x-axis length |
 
+`font` is the chart-wide default font, passed through to `BarPlot(font=)`; it
+applies to the title, axis names, x labels, legend, tick numbers, and value
+labels. Its value is a `FontSpec` (family names / font file paths / a
+candidate list, see L1 rendering primitives); None uses the platform default
+chain.
 Unknown keys raise `TypeError` at runtime and list the available options; static typing is checked by the `TypedDict`. Older keywords such as `axis_style` / `grid` / `x_label_pos` are still accepted as before; they simply no longer appear in the function signatures.
 
 ## L4 one-liners
@@ -211,7 +218,10 @@ the data raise `ValueError` during normalization.
 All `DEFAULT_*` constants are collected in `src/stockchart/defaults.py`: `DEFAULT_MAX_FILL` (0.85),
 `DEFAULT_BAR_GAP` (28), `DEFAULT_GROUP_GAP` (120), `DEFAULT_OUTPUT_SCALE`, the background/ink/text colors,
 `DEFAULT_AXIS_STYLE` (clean), wobble amplitudes, font sizes (ticks 26 / x labels 30 / title 52 /
-axis names 30 / legend 28 / value labels 26), `DEFAULT_TITLE_ALIGN` (center), axis-name spacing and line height,
-x-label avoidance angles, legend wrap line counts and line heights, legend swatch size and spacing, grid line colors, and so on.
+axis names 30 / legend 28 / value labels 26), `DEFAULT_TITLE_ALIGN` (center), axis-name spacing, and
+line-height factors (title 1.4 / axis names 1.25 / x labels 1.35 / legend 1.25, multiplied by the
+font's natural line height to get the line spacing), x-label avoidance angles, legend wrap line counts
+and row gaps, legend swatch size and spacing, grid line colors, and the default font chain
+`DEFAULT_FONT_FAMILIES`, among others.
 Drawing code carries no magic numbers of its own; tuning means changing one place.
 L2's `BarPlot.extent_up` still defaults to `DEFAULT_Y_EXTENT` (760).

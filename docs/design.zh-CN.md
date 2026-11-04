@@ -122,15 +122,26 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 
 ## 字体
 
-不打包字体。选择流程（用 skia `FontMgr`）：
+不打包字体。字体由 `FontSpec` 指定：家族名、字体文件路径，或两者的候选列表
+（可混合），候选顺序即优先级；`font=None` 用平台默认链
+（`defaults.DEFAULT_FONT_FAMILIES`，手写/楷体偏好：Windows：`楷体`、
+`华文行楷`、`Ink Free`、`Segoe Print`；macOS：`Kaiti SC`、`Bradley Hand`、
+`Marker Felt`；Linux：`Noto Serif CJK`、`WenQuanYi`、`Noto Sans CJK`）。
+这条路径不经过 matplotlib 的字体配置，也就没有它的缓存和配置问题。
 
-1. 用户传入 `font`（家族名列表或文件路径）则优先使用；
-2. 否则按手写/楷体偏好列表查找系统已装字体（Windows：`楷体`、`华文行楷`、`Ink Free`、`Segoe Print`；macOS：`Kaiti SC`、`Bradley Hand`、`Marker Felt`；Linux：`Noto Serif CJK`、`WenQuanYi`、`Noto Sans CJK` 等），列表可扩展；
-3. 对每个字符逐个检查字形是否存在（`unicharToGlyph != 0`），不存在则用 `FontMgr.matchFamilyStyleCharacter` 按系统回退字体找一个有该字形的，把文本按字体切成多个 run 分别绘制；
-4. 都找不到则绘制该字体的缺字符号，不抛异常。
+字形解析逐码点进行：候选栈内第一个含该字形的字体生效；栈内都没有时走系统
+逐码点回退（skia `FontMgr.matchFamilyStyleCharacter`，win=DirectWrite /
+mac=CoreText / linux=FontConfig）；仍找不到则画描边方框占位，不抛异常。
 
-已在本机验证：skia 的字体管理器能枚举系统字体，`脱`、`天` 能通过系统回退匹配到 Microsoft YaHei UI；
-本机有 `楷体`、`华文行楷`、`Ink Free`、`Segoe Print`。这条路径不经过 matplotlib 的字体配置，也就没有它的缓存和配置问题。
+绘制由 `src/stockchart/text/` 包实现：每行按字体切段，逐段经 skia.textlayout
+（内部 HarfBuzz + ICU）整形——kerning、连字（fi 等与 CJK 无关的拉丁连字）、
+段内 RTL 与组合 emoji 均正确；跨字体段的完整 bidi 重排暂不支持（已知边界）。
+排版与绘制共享同一份 TextLayout 缓存，重复度量不会重复整形。
+
+多行文本：`\n` 硬切分，再按像素宽贪心软折行（优先空白/标点后断、中文按字
+断），`max_lines` 超限时末行加 U+2026 省略号。度量全部用真实字体度量
+（混合字体的文字块取最大 ascent/descent）；`DEFAULT_TITLE_LINE_FACTOR` 等
+行高系数的含义是**自然行高 × 系数**，布局按真实度量预留空间。
 
 ## 布局与分组
 
@@ -184,7 +195,7 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 分不清谁是谁），x 轴标签保持每组一层、不做两层系列名——两层标签属于"层级类别"
 （组标签下再分子标签），是另一个功能，将来需要时单独加。
 
-- marker 是**织物纹理色块**：从该样式渲染的袜身中部裁取一小块织物（约 48px 见方、
+- marker 是**织物纹理色块**：从该样式渲染的袜身中部裁取一小块织物（44px 见方、
   小圆角、细描边），能同时体现纹理与配色；不画迷你腿，紧凑且不与柱子混淆。
   成对模式下色块仍取系列样式，左右腿信息由图本身表达。
 - 每项 = 色块 + 系列名。位置默认在标题下方、绘图区上方水平居中；

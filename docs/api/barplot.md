@@ -60,6 +60,11 @@ class BarPlot:
             "handdrawn" uses hand-drawn wobble controlled by seed.
         seed: random source for default bar textures, the baseline, and
             hand-drawn wobble.
+        font: chart-wide default font (a FontSpec, see L1 rendering
+            primitives); None uses the platform default chain. All internally
+            drawn text — title, axis names, x labels, legend, tick numbers,
+            and value labels — uses it; each add_* method's own font
+            parameter overrides it per element.
 
     Raises:
         ValueError: width_px is not positive, extent_up / extent_down is
@@ -75,6 +80,7 @@ class BarPlot:
         background: Color = DEFAULT_BACKGROUND,
         axis_style: Literal["clean", "handdrawn"] = "clean",
         seed: int | None = None,
+        font: FontSpec | None = None,
     ) -> None: ...
 
     def add_bar(
@@ -106,6 +112,7 @@ class BarPlot:
         *,
         ticks: Sequence[float] | None = None,
         grid: bool = False,
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """Add a y axis (with tick numbers). By default ticks are generated from scale.domain at whole-number steps.
 
@@ -117,7 +124,8 @@ class BarPlot:
         expands to keep the axis top and tick number inside. With grid=True,
         horizontal dashed lines are drawn at each tick (light-colored,
         layered beneath the legs and stockings).
-        Axis names are added separately via add_y_axis_name().
+        Axis names are added separately via add_y_axis_name(). font sets the
+        tick-number font; None (default) inherits the chart-wide default.
 
         Raises:
             ValueError: ticks contains non-finite numbers.
@@ -130,6 +138,7 @@ class BarPlot:
         xs: Sequence[float] | None = None,
         pos: Literal["content", "auto", "above", "below"] = "content",
         rotation: float | Literal["auto"] = "auto",
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """Add x axis labels. pos decides where labels go, rotation decides whether they tilt:
 
@@ -151,7 +160,8 @@ class BarPlot:
         gains the corresponding top/bottom and left/right margins.
 
         xs defaults to an even spread across the width; when combined with
-        the add_bars family it aligns to group centers automatically.
+        the add_bars family it aligns to group centers automatically. font
+        sets the label font; None (default) inherits the chart-wide default.
 
         Raises:
             ValueError: pos / rotation is invalid, xs and labels differ in
@@ -165,6 +175,7 @@ class BarPlot:
         align: Literal["center", "left"] = "center",
         size_px: float = DEFAULT_TITLE_SIZE,
         color: Color = DEFAULT_TEXT_COLOR,
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """Add a chart title (single line).
 
@@ -173,7 +184,8 @@ class BarPlot:
         the left edge of the plot area. A title wider than the canvas
         widens the canvas symmetrically — no wrapping, no clipping. The
         height the title occupies is counted into layout automatically,
-        and the legend is still drawn below the title.
+        and the legend is still drawn below the title. font sets the title
+        font; None (default) inherits the chart-wide default.
         """
 
     def add_x_axis_name(
@@ -182,11 +194,14 @@ class BarPlot:
         *,
         size_px: float = DEFAULT_AXIS_NAME_SIZE,
         color: Color = DEFAULT_TEXT_COLOR,
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """Add the x axis name: centered horizontally beneath the x labels (above a bottom legend).
 
         With no x labels it goes directly below the lowest point of the
-        content. An overly long name widens the canvas — no clipping.
+        content. An overly long name widens the canvas — no clipping. font
+        sets the axis-name font; None (default) inherits the chart-wide
+        default.
         """
 
     def add_y_axis_name(
@@ -195,6 +210,7 @@ class BarPlot:
         *,
         size_px: float = DEFAULT_AXIS_NAME_SIZE,
         color: Color = DEFAULT_TEXT_COLOR,
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """Add the y axis name, drawn to the left of the tick numbers.
 
@@ -204,7 +220,8 @@ class BarPlot:
         whole, read bottom-up. When the name is longer than the axis trunk
         it continues in additional columns/lines and stays vertically
         centered on the trunk; it occupies the left margin and does not
-        affect plot-area coordinates.
+        affect plot-area coordinates. font sets the axis-name font; None
+        (default) inherits the chart-wide default.
         """
 
     def add_legend(
@@ -213,6 +230,7 @@ class BarPlot:
         *,
         ncol: int | None = None,
         loc: Literal["top", "bottom"] = "top",
+        font: FontSpec | None = None,
     ) -> BarPlot:
         """Add a legend: each item is a fabric-texture swatch + text; the swatch takes the fabric from the middle of that style's stocking.
 
@@ -225,7 +243,8 @@ class BarPlot:
         row width is wrapped onto multiple lines (at most 3; if it still
         does not fit, the last line is elided); under a given ncol it wraps
         by column width. The height the legend occupies and the wrapped line
-        heights are counted into layout automatically.
+        heights are counted into layout automatically. font sets the legend
+        text font; None (default) inherits the chart-wide default.
         """
 
     def render(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Canvas:

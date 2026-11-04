@@ -49,7 +49,7 @@ from stockchart.plot import (
     _select_legs_for_groups,
 )
 from stockchart.stocking import StyleSeq
-from stockchart.text import measure_text
+from stockchart.text import FontSpec, measure_text
 
 type CycleMode = Literal["auto", "group", "sequence"]
 
@@ -62,6 +62,8 @@ class ChartOptions(TypedDict, total=False):
         background: 画布背景色。
         bar_gap: 组内相邻腿边缘之间的空隙（设计像素）。
         group_gap: 组间空隙（设计像素）。
+        font: 全图默认字体（家族名、字体文件路径或候选列表），作用于标题、
+            轴名称、刻度、x 标签、图例与数值标签；None 用平台默认链。
         grid: 是否画 y 刻度横向虚线。
         ticks: 显式刻度值；None 表示自动生成。
         x_label_pos: x 标签位置策略。
@@ -79,6 +81,7 @@ class ChartOptions(TypedDict, total=False):
     background: Color
     bar_gap: float
     group_gap: float
+    font: FontSpec | None
     grid: bool
     ticks: Sequence[float] | None
     x_label_pos: XLabelPos
@@ -98,6 +101,7 @@ _OPTION_KEYS: frozenset[str] = frozenset(
         "background",
         "bar_gap",
         "group_gap",
+        "font",
         "grid",
         "ticks",
         "x_label_pos",
@@ -206,6 +210,7 @@ def _plan_slots(
     *,
     labels: Sequence[str] | None,
     bar_gap: float,
+    font: FontSpec | None,
 ) -> list[float]:
     """计算每个槽的宽度。
 
@@ -215,6 +220,7 @@ def _plan_slots(
         specs: 槽 → 列 → 腿规格的嵌套结构。
         labels: 每组标签；None 表示不加宽。
         bar_gap: 同槽相邻列之间的空隙。
+        font: 标签字体，与 x 标签绘制保持一致；None 用平台默认链。
 
     Returns:
         每个槽的宽度（设计像素）。
@@ -223,7 +229,9 @@ def _plan_slots(
     for g, slot in enumerate(specs):
         natural = sum(col[0].leg.width for col in slot) + (len(slot) - 1) * bar_gap
         if labels is not None:
-            label_w = measure_text(labels[g], size_px=DEFAULT_X_LABEL_SIZE) + _LABEL_BREATH
+            label_w = (
+                measure_text(labels[g], size_px=DEFAULT_X_LABEL_SIZE, font=font) + _LABEL_BREATH
+            )
             natural = max(natural, label_w)
         slots_px.append(natural)
     return slots_px
@@ -257,7 +265,7 @@ def _assemble(
     Returns:
         `(BarPlot, 与 specs 同构的柱记录)`。
     """
-    slots_px = _plan_slots(specs, labels=labels, bar_gap=bar_gap)
+    slots_px = _plan_slots(specs, labels=labels, bar_gap=bar_gap, font=options.get("font"))
     width_px = options.get("width_px")
     if width_px is not None and width_px <= 0:
         raise ValueError(f"width_px 须为正数，得到 {width_px!r}")
@@ -280,6 +288,7 @@ def _assemble(
         extent_down=0,
         background=options.get("background", DEFAULT_BACKGROUND),
         axis_style=options.get("axis_style", DEFAULT_AXIS_STYLE),
+        font=options.get("font"),
         seed=seed,
     )
     records = plot._add_columns(
