@@ -16,6 +16,7 @@ from stockchart.defaults import (
     DEFAULT_LEGEND_SWATCH,
     DEFAULT_PLOT_LEFT_PAD,
     DEFAULT_X_LABEL_SIZE,
+    DEFAULT_Y_EXTENT,
 )
 from stockchart.plot import _format_tick, _layout_axis_name
 
@@ -85,8 +86,9 @@ class TestAddYAxis:
         p.add_bar(300, 500, make_leg(h=720, w=300), style="black_sheer")
         p.add_y_axis(Scale((0.0, 10.0), (0.0, 700.0)), ticks=[5], grid=True)
         arr = p.render(scale=1).to_numpy()
-        # 刻度 5 → y ≈ 760 - 350 = 410；网格画在腿右侧的空白区
-        zone = arr[390:430, 550:590, :3].astype(int)
+        # 刻度 5 → y ≈ DEFAULT_Y_EXTENT - 350；网格画在腿右侧的空白区
+        grid_y = DEFAULT_Y_EXTENT - 350
+        zone = arr[grid_y - 20 : grid_y + 20, 550:590, :3].astype(int)
         bg = np.array(BG, dtype=int)
         assert (np.abs(zone - bg).sum(axis=2) > 20).any()
 

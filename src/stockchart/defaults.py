@@ -5,6 +5,7 @@
 的 RGB/RGBA 元组。
 """
 
+import sys
 from typing import Literal
 
 # ---------------------------------------------------------------------------
@@ -18,10 +19,11 @@ DEFAULT_STOCKING_STYLE = "black_sheer"
 # 画布
 # ---------------------------------------------------------------------------
 
-DEFAULT_Y_EXTENT = 760
+DEFAULT_Y_EXTENT = 792
 """柱区在基线上方预留的设计像素高度，不含标题、标签、图例等边缘区域。
+(目前只有手动构建 L2 的 BarPlot 时使用，上层使用 DEFAULT_HEIGHT_HEADROOM_RATIO)
 
-腿高 720，760 留少量顶部余量便于 max_fill 留白。
+腿高 720，792 留少量顶部余量便于 max_fill 留白。
 """
 
 DEFAULT_OUTPUT_SCALE = 2
@@ -42,6 +44,24 @@ DEFAULT_AXIS_STYLE: Literal["clean", "handdrawn"] = "clean"
 
 DEFAULT_TEXT_COLOR: tuple[int, int, int] = (58, 58, 58)
 """文字颜色。"""
+
+_FONT_FAMILY_CHAINS: dict[str, tuple[str, ...]] = {
+    "win32": ("楷体", "华文行楷", "Ink Free", "Segoe Print"),
+    "darwin": ("Kaiti SC", "Bradley Hand", "Marker Felt"),
+    "linux": ("Noto Serif CJK", "WenQuanYi", "Noto Sans CJK"),
+}
+
+DEFAULT_FONT_FAMILIES: tuple[str, ...] = _FONT_FAMILY_CHAINS.get(
+    sys.platform, _FONT_FAMILY_CHAINS["linux"]
+)
+"""未指定 font 时的默认字体链（手写/楷体偏好，按平台取用）。
+
+按顺序取第一个可用的家族；链内缺字形时逐码点回退系统字体，
+仍无则画方框占位（docs/design.zh-CN.md「字体」）。
+"""
+
+DEFAULT_TOFU_ADVANCE_RATIO = 0.62
+"""缺字形方框占位符的宽度相对字号的比例（≈常见表意字的字面比例）。"""
 
 DEFAULT_STROKE_WIDTH = 3.0
 """手绘线条默认宽度。"""

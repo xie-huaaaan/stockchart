@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import skia
 from numpy.typing import NDArray
 from PIL import Image
 
@@ -15,9 +16,14 @@ from stockchart import (
     sketch_axis,
     sketch_line,
 )
-from stockchart.text import wrap_text
+from stockchart.text import measure_text_height, wrap_text
 
 BG: Color = (250, 248, 243)
+
+# kerning 断言依赖 Segoe UI（Windows 自带，含 AV 对的内缩 kerning 对）
+_HAS_SEGOE_UI = (
+    skia.FontMgr.RefDefault().matchFamilyStyle("Segoe UI", skia.FontStyle.Normal()) is not None
+)
 
 
 def blank(w: int = 300, h: int = 200) -> Canvas:
@@ -100,9 +106,88 @@ class TestDrawText:
 
     def test_measure_text(self) -> None:
         assert measure_text("", size_px=30) == 0.0
-        # 逐字符回退的布局契约：整串宽度 = 各字符宽度之和
-        assert measure_text("wwww", size_px=30) == pytest.approx(4 * measure_text("w", size_px=30))
         assert measure_text("脱粉量", size_px=30) > 0
+
+    @pytest.mark.skipif(not _HAS_SEGOE_UI, reason="需要 Segoe UI 字体")
+    def test_measure_text_kerning(self) -> None:
+        # 整串经段落整形（HarfBuzz 含 kerning），逐字测量则无 kerning：
+        # AV 是经典内缩对，整串宽度必须小于逐字之和
+        per_char = sum(measure_text(ch, size_px=40, font="Segoe UI") for ch in "AVAV")
+        assert measure_text("AVAV", size_px=40, font="Segoe UI") < per_char
+
+    def test_newline_draws_two_lines(self) -> None:
+        def ink_span(c: Canvas) -> int:
+            ys, _ = np.where(ink_mask(c))
+            return int(np.ptp(ys))
+
+        single, multi = blank(), blank()
+        draw_text(single, "A", 30, 100, size_px=30)
+        draw_text(multi, "A\nA", 30, 100, size_px=30)
+        # \n 产生第二行：墨迹纵向跨度明显大于单行
+        assert ink_span(multi) > ink_span(single)
+        # 首行基线仍锚定在 y：两行块的墨迹顶部与单行一致
+        top_single = int(np.where(ink_mask(single))[0].min())
+        top_multi = int(np.where(ink_mask(multi))[0].min())
+        assert abs(top_multi - top_single) <= 2
+        # 自然行距下基线间距 = 单行块高：总墨迹跨度 ≈ 单行跨度 + 行距
+        step = measure_text_height("A", size_px=30)
+        assert ink_span(multi) - ink_span(single) == pytest.approx(step, abs=4)
+
+    def test_max_width_wraps_into_multiple_lines(self) -> None:
+        c = blank(120, 400)
+        text = "一二三四五六七八九十" * 3
+        draw_text(c, text, 10, 40, size_px=20, max_width=100)
+        m = ink_mask(c)
+        assert m.any()
+        ys, xs = np.where(m)
+        # 单行 30 个字远超 100px：纵向跨度超过两倍字号说明折成了多行
+        assert int(np.ptp(ys)) > 2 * 20
+        # 每行右缘不超过 x + max_width（留抗锯齿余量）
+        assert int(xs.max()) <= 10 + 100 + 2
+
+    def test_vertical_anchor_ordering(self) -> None:
+        def ink_rows(c: Canvas) -> NDArray[np.int_]:
+            return np.where(ink_mask(c))[0]
+
+        tops, middles, bottoms = blank(), blank(), blank()
+        draw_text(tops, "A", 30, 150, size_px=30, anchor=("left", "top"))
+        draw_text(middles, "A", 30, 150, size_px=30, anchor=("left", "middle"))
+        draw_text(bottoms, "A", 30, 150, size_px=30, anchor=("left", "bottom"))
+        # 垂直锚参照整块：top 把块顶对到 y（墨迹全部在 y 下方），bottom 相反
+        assert int(ink_rows(bottoms).min()) < int(ink_rows(middles).min())
+        assert int(ink_rows(middles).min()) < int(ink_rows(tops).min())
+        assert int(ink_rows(bottoms).max()) < int(ink_rows(middles).max())
+        assert int(ink_rows(middles).max()) < int(ink_rows(tops).max())
+        # top：块顶即 y，墨迹不会越过 y 上方；bottom：块底即 y，墨迹不会越过 y 下方
+        assert int(ink_rows(tops).min()) >= 150
+        assert int(ink_rows(bottoms).max()) <= 150
+
+    @pytest.mark.parametrize(
+        "anchor",
+        [
+            ("middle", "baseline"),  # 水平取值非法
+            ("left", "center"),  # 垂直取值非法
+            ("top", "top"),  # 两个都非法
+        ],
+    )
+    def test_invalid_anchor_raises(self, anchor: tuple[str, str]) -> None:
+        with pytest.raises(ValueError):
+            draw_text(blank(), "A", 20, 100, size_px=30, anchor=anchor)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("size_px", [0, -5])
+    def test_nonpositive_size_raises(self, size_px: float) -> None:
+        with pytest.raises(ValueError):
+            draw_text(blank(), "A", 20, 100, size_px=size_px)
+
+    def test_empty_font_list_raises(self) -> None:
+        with pytest.raises(ValueError):
+            draw_text(blank(), "A", 20, 100, size_px=30, font=[])
+        with pytest.raises(ValueError):
+            measure_text("A", size_px=30, font=[])
+        with pytest.raises(ValueError):
+            measure_text_height("A", size_px=30, font=[])
+        with pytest.raises(ValueError):
+            wrap_text("A", max_width=100, size_px=30, font=[])
 
     def test_rotation_makes_text_vertical(self) -> None:
         c = blank()
