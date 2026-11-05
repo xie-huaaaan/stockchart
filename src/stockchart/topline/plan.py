@@ -1,7 +1,3 @@
-# L4 经由 BarPlot 的包内私有接口（槽位摆腿、柱记录）完成布局，
-# 不触碰画布；故豁免跨模块私有成员检查。
-# pyright: reportPrivateUsage=false
-
 """L4 规划：把数据变成摆好腿的 BarPlot。
 
 选腿、算槽宽、组装柱子与样式循环都在这里；不触碰画布。
@@ -155,7 +151,7 @@ def assemble(
         font=options.get("font"),
         seed=seed,
     )
-    records = plot._add_columns(
+    records = plot.add_columns(
         specs,
         bar_gap=bar_gap,
         slot_gap=slot_gap,

@@ -698,7 +698,7 @@ class BarPlot:
         if self._group_centers:
             self._l3_cursor += gap
 
-    def _add_columns(
+    def add_columns(
         self,
         slots: Sequence[Sequence[Sequence[LegSpec]]],
         *,
@@ -707,11 +707,14 @@ class BarPlot:
         slots_px: Sequence[float],
         lead: float,
     ) -> list[list[list[BarRecord]]]:
-        """按槽位居中排布腿，返回与 slots 同构的柱记录（L4 自适应布局专用）。
+        """按槽位居中排布腿，返回与 slots 同构的柱记录。
 
         槽 → 列 → 腿规格：列从左到右排开（列间 bar_gap），同一列的腿共享
         足底中心 x（镜像图的上下双腿）。每槽占宽 slots_px，腿在其中居中；
-        槽中心记入 `_group_centers` 供 x 标签对齐。
+        槽中心记入组中心列表，供后续 `add_x_labels()` 对齐。
+
+        槽宽与腿的摆法由调用方算好——本方法只负责摆腿、记组中心，不推断
+        布局；不需要自适应槽宽时用 `add_bar()` 逐根贴即可。
 
         Args:
             slots: 槽 → 列 → 腿规格的嵌套结构。

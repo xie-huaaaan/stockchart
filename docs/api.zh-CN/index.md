@@ -6,7 +6,7 @@ stockchart 的公开 API 分五层（L0–L4），上层只通过下层的公开
 
 - [L0 — 腿部素材](leg-assets.md)：`Leg` / `LegLibrary` / `load_leg`
 - [L1 — 渲染原语](rendering.md)：丝袜样式（`StockingStyle` / `STYLES`）、`render_stocking`、文字与手绘线
-- [L2 — 自由柱状图](barplot.md)：`Scale` / `BarPlot`
+- [L2 — 自由柱状图](barplot.md)：`Scale` / `BarPlot` / 绘制记录类型
 - [L3 — 布局封装](layout.md)：`add_bars` / `add_grouped_bars` / `add_paired_bars`
 - [L4 — 数据输入](data-input.md)：输入形式、`PlotData` / `normalize_data` / `register_data_type`
 - [L4 — bar() 与 mirror_bar()](charts.md)：一行出图与 `ChartOptions` 透传选项
@@ -23,7 +23,7 @@ stockchart 的公开 API 分五层（L0–L4），上层只通过下层的公开
 | --- | --- | --- |
 | L0 素材 | 腿素材的加载与选取 | `Leg` `LegLibrary` `load_leg` |
 | L1 渲染原语 | 单个元素绘制 | `render_stocking` `StockingStyle` `STYLES` `draw_text` `sketch_line` `sketch_axis` |
-| L2 自由柱状图 | 画布、基线、任意贴腿、配轴 | `Scale` `BarPlot` |
+| L2 自由柱状图 | 画布、基线、任意贴腿、配轴 | `Scale` `BarPlot` `BarRecord` `LegSpec` 等记录类型 |
 | L3 布局封装 | 统一间距、自动选腿 | `BarPlot.add_bars` 等便捷方法 |
 | L4 一行出图 | 数据归一化 + 全自动布局 | `bar` `mirror_bar` |
 

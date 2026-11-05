@@ -164,6 +164,40 @@ class BarPlot:
                 "down", or x / height_px is not a finite number.
         """
 
+    def add_columns(
+        self,
+        slots: Sequence[Sequence[Sequence[LegSpec]]],
+        *,
+        bar_gap: float,
+        slot_gap: float,
+        slots_px: Sequence[float],
+        lead: float,
+    ) -> list[list[list[BarRecord]]]:
+        """Place legs slot by slot, centered, and return the bar records shaped like the slots.
+
+        Slot -> column -> leg spec: the columns are laid out from left to
+        right (bar_gap between columns), and the legs of one column share
+        the foot-sole center x (the upper and the lower legs of a mirror
+        chart). Each slot occupies slots_px, and the legs are centered inside
+        it; the slot center is recorded in the group-center list, so that a
+        later `add_x_labels()` can align with it.
+
+        The slot widths and the leg placement are computed by the caller --
+        this method only places the legs and records the group centers, it
+        does not infer the layout; use `add_bar()` to place the legs one by
+        one when adaptive slot widths are not needed.
+
+        Args:
+            slots: the nested slot -> column -> leg spec structure.
+            bar_gap: the gap between adjacent columns of the same slot.
+            slot_gap: the gap between adjacent slots.
+            slots_px: the width of each slot; the same length as slots.
+            lead: the x of the left edge of the first slot.
+
+        Returns:
+            A `BarRecord` list shaped like slots.
+        """
+
     def add_y_axis(
         self,
         scale: Scale,
@@ -391,6 +425,250 @@ class BarPlot:
         Returns:
             An (H, W, 4) uint8 RGBA array, with H / W in output pixels.
         """
+```
+
+## Drawing records and layout results
+
+`BarPlot` records *what* to draw; the geometry is computed uniformly at render
+time. The types below are the shapes of its input and output: `BarRecord` /
+`LegSpec` are used to place the legs, the rest are the drawing intents of the
+title, the axes, the labels, and the legend; `PlotLayout` and `RenderInput` are
+the product and the input of the layout stage.
+
+```python
+@dataclass(slots=True)
+class BarRecord:
+    """The drawing intent of one bar; the geometry is computed uniformly at render time.
+
+    Attributes:
+        x: the x of the foot-sole center in plot-area coordinates.
+        height_px: stocking height (design pixels); <= 0 means a bare leg.
+        leg: the leg asset.
+        style: the resolved stocking style.
+        side: whether the leg points up or down.
+        seed: the random source of this bar's texture.
+        value_label: the value label text; None means no label.
+    """
+
+    x: float
+    height_px: float
+    leg: Leg
+    style: StockingStyle
+    side: BarSide
+    seed: int
+    value_label: str | None = None
+
+
+@dataclass(slots=True)
+class LegSpec:
+    """The complete drawing spec of one leg, computed by the caller and placed by `add_columns`.
+
+    Attributes:
+        leg: the leg asset.
+        height_px: stocking height (design pixels).
+        side: whether the leg points up or down.
+        style: the resolved stocking style.
+    """
+
+    leg: Leg
+    height_px: float
+    side: BarSide
+    style: StockingStyle
+
+
+@dataclass(slots=True)
+class YAxisRecord:
+    """The drawing intent of the y axis; the ticks are data values, converted to pixels through the scale at drawing time.
+
+    Attributes:
+        scale: the data-value-to-pixel conversion.
+        ticks: the tick values to draw.
+        grid: whether to draw horizontal grid lines.
+        seed: the random source of the axis and grid wobble.
+        font: font for the tick numbers; None uses the platform default chain.
+    """
+
+    scale: Scale
+    ticks: list[float]
+    grid: bool
+    seed: int
+    font: FontSpec | None = None
+
+
+@dataclass(slots=True)
+class TitleRecord:
+    """The drawing intent of the chart-wide title.
+
+    Attributes:
+        text: the title text.
+        align: centered in the plot area or aligned to its left edge.
+        size_px: font size (design pixels).
+        color: text color.
+        font: title font; None uses the platform default chain.
+    """
+
+    text: str
+    align: TitleAlign = DEFAULT_TITLE_ALIGN
+    size_px: float = DEFAULT_TITLE_SIZE
+    color: Color = DEFAULT_TEXT_COLOR
+    font: FontSpec | None = None
+
+
+@dataclass(slots=True)
+class AxisNameRecord:
+    """The drawing intent of an axis name.
+
+    Attributes:
+        text: the axis name.
+        size_px: font size (design pixels).
+        color: text color.
+        rotate: True rotates the whole text by 90 degrees; False lays the
+            characters out one by one vertically.
+        font: axis-name font; None uses the platform default chain.
+    """
+
+    text: str
+    size_px: float = DEFAULT_AXIS_NAME_SIZE
+    color: Color = DEFAULT_TEXT_COLOR
+    rotate: bool = False
+    font: FontSpec | None = None
+
+
+@dataclass(slots=True)
+class XLabelsRecord:
+    """The drawing intent of the x labels.
+
+    Attributes:
+        labels: the label texts.
+        xs: the positions of the label anchors in plot-area coordinates; None
+            means they are derived from the group centers or spread evenly.
+        pos: "content" / "auto" / "above" / "below".
+        rotation: "auto" or a fixed angle (degrees).
+        font: label font; None uses the platform default chain.
+    """
+
+    labels: list[str]
+    xs: list[float] | None
+    pos: XLabelPos = "content"
+    rotation: XLabelRotation = "auto"
+    font: FontSpec | None = None
+
+
+@dataclass(slots=True)
+class LegendRecord:
+    """The drawing intent of the legend; the styles are normalized to instances.
+
+    Attributes:
+        items: a list of (label, style).
+        ncol: the number of columns; None means it wraps by width.
+        loc: "top" or "bottom".
+        seed: the random source of the swatch textures.
+        font: legend text font; None uses the platform default chain.
+    """
+
+    items: list[tuple[str, StockingStyle]]
+    ncol: int | None
+    loc: LegendLoc
+    seed: int
+    font: FontSpec | None = None
+
+
+@dataclass(slots=True)
+class PlotLayout:
+    """The overall geometry of one render, all in design pixels.
+
+    Attributes:
+        final_w: the final canvas width.
+        final_h: the final canvas height.
+        plot_left: the canvas x of the plot area (user coordinate x=0).
+        plot_right: the right edge of the plot area.
+        baseline_y: the canvas y of the baseline.
+        content_bottom: the lowest point of all the legs and axis content.
+        axis_x: the canvas x of the y axis trunk.
+        y_name_x: the canvas x of the center of the y axis name.
+        y_name_y: the canvas y of the center of the y axis name.
+        y_up_len: the upward length of the y axis trunk.
+        y_name_span: the vertical length available to the y axis name (the
+            total span of the axis trunk).
+        title_x: the canvas x of the title anchor.
+        title_y: the canvas y of the title anchor.
+        x_name_x: the canvas x of the center of the x axis name.
+        x_name_y: the canvas y of the x axis name anchor; None means there is
+            no x axis name.
+        legend_top_y: the canvas y of the first row of the top legend.
+        x_label_y: the canvas y of the x label anchors; None means there are
+            no labels.
+        x_label_baseline: True anchors the labels by their bottom edge
+            (they are written above the baseline).
+        x_label_angle: the resolved rotation angle; a positive angle turns
+            clockwise, and labels below the baseline take a negative angle.
+        x_label_height: the vertical space the label block takes (the
+            projected height after the rotation).
+        legend_bottom_y: the canvas y of the first row of the bottom legend;
+            None means there is no bottom legend.
+    """
+
+    final_w: float
+    final_h: float
+    plot_left: float
+    plot_right: float
+    baseline_y: float
+    content_bottom: float
+    axis_x: float = 0.0
+    y_name_x: float = 0.0
+    y_name_y: float = 0.0
+    y_up_len: float = 0.0
+    y_name_span: float = 0.0
+    title_x: float = 0.0
+    title_y: float = 0.0
+    x_name_x: float = 0.0
+    x_name_y: float | None = None
+    legend_top_y: float = 0.0
+    x_label_y: float | None = None
+    x_label_baseline: bool = False
+    x_label_angle: float = 0.0
+    x_label_height: float = 0.0
+    legend_bottom_y: float | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class RenderInput:
+    """Everything one render needs; the layout and the drawing share the same copy.
+
+    Attributes:
+        bars: the bar records that have been placed.
+        extent_up: the height reserved above the baseline for the bars
+            (design pixels).
+        extent_down: the height reserved below the baseline for the bars
+            (design pixels).
+        width_px: the width of the plot area (design pixels).
+        group_centers: the x of each group center in plot-area coordinates.
+        axis_style: the axis style.
+        baseline_seed: the random source of the baseline and the axes.
+        font: the chart-wide default font; None uses the platform default
+            chain.
+        y_axis: the y axis record; None means no axis is drawn.
+        y_axis_name: the y axis name record.
+        x_axis_name: the x axis name record.
+        x_labels: the x label record.
+        title: the title record.
+        legend: the legend record.
+    """
+
+    bars: list[BarRecord]
+    extent_up: float
+    extent_down: float
+    width_px: int
+    group_centers: list[float]
+    axis_style: AxisStyle
+    baseline_seed: int
+    font: FontSpec | None
+    y_axis: YAxisRecord | None
+    y_axis_name: AxisNameRecord | None
+    x_axis_name: AxisNameRecord | None
+    x_labels: XLabelsRecord | None
+    title: TitleRecord | None
+    legend: LegendRecord | None
 ```
 
 ## Minimal example

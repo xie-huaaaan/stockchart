@@ -56,7 +56,7 @@ class BarRecord:
 
 @dataclass(slots=True)
 class LegSpec:
-    """一根腿的完整绘制规格，由 L4 计算后交给 `_add_columns` 摆放。
+    """一根腿的完整绘制规格，由调用方计算后交给 `add_columns` 摆放。
 
     Attributes:
         leg: 腿素材。

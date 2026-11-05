@@ -6,7 +6,7 @@ stockchart's public API is organized in five layers (L0–L4); higher layers wor
 
 - [L0 — leg assets](leg-assets.md)
 - [L1 — rendering primitives](rendering.md)
-- [L2 — free-form bar plot](barplot.md)
+- [L2 — free-form bar plot](barplot.md): `Scale` / `BarPlot` / the drawing record types
 - [L3 — layout helpers](layout.md)
 - [L4 — data input](data-input.md)
 - [L4 — bar() and mirror_bar()](charts.md)
@@ -23,7 +23,7 @@ stockchart's public API is organized in five layers (L0–L4); higher layers wor
 | --- | --- | --- |
 | L0 assets | Loading and selecting leg assets | `Leg` `LegLibrary` `load_leg` |
 | L1 rendering primitives | Drawing individual elements | `render_stocking` `StockingStyle` `STYLES` `draw_text` `sketch_line` `sketch_axis` |
-| L2 free-form bar plot | Canvas, baseline, legs placed anywhere, axes | `Scale` `BarPlot` |
+| L2 free-form bar plot | Canvas, baseline, legs placed anywhere, axes | `Scale` `BarPlot` `BarRecord` `LegSpec` and the other record types |
 | L3 layout helpers | Uniform spacing, automatic leg selection | `BarPlot.add_bars` and other convenience methods |
 | L4 one-liners | Data normalization + fully automatic layout | `bar` `mirror_bar` |
 
