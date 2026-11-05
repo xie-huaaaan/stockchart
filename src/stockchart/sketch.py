@@ -13,8 +13,8 @@ from typing import Literal
 
 import skia
 
-from stockchart.canvas import Canvas, skia_color
-from stockchart.color import Color
+from stockchart.canvas import Canvas
+from stockchart.color import Color, skia_color
 from stockchart.defaults import (
     DEFAULT_ARROW_HALF_ANGLE_DEG,
     DEFAULT_ARROW_SIZE,

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from stockchart.canvas import Canvas, skia_color
-from stockchart.color import Color
+from stockchart.canvas import Canvas
+from stockchart.color import Color, skia_color
 from stockchart.defaults import DEFAULT_TEXT_COLOR
 from stockchart.text.engine import paint_line
 from stockchart.text.fonts import FontSpec

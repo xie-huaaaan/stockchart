@@ -19,8 +19,7 @@ from dataclasses import dataclass
 
 import skia
 
-from stockchart.canvas import skia_color
-from stockchart.color import Color
+from stockchart.color import Color, skia_color
 from stockchart.defaults import DEFAULT_TOFU_ADVANCE_RATIO
 from stockchart.text.fonts import (
     font_for,

@@ -12,7 +12,8 @@ import numpy as np
 import skia
 from numpy.typing import NDArray
 
-from stockchart.canvas import Canvas, skia_color
+from stockchart.canvas import Canvas
+from stockchart.color import skia_color
 from stockchart.defaults import (
     DEFAULT_GRID_COLOR,
     DEFAULT_GRID_DASH,

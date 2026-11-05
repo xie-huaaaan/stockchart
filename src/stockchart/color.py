@@ -1,10 +1,11 @@
 """颜色类型与内部换算。
 
 公开的 Color 是 0–255 的 RGB/RGBA 元组；内部绘制时按需拆成归一化 RGB 与
-alpha。所有颜色入口都应先经过 `check_color()` 校验。
+alpha，或直接转成 skia 的 ARGB 整数。所有颜色入口都应先经过 `check_color()` 校验。
 """
 
 import numpy as np
+import skia
 from numpy.typing import NDArray
 
 type Color = tuple[int, int, int] | tuple[int, int, int, int]
@@ -47,3 +48,20 @@ def color_alpha(color: Color) -> float:
         0–1 的 alpha 值。
     """
     return color[3] / 255.0 if len(color) == 4 else 1.0
+
+
+def skia_color(color: Color) -> int:
+    """把 Color 元组转换为 skia 的 ARGB 整数。
+
+    Args:
+        color: 3 元组（RGB）或 4 元组（RGBA），分量为 0–255；3 元组视为不透明。
+
+    Returns:
+        skia 使用的 ARGB 整数。
+
+    Raises:
+        ValueError: 元组长度或分量范围不合法。
+    """
+    check_color(color, "color")
+    a = int(color[3]) if len(color) == 4 else 255
+    return skia.Color(int(color[0]), int(color[1]), int(color[2]), a)

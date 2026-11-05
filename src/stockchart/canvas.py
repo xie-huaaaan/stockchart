@@ -13,25 +13,8 @@ import skia
 from numpy.typing import NDArray
 from PIL import Image as PilImage
 
-from stockchart.color import Color, check_color
+from stockchart.color import Color, skia_color
 from stockchart.defaults import DEFAULT_BACKGROUND
-
-
-def skia_color(color: Color) -> int:
-    """把 Color 元组转换为 skia 的 ARGB 整数。
-
-    Args:
-        color: 3 元组（RGB）或 4 元组（RGBA），分量为 0–255；3 元组视为不透明。
-
-    Returns:
-        skia 使用的 ARGB 整数。
-
-    Raises:
-        ValueError: 元组长度或分量范围不合法。
-    """
-    check_color(color, "color")
-    a = int(color[3]) if len(color) == 4 else 255
-    return skia.Color(int(color[0]), int(color[1]), int(color[2]), a)
 
 
 class Canvas:
