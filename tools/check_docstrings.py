@@ -39,6 +39,15 @@ MODULES = [
     "topline.py",
 ]
 
+# 拆分后的子包：这些模块目前只含私有实现，列入清单是为了将来有公开 API 时能被覆盖
+SUBPACKAGE_MODULES = [
+    "stocking/edge.py",
+    "stocking/fabric.py",
+    "stocking/geometry.py",
+    "stocking/ink.py",
+    "stocking/shading.py",
+]
+
 FENCE = re.compile(r"^```python\s*$")
 SECTIONS = ("Args:", "Returns:", "Raises:", "Attributes:")
 ENTRY = re.compile(r"^\s{4}(\w+):")
@@ -47,7 +56,7 @@ ENTRY = re.compile(r"^\s{4}(\w+):")
 def source_docstrings() -> dict[str, str]:
     """抽取源码里所有公开 API 的 docstring。"""
     found: dict[str, str] = {}
-    for rel in MODULES:
+    for rel in MODULES + SUBPACKAGE_MODULES:
         path = SRC / rel
         if not path.exists():
             continue

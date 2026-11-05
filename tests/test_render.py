@@ -278,7 +278,7 @@ class TestSkinShading:
 
 class TestShadingLayers:
     def test_shadow_color_is_not_overwritten_by_highlight(self) -> None:
-        from stockchart.stocking.render import _render_shading
+        from stockchart.stocking.shading import render_shading
 
         H, W = 20, 40
         alpha = np.ones((H, W))
@@ -288,19 +288,19 @@ class TestShadingLayers:
             highlight=0.0,
             shadow_color=(150, 140, 180, 180),
         )
-        shadow, highlight = _render_shading(style, np.ones((H, W, 4)), alpha, u, 0, H, W)
+        shadow, highlight = render_shading(style, np.ones((H, W, 4)), alpha, u, 0, H, W)
         # 阴影 RGB 必须保持配置的蓝色分量，不能被高光强度占用
         assert shadow[..., 2] == pytest.approx(180 / 255)
         assert not highlight.any()
 
     def test_dotted_scatter_depends_on_seed(self) -> None:
-        from stockchart.stocking.render import _dot_mask
+        from stockchart.stocking.fabric import dot_mask
 
         H, W = 80, 80
         abs_x = np.tile(np.linspace(-30.0, 30.0, W), (H, 1))
         ys = np.arange(H, dtype=float)[:, None] * np.ones((1, W))
-        a = _dot_mask(abs_x, ys, 10.0, 3.0, "scatter", "dot", np.random.default_rng(1))
-        b = _dot_mask(abs_x, ys, 10.0, 3.0, "scatter", "dot", np.random.default_rng(2))
+        a = dot_mask(abs_x, ys, 10.0, 3.0, "scatter", "dot", np.random.default_rng(1))
+        b = dot_mask(abs_x, ys, 10.0, 3.0, "scatter", "dot", np.random.default_rng(2))
         assert not np.array_equal(a, b)
 
 
