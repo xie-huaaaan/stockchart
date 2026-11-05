@@ -8,7 +8,7 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 
 ## 名称
 
-- 项目名与包名：`stockchart`（`import stockchart`）。PyPI 上未被占用（已查询）。`stockplot`、`stockings` 已被占用。
+- 项目名与包名：`stockchart`（`import stockchart`）。已发布于 PyPI（当前版本 0.1.1）。同名的 `stockplot`、`stockings` 是另一个包，与本项目无关。
 
 ## 素材
 
@@ -53,7 +53,7 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 5. **Fade**：渐隐自袜口顶端向下 `length` 像素内对织物 alpha 做线性爬坡；
 6. **织物合成**：袜色按织物 alpha 与皮肤混合（rim/stretch 调制不透明度）；
 7. **上沿绘制**：Welt 不透明条带（双层织物）/ Lace 0.85 半透明带 + 波浪软边缘 + 孔点加深 + 波浪边线；条带直接覆于皮肤上（条带即该区域的织物）；
-8. **光影后置** `_apply_shading`：侧缘阴影（正片叠底）与竖向高光（screen）在条带绘制之后统一应用，使袜口与袜身连续受光；袜口以上的裸皮按 `Shading.skin` 强度参与同一套光影（默认 0.5；0 即只作用于袜子、为旧观感），并用偏暖的 `skin_shadow_color`——冷紫阴影落在皮肤上会显脏。Fade 的渐隐区里光影从 sock 全强度交叉过渡到 skin 强度，避免袜口处出现阴影断层；裸腿（高度 0）在 skin>0 时同样打光，保证同一张图里各腿受光一致；
+8. **光影后置** `_apply_shading`：侧缘阴影（正片叠底）与竖向高光（screen）在条带绘制之后统一应用，使袜口与袜身连续受光；袜口以上的裸皮按 `Shading.skin` 强度参与同一套光影（默认 0.5；0 即只作用于袜子、为旧观感），并用偏暖的 `skin_shadow_color`——冷紫阴影落在皮肤上会显脏。Fade 的渐隐区里光影从袜子全强度交叉过渡到皮肤强度，避免袜口处出现阴影断层；裸腿（高度 0）在 skin>0 时同样打光，保证同一张图里各腿受光一致；
 9. **墨线增强** `_boost_ink_lines`：检测素材内部手绘线（膝盖褶皱），以“织物压痕” 补画到袜子上——深色织物用 shadow_color screen 提亮为冷灰线，浅色织物按原线条深度比压暗；强度 = `Shading.ink` × 局部织物覆盖率，裸腿处不增强，无底网袜跳过；
 10. **倍率原生** `scale`：>1 时整条管线在 scale 倍像素空间里跑——素材按预乘 alpha 双三次重采样、样式里所有像素长度乘以 scale、织物/上沿/光影按该分辨率重新生成。所以放大输出里袜身纹理是真细节（不是把成品图放大成方块）；位图按设备像素 1:1 贴图。素材本身的分辨率是唯一的剩余限制（见下文“素材与输出”）。
 
@@ -119,7 +119,7 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 分五层，完整签名与语义见 [API 参考](api.zh-CN/index.md)：
 
 - L0 素材：`Leg`、`LegLibrary`、`load_leg()`
-- L1 渲染原语：`render_stocking()`、`StockingStyle` / `STYLES`、`draw_text()`、`sketch_line()`、`sketch_axis()`
+- L1 渲染原语：`render_stocking()`、`StockingStyle` / `STYLES`、`draw_text()`、`measure_text()` / `measure_text_height()` / `wrap_text()`、`sketch_line()`、`sketch_axis()`
 - L2 自由柱状图：`BarPlot`、`Scale`、`Canvas`
 - L3 布局封装：`BarPlot.add_bars / add_grouped_bars / add_paired_bars`
 - L4 一行出图：`bar()`、`mirror_bar()`（四值 `paired` 参数控制自动、不成对、组内成对、全局成对四种选腿策略）
@@ -127,7 +127,7 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 ## 数据输入与参数透传
 
 - L4 的 `data` 先经 `normalize_data`（`functools.singledispatch`）归一为 `PlotData`：一维/二维序列、numpy 数组、`dict` / `Mapping`（标量值→键作 x 标签，等长序列值→键作系列名并自动出图例）、pandas 风格表对象（按 `index` / `columns` / `to_numpy()` 结构识别，**不 import pandas**）、已归一化的 `PlotData`。自定义类型用 `register_data_type` 注册，显式传入的 `labels` / `series_labels` 覆盖数据推断值。
-- L4 只保留图表语义参数；`axis_style`、`background`、`grid`、`ticks`、`x_label_pos`、`x_label_rotation`、`title_align` / `title_size_px`、`axis_name_size_px`、`legend_loc` / `legend_ncol`、`bar_gap` / `group_gap` 收进 `ChartOptions`，以 `**options` 传入并在内部路由到 `BarPlot` / `add_*`。未知键运行时报 `TypeError`（拼错的参数不会被静默忽略）。旧的 `bar(..., grid=True)` / `axis_style="handdrawn"` 等写法仍然可用，只是不再出现在签名里。
+- L4 只保留图表语义参数；`axis_style`、`background`、`grid`、`ticks`、`x_label_pos`、`x_label_rotation`、`title_align` / `title_size_px`、`axis_name_size_px`、`legend_loc` / `legend_ncol`、`bar_gap` / `group_gap`、`font` 收进 `ChartOptions`，以 `**options` 传入并在内部路由到 `BarPlot` / `add_*`。未知键运行时报 `TypeError`（拼错的参数不会被静默忽略）。旧的 `bar(..., grid=True)` / `axis_style="handdrawn"` 等写法仍然可用，只是不再出现在签名里。
 
 ## 坐标轴样式
 
@@ -155,11 +155,12 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 1. ✅ `tools/split_legs.py` 切分素材（26 腿 / 13 对），预览图已核对；
 2. ✅ `LegLibrary` + `load_leg` + 测试；
 3. ✅ `render_stocking`：5 种 Fabric × 4 种 TopEdge × Shading，19 个预设，用户评审通过（评审图脚本 `tools/render_*_review.py`，产物在 `out/`，不入库）；
-4. ✅ L1 文字与线条（`Canvas`/`draw_text`/`measure_text`/`sketch_line`/`sketch_axis`）；
+4. ✅ L1 文字与线条（`Canvas`/`draw_text`/`measure_text`/`measure_text_height`/`wrap_text`/`sketch_line`/`sketch_axis`）；
 5. ✅ L2–L4（`Scale`/`BarPlot`/`add_bars` 系列/`bar`/`mirror_bar`），评审图 `tools/render_plot_review.py`；间距、字号、图例尺寸、刻度密度、数值标签对齐等已按评审反馈调整并通过；
 6. ✅ 渲染倍率原生（`render_stocking(scale=)` + `Leg.pixels_per_unit`）与透明 SVG 素材（`tools/split_master.py`：超分母图切分 → 追踪 → clipPath → SVG）；
 7. ✅ 绘制细节：坐标轴默认直线（手绘风可选）、x 标签过长自动倾斜、图例长标签自动折行、默认组间距调大；
-8. ✅ 公开 API 整理：`normalize_data`（`singledispatch`）支持 pandas 等数据格式、L4 透传参数收进 `ChartOptions`、标题默认居中与 x / y 轴名、文档同步。
+8. ✅ 公开 API 整理：`normalize_data`（`singledispatch`）支持 pandas 等数据格式、L4 透传参数收进 `ChartOptions`、标题默认居中与 x / y 轴名、文档同步；
+9. ✅ 文字引擎重写：改用 skia.textlayout 段级整形（kerning、连字、段内 RTL 正确），`font` 参数透传到全图与各元素，数值标签与刻度统一按 6 位有效数字有界格式化。
 
 ## 已定事项
 
@@ -173,7 +174,7 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 - **数据输入归一**：`normalize_data` + `register_data_type`；pandas 只按结构识别，不作为运行时依赖；
 - **L4 参数分层**：图表语义参数留在签名，透传参数收进 `ChartOptions` 并由 `**options` 接收；
 - **选腿配对**：`paired="auto"`（默认，单系列 none、多系列 global）/ `"none"`/`"group"`/`"global"`；单系列下 group 取每组新对的左腿；L0 `alternate(paired=True)` 提供相邻成对的平铺原语；
+- 不再提供默认种子：不传 `seed` 时随机；同一 `seed` 下结果可复现。
 - **组间距默认 120**（原 96），分组边界更清晰；
 - 输出只有 PNG，不做 SVG/PDF；SVG 只作为内置腿素材的存储格式，对外仍只出 PNG，理由见“素材与输出”；
 - `LegLibrary.alternate()` 的 docstring 已与实现对齐：偶数下标为左腿、奇数下标为右腿（0-based）。
-- 不再提供默认种子：不传 `seed` 时随机；同一 `seed` 下结果可复现。

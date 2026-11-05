@@ -8,7 +8,7 @@ The original hand-made reference image (skin-toned legs with dark-gray stockings
 
 ## Name
 
-- Project and package name: `stockchart` (`import stockchart`). Not taken on PyPI (verified). `stockplot` and `stockings` are already taken.
+- Project and package name: `stockchart` (`import stockchart`). Published on PyPI (currently 0.1.1). `stockplot` and `stockings` are unrelated packages that happen to share the theme.
 
 ## Assets
 
@@ -47,20 +47,20 @@ Structure: `StockingStyle = Fabric + TopEdge + Shading`, three independently com
 ### Rendering Pipeline (render_stocking)
 
 1. **Column profile** `_column_profile`: per row, estimate the leg width from the alpha coverage, yielding a normalized transverse coordinate u ∈ [−1, 1] — every "wrapped around the leg" effect is parameterized by u;
-2. **Curve dip** `_curve_dip`: `dip = curve × half-width × (1 − u²)` — viewed slightly from above, horizontal wrapping lines (stripes, the welt, lace, fishnet rows) form arcs that sag at the center and rise relatively at the sides, with the dip proportional to the local leg width;
+2. **Curve dip** `_curve_dip`: `dip = curve × half-width × (1 − u²)` — viewed slightly from above, horizontal wrapping lines (stripes, the welt, lace, mesh rows) form arcs that sag at the center and rise relatively at the sides, with the dip proportional to the local leg width;
 3. **Fabric layer** `_render_fabric`: generate RGBA per Fabric kind; the pattern phase is counted from the bottom edge of the top-edge band;
 4. **Per-column clipping**: the fabric is clipped column by column along the bottom edge of the top-edge band (the Welt band's bottom arc / the Lace scallop edge), so the pattern hugs the band's edge everywhere with no gaps;
-5. **Fade**: within `length` pixels measured downward from the top of the welt, the fabric alpha ramps up linearly;
+5. **Fade**: within `length` pixels measured downward from the top of the stocking, the fabric alpha ramps up linearly;
 6. **Fabric compositing**: the stocking color is blended with the skin by the fabric alpha (rim/stretch modulate the opacity);
 7. **Top-edge drawing**: the Welt is an opaque band (double-layer fabric) / Lace is a 0.85 semi-transparent band with soft scallop edges + darkened hole dots + a scallop edge line; the band is drawn directly over the skin (the band *is* the fabric of that region);
-8. **Shading applied afterwards** `_apply_shading`: the rim shadow (multiply blending) and the vertical highlight (screen blending) are applied uniformly after the top-edge band is drawn, so the welt and the fabric receive light continuously. Bare skin above the welt participates in the same shading at the `Shading.skin` strength (default 0.5; 0 means shading affects only the stocking — the old look) and uses a warm-tinted `skin_shadow_color` — a cold purple shadow looks dirty on skin. Within the fade's transition zone, shading cross-fades from full `sock` strength to the skin strength, avoiding a shadow discontinuity at the welt; bare legs (height 0) are also lit when skin>0, so all legs in the same chart receive light consistently;
+8. **Shading applied afterwards** `_apply_shading`: the rim shadow (multiply blending) and the vertical highlight (screen blending) are applied uniformly after the top-edge band is drawn, so the welt and the fabric receive light continuously. Bare skin above the welt participates in the same shading at the `Shading.skin` strength (default 0.5; 0 means shading affects only the stocking — the old look) and uses a warm-tinted `skin_shadow_color` — a cold purple shadow looks dirty on skin. Within the fade's transition zone, shading cross-fades from full stocking strength to the skin strength, avoiding a shadow discontinuity at the welt; bare legs (height 0) are also lit when skin>0, so all legs in the same chart receive light consistently;
 9. **Ink-line boost** `_boost_ink_lines`: detect the hand-drawn lines inside the asset (knee crease lines) and redraw them onto the stocking as "fabric indentation" — on dark fabric they are brightened to cold-gray lines with `shadow_color` via screen blending; on light fabric they are darkened in proportion to the original line depth. Strength = `Shading.ink` × local fabric coverage; no boost on bare legs, and sheer fishnet without an opaque base skips this step;
 10. **Native scale** `scale`: when >1, the whole pipeline runs in a pixel space scaled by `scale` — the asset is resampled with premultiplied alpha and bicubic interpolation, every pixel length in the style is multiplied by `scale`, and fabric / top edge / shading are regenerated at that resolution. So zoomed output shows real fabric detail (not a chunky upscaled bitmap); bitmaps are composited 1:1 in device pixels. The asset's own resolution is the only remaining limit (see "Assets and Output" below).
 
 ### Design Trade-offs (From Review Iterations)
 
 - **Perspective compression of stripes/ribbing/fishnet/prints**: patterns are generated in the leg's "unwrapped surface coordinates", blending screen coordinate `u` with cylindrical arc length `arcsin(u)` by `perspective` (0 = uniform, 1 = full cylinder, default 0.8), so they naturally densify toward the sides; band boundaries get about 1.2px of sub-pixel softening to avoid stairstepping from per-column phase rounding;
-- **Relationship between the top edge and the fabric**: an earlier attempt filled the dead zone with plain fabric in the dominant color, which blurred into a wide band of the same color as the lace. The correct model is that the band *is* the fabric, drawn directly over the skin, with the pattern phase starting from the band's bottom edge;
+- **Relationship between the top edge and the fabric**: an earlier attempt filled the quiet zone with plain fabric in the dominant color, which blurred into a wide band of the same color as the lace. The correct model is that the band *is* the fabric, drawn directly over the skin, with the pattern phase starting from the band's bottom edge;
 - **Lace semi-transparency (0.85)**: what shows through the openwork fabric is skin (the pattern gives way there), and the hole dots are expressed by darkening rather than reducing opacity (decided in user review);
 - **Shading must come after the top edge**: if you light before drawing the band, the band's flat color looks like a sticker. The highlight's screen formula was once written incorrectly as an identity operation; fixed;
 - **Boundaries of the ink-line boost**: exclude a 3px ring along the alpha edge (outlines must not stack with the rim shadow), use a soft threshold + slight blur to keep the hand-drawn feel, and use multiplicative darkening so it adapts to any stocking color;
@@ -72,7 +72,7 @@ A single leg at 720×~170, fully numpy-vectorized, renders in roughly 0.5–0.9s
 
 ## Fonts
 
-No fonts are bundled. Fonts are specified through a `FontSpec`: a family name, a font file path, or a candidate list of both (they may be mixed), in priority order; `font=None` uses the platform default chain (`defaults.DEFAULT_FONT_FAMILIES`, favoring handwriting/regular-script faces: Windows: `楷体`, `华文行楷`, `Ink Free`, `Segoe Print`; macOS: `Kaiti SC`, `Bradley Hand`, `Marker Felt`; Linux: `Noto Serif CJK`, `WenQuanYi`, `Noto Sans CJK`). This path never touches matplotlib's font configuration, so none of its caching/configuration issues apply.
+No fonts are bundled. Fonts are specified through a `FontSpec`: a family name, a font file path, or a candidate list of both (they may be mixed), in priority order; `font=None` uses the platform default chain (`defaults.DEFAULT_FONT_FAMILIES`, favoring handwriting/Kai faces: Windows: `楷体`, `华文行楷`, `Ink Free`, `Segoe Print`; macOS: `Kaiti SC`, `Bradley Hand`, `Marker Felt`; Linux: `Noto Serif CJK`, `WenQuanYi`, `Noto Sans CJK`). This path never touches matplotlib's font configuration, so none of its caching/configuration issues apply.
 
 Glyph resolution is per code point: the first font in the candidate stack that has the glyph wins; if none does, the system's per-code-point fallback takes over (skia `FontMgr.matchFamilyStyleCharacter`, win=DirectWrite / mac=CoreText / linux=FontConfig); if that fails too, a stroked placeholder box is drawn instead of raising.
 
@@ -119,7 +119,7 @@ Series naming goes through the legend uniformly (mainstream-library practice; se
 Five layers; full signatures and semantics in the [API reference](api/index.md):
 
 - L0 Assets: `Leg`, `LegLibrary`, `load_leg()`
-- L1 Rendering primitives: `render_stocking()`, `StockingStyle` / `STYLES`, `draw_text()`, `sketch_line()`, `sketch_axis()`
+- L1 Rendering primitives: `render_stocking()`, `StockingStyle` / `STYLES`, `draw_text()`, `measure_text()` / `measure_text_height()` / `wrap_text()`, `sketch_line()`, `sketch_axis()`
 - L2 Free-form bar charts: `BarPlot`, `Scale`, `Canvas`
 - L3 Layout helpers: `BarPlot.add_bars / add_grouped_bars / add_paired_bars`
 - L4 One-line charts: `bar()`, `mirror_bar()` (the four-valued `paired` parameter controls auto, unpaired, group-paired, or globally-paired leg selection)
@@ -127,7 +127,7 @@ Five layers; full signatures and semantics in the [API reference](api/index.md):
 ## Data Input and Parameter Pass-Through
 
 - L4's `data` first goes through `normalize_data` (`functools.singledispatch`) and is normalized to `PlotData`: 1-D/2-D sequences, numpy arrays, `dict` / `Mapping` (scalar values → keys become x labels; equal-length sequence values → keys become series names and the legend is generated automatically), pandas-style table objects (recognized by their `index` / `columns` / `to_numpy()` structure, **without importing pandas**), and already-normalized `PlotData`. Custom types are registered with `register_data_type`; explicitly passed `labels` / `series_labels` override values inferred from the data.
-- L4 keeps only chart-semantic parameters; `axis_style`, `background`, `grid`, `ticks`, `x_label_pos`, `x_label_rotation`, `title_align` / `title_size_px`, `axis_name_size_px`, `legend_loc` / `legend_ncol`, `bar_gap` / `group_gap` are packed into `ChartOptions`, passed via `**options`, and routed internally to `BarPlot` / `add_*`. Unknown keys raise `TypeError` at runtime (misspelled parameters are never silently ignored). The old `bar(..., grid=True)` / `axis_style="handdrawn"` spellings still work; they just no longer appear in the signature.
+- L4 keeps only chart-semantic parameters; `axis_style`, `background`, `grid`, `ticks`, `x_label_pos`, `x_label_rotation`, `title_align` / `title_size_px`, `axis_name_size_px`, `legend_loc` / `legend_ncol`, `bar_gap` / `group_gap`, and `font` are packed into `ChartOptions`, passed via `**options`, and routed internally to `BarPlot` / `add_*`. Unknown keys raise `TypeError` at runtime (misspelled parameters are never silently ignored). The old `bar(..., grid=True)` / `axis_style="handdrawn"` spellings still work; they just no longer appear in the signature.
 
 ## Axis Styles
 
@@ -155,11 +155,12 @@ Packaging note: when building a standalone Windows executable (PyInstaller etc.)
 1. ✅ `tools/split_legs.py` splits the assets (26 legs / 13 pairs); preview images verified;
 2. ✅ `LegLibrary` + `load_leg` + tests;
 3. ✅ `render_stocking`: 5 Fabric kinds × 4 TopEdge kinds × Shading, 19 presets, approved in user review (review scripts `tools/render_*_review.py`, output in `out/`, not committed);
-4. ✅ L1 text and lines (`Canvas`/`draw_text`/`measure_text`/`sketch_line`/`sketch_axis`);
+4. ✅ L1 text and lines (`Canvas`/`draw_text`/`measure_text`/`measure_text_height`/`wrap_text`/`sketch_line`/`sketch_axis`);
 5. ✅ L2–L4 (`Scale`/`BarPlot`/`add_bars` family/`bar`/`mirror_bar`), review images via `tools/render_plot_review.py`; spacing, font sizes, legend sizes, tick density, value-label alignment, etc. adjusted per review feedback and approved;
 6. ✅ Native render scale (`render_stocking(scale=)` + `Leg.pixels_per_unit`) and transparent SVG assets (`tools/split_master.py`: master-artwork splitting → tracing → clipPath → SVG);
 7. ✅ Drawing details: straight axes by default (hand-drawn optional), automatic tilting of overly long x labels, automatic wrapping of overly long legend labels, larger default group spacing;
-8. ✅ Public API cleanup: `normalize_data` (`singledispatch`) supporting pandas and other data formats, L4 pass-through parameters packed into `ChartOptions`, title centered by default and x / y axis names, docs in sync.
+8. ✅ Public API cleanup: `normalize_data` (`singledispatch`) supporting pandas and other data formats, L4 pass-through parameters packed into `ChartOptions`, title centered by default and x / y axis names, docs in sync;
+9. ✅ Text engine rewritten on skia.textlayout segment shaping (kerning, ligatures and intra-segment RTL correct), the `font` parameter passed through to the whole chart and to individual elements, and value labels and ticks formatted with a bounded 6-significant-digit scheme.
 
 ## Settled Decisions
 
