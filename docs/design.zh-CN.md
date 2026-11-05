@@ -178,3 +178,4 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 - **组间距默认 120**（原 96），分组边界更清晰；
 - 输出只有 PNG，不做 SVG/PDF；SVG 只作为内置腿素材的存储格式，对外仍只出 PNG，理由见“素材与输出”；
 - `LegLibrary.alternate()` 的 docstring 已与实现对齐：偶数下标为左腿、奇数下标为右腿（0-based）。
+- **模块按职责拆分**：`plot/`、`stocking/`、`topline/` 各自成包，跨层调用只走公开接口（L4 摆腿用 `BarPlot.add_columns()`，`plot.types` 的记录类型全部声明导出）；`vector.py` 保持单函数模块——SVG 栅格化同时服务 `legs` / `library` / 工具脚本，合进任一处都不划算；`text/engine.py` 按字体分段、`text/layout.py` 按宽度折行，是两个维度而非重复实现。
