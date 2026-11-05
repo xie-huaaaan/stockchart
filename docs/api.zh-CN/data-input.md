@@ -68,7 +68,7 @@ def register_data_type[T](cls: type[T], handler: Callable[[T], PlotData]) -> Non
 from stockchart import normalize_data
 
 data = normalize_data({"一月": 320, "二月": 450})
-print(data.labels)                      # ("一月", "二月")
-print(data.values)                      # ((320.0,), (450.0,))
-print(normalize_data([[1, 2], [3, 4]]).values)   # ((1.0, 2.0), (3.0, 4.0))
+print(data.labels)  # ("一月", "二月")
+print(data.values)  # ((320.0,), (450.0,))
+print(normalize_data([[1, 2], [3, 4]]).values)  # ((1.0, 2.0), (3.0, 4.0))
 ```

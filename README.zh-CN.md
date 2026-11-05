@@ -19,22 +19,22 @@
 
 <table>
   <tr>
-    <td width=“50%” align=“center”>
-      <img src=“docs/images/showcase-grouped-zh.png” alt=“分组图：周末计划与实际的小时数对比”><br>
+    <td width="50%" align="center">
+      <img src="docs/images/showcase-grouped-zh.png" alt="分组图：周末计划与实际的小时数对比"><br>
       <sub>分组图 —— <code>black_sheer</code>（松紧袜口）与 <code>white_sheer</code>（蕾丝边）</sub>
     </td>
-    <td width=“50%” align=“center”>
-      <img src=“docs/images/showcase-single-zh.png” alt=“含负值的单系列图，全部朝上的腿”><br>
+    <td width="50%" align="center">
+      <img src="docs/images/showcase-single-zh.png" alt="含负值的单系列图，全部朝上的腿"><br>
       <sub>单系列含负值 —— 依旧全是朝上的腿（<code>heart_white</code>）</sub>
     </td>
   </tr>
   <tr>
-    <td width=“62%” align=“center”>
-      <img src=“docs/images/showcase-styles-zh.png” width=“95%” alt=“七条腿穿着七种不同的丝袜样式”><br>
+    <td width="62%" align="center">
+      <img src="docs/images/showcase-styles-zh.png" width="95%" alt="七条腿穿着七种不同的丝袜样式"><br>
       <sub>样式巡礼 —— 5 种袜身、4 种上沿</sub>
     </td>
-    <td width=“38%” align=“center”>
-      <img src=“docs/images/showcase-mirror-zh.png” width=“62%” alt=“正负值镜像图”><br>
+    <td width="38%" align="center">
+      <img src="docs/images/showcase-mirror-zh.png" width="62%" alt="正负值镜像图"><br>
       <sub>镜像图 —— 正负值上下分布</sub>
     </td>
   </tr>
@@ -181,9 +181,9 @@ bar(
 from stockchart import BarPlot, Scale
 
 plot = BarPlot(1200)
-plot.add_bars([300, 500, 400], style="black_sheer")
+plot.add_grouped_bars([[300], [500], [400]], style="black_sheer")
 plot.add_x_labels(["A", "B", "C"])
-plot.add_y_axis(Scale((0, 500), (0, 760)))
+plot.add_y_axis(Scale((0, 500), (0, 500)))
 plot.add_title("自由排版")
 plot.save("chart.png")
 ```

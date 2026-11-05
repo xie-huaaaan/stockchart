@@ -4,7 +4,7 @@
 
 ## 丝袜样式
 
-袜子 = 袜身种类（`Fabric`）+ 上沿（`TopEdge`）+ 光影（`Shading`）。三者都是 `dataclass(slots=True, frozen=True, kw_only=True)`，非法参数在构造时抛 `ValueError`。长度单位均为设计像素，指腿正面处的尺寸（两侧按 `perspective` 做圆柱透视压缩，默认 0.8）。颜色为 `Color`；带 alpha 分量时，alpha 乘到对应的 opacity 上。
+袜子 = 袜身种类（`Plain` / `Striped` / `Ribbed` / `Fishnet` / `Dotted`）+ 上沿（`Bare` / `Welt` / `Lace` / `Fade`）+ 光影（`Shading`）。三者都是 `dataclass(slots=True, frozen=True, kw_only=True)`，非法参数在构造时抛 `ValueError`。长度单位均为设计像素，指腿正面处的尺寸（两侧按 `perspective` 做圆柱透视压缩，默认 0.8）。颜色为 `Color`；带 alpha 分量时，alpha 乘到对应的 opacity 上。
 
 ```python
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -280,5 +280,5 @@ from stockchart import STYLES, LegLibrary, render_stocking
 
 library = LegLibrary(seed=0)
 rendered = render_stocking(library.get("leg_03"), STYLES["black_sheer"], 500, seed=0)
-print(rendered.height, rendered.pixels_per_unit)   # 设计像素高与图像密度
+print(rendered.height, rendered.pixels_per_unit)  # 设计像素高与图像密度
 ```

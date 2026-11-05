@@ -4,7 +4,7 @@
 
 ## Stocking styles
 
-A stocking = fabric kind (`Fabric`) + top edge (`TopEdge`) + shading (`Shading`). All three are `dataclass(slots=True, frozen=True, kw_only=True)`; invalid parameters raise `ValueError` at construction. Length units are design pixels and refer to dimensions at the front of the leg (the sides are compressed by cylindrical `perspective`, default 0.8). Colors are `Color`; when an alpha component is present, it is multiplied into the corresponding opacity.
+A stocking = fabric kind (`Plain` / `Striped` / `Ribbed` / `Fishnet` / `Dotted`) + top edge (`Bare` / `Welt` / `Lace` / `Fade`) + shading (`Shading`). All three are `dataclass(slots=True, frozen=True, kw_only=True)`; invalid parameters raise `ValueError` at construction. Length units are design pixels and refer to dimensions at the front of the leg (the sides are compressed by cylindrical `perspective`, default 0.8). Colors are `Color`; when an alpha component is present, it is multiplied into the corresponding opacity.
 
 ```python
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -311,5 +311,5 @@ from stockchart import STYLES, LegLibrary, render_stocking
 
 library = LegLibrary(seed=0)
 rendered = render_stocking(library.get("leg_03"), STYLES["black_sheer"], 500, seed=0)
-print(rendered.height, rendered.pixels_per_unit)   # design height and image density
+print(rendered.height, rendered.pixels_per_unit)  # design height and image density
 ```

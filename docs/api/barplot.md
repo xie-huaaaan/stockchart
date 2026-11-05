@@ -270,9 +270,9 @@ class BarPlot:
 from stockchart import BarPlot, Scale
 
 plot = BarPlot(1200)
-plot.add_bars([300, 500, 400], style="black_sheer")
+plot.add_grouped_bars([[300], [500], [400]], style="black_sheer")
 plot.add_x_labels(["A", "B", "C"])
-plot.add_y_axis(Scale((0, 500), (0, 760)))
+plot.add_y_axis(Scale((0, 500), (0, 500)))
 plot.add_title("Free-form layout")
 plot.save("freeform.png")
 ```

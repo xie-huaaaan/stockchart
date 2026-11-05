@@ -43,7 +43,7 @@ bar(
 
 ## 正负镜像图
 
-`mirror_bar()` 把正值画在基线上方、负值画在下方（脚贴基线的翻转腿）。`mode="both"` 两侧都画，非数据侧是裸腿。
+`mirror_bar()` 把正值画在基线上方、负值画在下方（脚贴基线的翻转腿）。默认只画数据侧：
 
 ```python
 from stockchart import mirror_bar
@@ -58,15 +58,30 @@ mirror_bar(
 ).save("mirror.png")
 ```
 
+`mode="both"` 两侧都画，非数据侧补一条裸腿：
+
+```python
+from stockchart import mirror_bar
+
+mirror_bar(
+    [4.2, -2.8, 6.1, -5.5],
+    labels=["周一", "周二", "周三", "周四"],
+    title="每日变化（双侧）",
+    mode="both",
+    style="gray_sheer",
+    seed=2,
+).save("mirror_both.png")
+```
+
 ## 数值标签
 
-`value_labels=True` 在袜口上方写出数值，统一按 6 位有效数字格式化，大数与极小数自动用科学计数法。
+`value_labels=True` 在袜口上方写出数值，统一按 6 位有效数字格式化；绝对值 ≥ 10⁶ 或 < 10⁻⁴ 时自动改用科学计数法。
 
 ```python
 from stockchart import bar
 
 bar(
-    [1234567, 0.000123, 42, 0],
+    [1234567, 0.0000123, 42, 0],
     labels=["大数", "极小数", "整数", "零"],
     title="数值标签",
     value_labels=True,
@@ -111,7 +126,7 @@ bar(
 
 ## 自定义样式
 
-袜子 = 袜身（`Fabric`）+ 上沿（`TopEdge`）+ 光影（`Shading`）自由组合，三个部件都能单独调。
+袜子 = 袜身（`Plain` / `Striped` / `Ribbed` / `Fishnet` / `Dotted`）+ 上沿（`Bare` / `Welt` / `Lace` / `Fade`）+ 光影（`Shading`）自由组合，三个部件都能单独调。
 
 ```python
 from stockchart import Dotted, Lace, Plain, Shading, StockingStyle, bar
@@ -149,14 +164,14 @@ from stockchart import BarPlot, Scale, load_leg
 # 先生成一张示例素材：透明背景，脚在底端
 image = Image.new("RGBA", (120, 400), (0, 0, 0, 0))
 draw = ImageDraw.Draw(image)
-draw.ellipse((25, 150, 95, 380), fill=(253, 234, 228, 255))
+draw.ellipse((25, 150, 95, 399), fill=(253, 234, 228, 255))
 image.save("my_leg.png")
 
 leg = load_leg("my_leg.png")
 
 plot = BarPlot(600, extent_up=760)
 plot.add_bar(300, 400, leg, style="white_sheer")
-plot.add_y_axis(Scale((0, 400), (0, 760)))
+plot.add_y_axis(Scale((0, 400), (0, 400)))
 plot.save("custom_leg.png")
 ```
 
@@ -168,9 +183,9 @@ plot.save("custom_leg.png")
 from stockchart import BarPlot, Scale
 
 plot = BarPlot(1200)
-plot.add_bars([300, 500, 400], style="black_sheer")
+plot.add_grouped_bars([[300], [500], [400]], style="black_sheer")
 plot.add_x_labels(["A", "B", "C"])
-plot.add_y_axis(Scale((0, 500), (0, 760)))
+plot.add_y_axis(Scale((0, 500), (0, 500)))
 plot.add_title("自由排版")
 plot.save("freeform.png")
 ```
@@ -210,7 +225,7 @@ draw_text(
 )
 canvas.save("text.png")
 
-print(measure_text("每周活跃用户", size_px=30))          # 单行宽度
+print(measure_text("每周活跃用户", size_px=30))  # 单行宽度
 print(measure_text_height("第一行\n第二行", size_px=30))  # 多行高度
 print(wrap_text("很长的一段文本，用来演示折行。", max_width=200, size_px=24))
 ```
