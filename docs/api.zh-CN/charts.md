@@ -8,7 +8,27 @@
 
 ```python
 class ChartOptions(TypedDict, total=False):
-    """L4 透传给下层的可选参数；键名与 L2 接口保持一致。"""
+    """L4 透传给下层的可选参数；键名与 L2 接口一致。
+
+    Attributes:
+        axis_style: 坐标轴样式，"clean" 或 "handdrawn"。
+        background: 画布背景色。
+        bar_gap: 组内相邻腿边缘之间的空隙（设计像素）。
+        group_gap: 组间空隙（设计像素）。
+        font: 全图默认字体（家族名、字体文件路径或候选列表），作用于标题、
+            轴名称、刻度、x 标签、图例与数值标签；None 用平台默认链。
+        grid: 是否画 y 刻度横向虚线。
+        ticks: 显式刻度值；None 表示自动生成。
+        x_label_pos: x 标签位置策略。
+        x_label_rotation: x 标签旋转策略。
+        title_align: 标题对齐方式。
+        title_size_px: 标题字号（设计像素）。
+        axis_name_size_px: 轴名称字号（设计像素）。
+        legend_loc: 图例在顶部或底部。
+        legend_ncol: 图例列数；None 表示自动换行。
+        height_px: 基线上方柱区高度；None 表示按最高腿设计高度再加 10% 留白。
+        width_px: 绘图区宽度；None 表示按腿、间距与标签宽度自动计算。
+    """
 
     axis_style: Literal["clean", "handdrawn"]
     background: Color
@@ -69,45 +89,54 @@ def bar(
     seed: int | None = None,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
-    """全朝上的柱状图：自动完成数据 → 丝袜高度映射、选腿与布局，
-    返回布局完毕的 BarPlot（可直接 .save() / .render()，也可继续手工微调）。
+    """全朝上的柱状图：自动完成数据到丝袜高度的映射、选腿与布局。
 
-    自动绘制 y 轴与基线（默认直线，axis_style="handdrawn" 改为手绘抖动）；
-    labels 传入时 x 标签自动与各组对齐，过长时自动倾斜避让；画布宽缺省时
-    按腿、间距与标签宽度自适应；最终画布会因轴、标签与标题更宽。图例标签
-    超过绘图区宽时自动折行。
-    labels 传给 x 标签，series_labels 传给图例——后者区分"系列"（每组的
-    第几根腿），前者区分"组"。
+    自动绘制 y 轴与基线；labels 传入时 x 标签自动与各组对齐；绘图区宽度
+    缺省时按腿、间距与标签宽度自适应，最终画布会因轴、标签与标题更宽。
+    坐标轴默认直线，axis_style="handdrawn" 改为手绘抖动。
 
     Args:
         data: 支持一维/二维序列、numpy 数组、dict、pandas 风格表对象与
             PlotData；DataFrame 的 index/columns 会自动成为 x 标签与系列名。
-            完整列表见[数据输入](data-input.md)。
+            完整列表见 docs/api.zh-CN/data-input.md。
         labels: 每组（无分组时每根柱）一个标签；缺省用数据里推断的标签。
         series_labels: 每系列一个名字，传入即自动生成图例（marker 为各系列
             样式的织物色块）；缺省用数据里推断的系列名。仅二维数据可用，
             一维数据传入抛 ValueError。
-        title: 整图标题，默认在绘图区上方水平居中；title_align="left" 可改左对齐。
+        title: 整图标题，默认在绘图区上方水平居中；title_align="left" 改左对齐。
         xlabel: x 轴名称，写在 x 标签下方。
-        ylabel: y 轴名称，写在刻度数字左侧（中日韩文字竖排，其余旋转）。
+        ylabel: y 轴名称，写在刻度数字左侧；中日韩文字逐字竖排，拉丁与
+            数字整体旋转 90°（详见 add_y_axis_name）。
         style: 单个样式，或样式列表——循环方式由 cycle 决定。
-        cycle: 样式列表的循环方式："group" 按组内位置（组内第 i 根用
-            styles[i % len]，列表长度等于系列数时即"每系列一个样式"）；
-            "sequence" 按全部柱子的绘制顺序循环；"auto"（默认）一维数据
-            取 "sequence"（即每根柱按顺序取样式）、二维数据取 "group"。
-            二维数据下若 "sequence" 与 series_labels 无法对应固定的系列样式，
-            同时传入抛 ValueError。
+        cycle: "group" 按组内位置循环（组内第 i 根取 styles[i % len]），
+            "sequence" 按全部柱子的绘制顺序循环；"auto"（默认）一维取
+            "sequence"（每根柱按顺序取样式）、二维取 "group"（长度等于系列数
+            时即"每系列一个样式"）。二维数据下若 "sequence" 无法与图例的系列
+            样式对应，同时传 series_labels 抛 ValueError。
         paired: 选腿的配对策略。"auto"（默认）单系列用 "none"、多系列用
             "global"；"group" 每组独立取完整对：系列 0、1 同一对（左、右），
             系列 2 起继续取下一对（单系列即每组取新素材对的左腿）；
             "global" 整张图连续取对，配对可以跨组；"none" 每条腿来自不同
             素材对。
-        value_labels: True 时在袜口上方手写数值（6 位有效数字；绝对值 ≥ 10⁶ 或
-            < 10⁻⁴ 时用科学计数法；不参与布局预留）。
+        value_labels: True 时在袜口上方手写数值（6 位有效数字；绝对值 ≥ 10⁶
+            或 < 10⁻⁴ 时用科学计数法；不参与布局预留）。
         max_fill: 最大值映射到素材设计高度的比例，须在 (0, 1]（默认 0.85）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
-        options: 透传给下层的可选项，见 `ChartOptions` 表（grid、axis_style、
-            legend_loc、bar_gap、height_px、width_px 等）。
+        options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap、
+            height_px、width_px 等），见 docs/api.zh-CN/charts.md 的
+            ChartOptions 表。height_px 为基线上方柱区高度，缺省按最高腿设计高度
+            再加 10% 留白；显式值小于整腿高度时仍会扩到整腿高。width_px
+            为绘图区宽度，缺省自适应。
+
+    Returns:
+        已布局并添加图例/轴/标题的 BarPlot；可直接 `.save()` / `.render()`，
+        也可继续手工微调。
+
+    Raises:
+        TypeError: 数据类型不受支持，或 options 含未知键。
+        ValueError: 标签长度不符、series_labels 用于一维数据、cycle 不合法、
+            max_fill/min_fill/height_px/width_px 不合法、样式列表为空/未知预设，
+            或数据内容不合法。
 
     数据 → 丝袜高度（基线对应的数据值默认 0）:
         - 参考高度取本次选中腿中最小的设计高度，保证所有腿都不截顶；
@@ -140,6 +169,8 @@ def mirror_bar(
 ) -> BarPlot:
     """正负镜像柱状图：正值画基线上方腿，负值画下方翻转腿（脚贴基线）。
 
+    y 轴随负刻度向下延伸。
+
     Args:
         data: 语义同 bar()，支持完全相同的数据格式。
         mode: "single" 只画数据侧的腿；"both" 上下都画，数据侧穿丝袜、
@@ -148,7 +179,7 @@ def mirror_bar(
         series_labels: 语义同 bar()。
         title: 整图标题，默认居中。
         xlabel: x 轴名称。
-        ylabel: y 轴名称。
+        ylabel: 语义同 bar()。
         style: 语义同 bar()。
         cycle: 语义同 bar()。
         paired: 语义同 bar()；镜像图同样默认 "auto"。
@@ -157,10 +188,21 @@ def mirror_bar(
         max_abs_fill: 最大绝对值映射到素材设计高度的比例，须在 (0, 1]
             （默认 0.85）。
         options: 语义同 bar()。height_px 控制基线上方柱区高度，缺省按最高腿设计高度
-            再加 10% 留白；width_px 控制绘图区宽度，缺省自适应；x_label_pos 默认 "auto"：
+            再加 10% 留白；width_px 控制绘图区宽度，缺省自适应。显式 height_px
+            小于整腿高度时仍会扩到整腿高。x_label_pos 默认 "auto"：
             镜像图常有一侧全空，会把标签贴到没有腿的一侧的基线旁（如全负
             数据标签在基线上方）；两侧都有腿（正负混合或 mode="both"）时
             退回 "content"，画在全部内容最低点之下。
+
+    Returns:
+        已布局并添加图例/轴/标题的 BarPlot；可直接 `.save()` / `.render()`，
+        也可继续手工微调。
+
+    Raises:
+        TypeError: 数据类型不受支持，或 options 含未知键。
+        ValueError: 标签长度不符、series_labels 用于一维数据、mode/cycle
+            不合法、max_abs_fill/height_px/width_px 不合法、样式列表为空/
+            未知预设，或数据内容不合法。
 
     规则:
         - 参考高度取本次选中腿中最小的设计高度；比例 =

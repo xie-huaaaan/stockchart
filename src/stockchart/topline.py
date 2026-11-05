@@ -424,7 +424,8 @@ def bar(
             一维数据传入抛 ValueError。
         title: 整图标题，默认在绘图区上方水平居中；title_align="left" 改左对齐。
         xlabel: x 轴名称，写在 x 标签下方。
-        ylabel: y 轴名称，逐字竖排在刻度数字左侧。
+        ylabel: y 轴名称，写在刻度数字左侧；中日韩文字逐字竖排，拉丁与
+            数字整体旋转 90°（详见 add_y_axis_name）。
         style: 单个样式，或样式列表——循环方式由 cycle 决定。
         cycle: "group" 按组内位置循环（组内第 i 根取 styles[i % len]），
             "sequence" 按全部柱子的绘制顺序循环；"auto"（默认）一维取
@@ -436,7 +437,8 @@ def bar(
             系列 2 起继续取下一对（单系列即每组取新素材对的左腿）；
             "global" 整张图连续取对，配对可以跨组；"none" 每条腿来自不同
             素材对。
-        value_labels: True 时在袜口上方手写数值。
+        value_labels: True 时在袜口上方手写数值（6 位有效数字；绝对值 ≥ 10⁶
+            或 < 10⁻⁴ 时用科学计数法；不参与布局预留）。
         max_fill: 最大值映射到素材设计高度的比例，须在 (0, 1]（默认 0.85）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
         options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap、
@@ -588,11 +590,12 @@ def mirror_bar(
         series_labels: 语义同 bar()。
         title: 整图标题，默认居中。
         xlabel: x 轴名称。
-        ylabel: y 轴名称。
+        ylabel: 语义同 bar()。
         style: 语义同 bar()。
         cycle: 语义同 bar()。
         paired: 语义同 bar()；镜像图同样默认 "auto"。
-        value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方。
+        value_labels: True 时手写数值，上方腿写在袜口上方、下方腿写在袜口下方
+            （6 位有效数字；绝对值 ≥ 10⁶ 或 < 10⁻⁴ 时用科学计数法；不参与布局预留）。
         max_abs_fill: 最大绝对值映射到素材设计高度的比例，须在 (0, 1]
             （默认 0.85）。
         options: 语义同 bar()。height_px 控制基线上方柱区高度，缺省按最高腿设计高度

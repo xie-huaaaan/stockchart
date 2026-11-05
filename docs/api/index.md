@@ -39,17 +39,19 @@ type Color = tuple[int, int, int] | tuple[int, int, int, int]
 class Canvas:
     """Carrier of the final rendering result: an RGBA canvas.
 
-    Usually produced and drawn into by `BarPlot.render()`; for free-form
-    drawing it can also be constructed directly and painted on with the
-    L1 primitives (`draw_text` / `sketch_*`). Sizes are in output pixels.
+    Usually produced and drawn into by `BarPlot.render()`; for free-form drawing
+    it can also be constructed directly and then painted on with the L1 primitives
+    (`draw_text` / `sketch_*`). Sizes and coordinates are counted in output
+    pixels and do not involve design pixels; when a design-pixel coordinate
+    system is needed, the upper layer sets up the canvas transform first.
 
     Args:
-        width_px: canvas width in output pixels; must be positive.
-        height_px: canvas height in output pixels; must be positive.
+        width_px: canvas width (output pixels); must be positive.
+        height_px: canvas height (output pixels); must be positive.
         background: background color; defaults to an off-white paper tone.
 
     Raises:
-        ValueError: width or height is not positive.
+        ValueError: the width or height is not positive.
     """
 
     def __init__(
@@ -62,20 +64,43 @@ class Canvas:
 
     @property
     def width_px(self) -> int:
-        """Canvas width (output pixels)."""
+        """Canvas width.
+
+        Returns:
+            The width (output pixels).
+        """
 
     @property
     def height_px(self) -> int:
-        """Canvas height (output pixels)."""
+        """Canvas height.
+
+        Returns:
+            The height (output pixels).
+        """
 
     def save(self, path: str | Path) -> Path:
-        """Write out a PNG file."""
+        """Write out a PNG file.
+
+        Args:
+            path: output path; the parent directory must already exist.
+
+        Returns:
+            The path actually written.
+        """
 
     def to_pil(self) -> Image:
-        """Export as a PIL Image (RGBA)."""
+        """Export as a PIL Image.
+
+        Returns:
+            An RGBA-mode PIL Image.
+        """
 
     def to_numpy(self) -> np.ndarray:
-        """Export as an (H, W, 4) uint8 RGBA array."""
+        """Export as a NumPy array.
+
+        Returns:
+            An (H, W, 4) uint8 RGBA array.
+        """
 ```
 
 `BarPlot` also provides `save` / `to_pil` / `to_numpy` pass-through methods (see [L2 — free-form bar plot](barplot.md)), so L4 one-liners can produce output directly.

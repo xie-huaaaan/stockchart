@@ -33,22 +33,23 @@ type DataInput = (
 ```python
 @dataclass(slots=True, frozen=True)
 class PlotData:
-    """Normalized data: a (groups, series) float matrix + optional labels.
+    """Normalized data: a (group count, series count) float matrix plus optional labels.
 
     Attributes:
-        values: per-group values for each series; row count = groups,
-            column count = series; rows must be non-empty, equal length,
-            and contain only finite numbers.
-        is_1d: whether the input was 1D (determines style cycling defaults
-            and the like).
-        labels: one x axis label per group; None means decided by the
-            caller or an even default spread.
-        series_labels: one name per series; None means no legend.
+        values: the values of each series for each group; the row count is the
+            group count and the column count is the series count; rows must not be
+            empty, must be of equal length, and must all be finite numbers.
+        is_1d: whether the input was 1D (decides the style cycling default and the
+            like).
+        labels: one x axis label per group; None means it is decided by the caller
+            or by an even default spread.
+        series_labels: one name per series; None means no legend is drawn.
 
     Raises:
-        ValueError: the matrix is empty, contains an empty group, ragged
-            rows, or non-finite numbers; is_1d conflicts with the series
-            count; or label counts do not match the data.
+        ValueError: the matrix is empty, holds an empty group, the groups have
+            inconsistent lengths, is_1d contradicts the series count, it contains
+            non-finite numbers, or the number of labels/series names does not match
+            the data.
     """
 
     values: tuple[tuple[float, ...], ...]
@@ -59,11 +60,34 @@ class PlotData:
 
 @singledispatch
 def normalize_data(data: object) -> PlotData:
-    """Normalize various data formats into PlotData; unrecognized types raise TypeError."""
+    """Normalize the various data formats into PlotData.
+
+    Supports 1D/2D sequences, `numpy.ndarray`, `dict` / `Mapping`, the already
+    normalized `PlotData`, as well as table objects with `index` + `to_numpy()`
+    (pandas DataFrame / Series and the like).
+
+    Args:
+        data: the data to normalize; the concrete forms are listed in DataInput.
+
+    Returns:
+        A PlotData of a uniform shape.
+
+    Raises:
+        TypeError: the data type is not supported.
+        ValueError: the data structure or the values are invalid (empty data, too
+            many dimensions, non-numeric values, etc.).
+    """
 
 
 def register_data_type[T](cls: type[T], handler: Callable[[T], PlotData]) -> None:
-    """Register a normalizer for a custom data type (equivalent to normalize_data.register)."""
+    """Register a normalization function for a custom data type.
+
+    Equivalent to `normalize_data.register(cls, handler)`.
+
+    Args:
+        cls: the type to register.
+        handler: the function that converts that type into PlotData.
+    """
 ```
 
 ## Minimal example

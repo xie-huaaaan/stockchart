@@ -103,42 +103,33 @@ def render_stocking(
     Args:
         leg: the leg asset to render.
         style: the stocking style; may be taken from the STYLES presets.
-        height_px: number of pixels (design pixels) from the stocking's top
+        height_px: the number of pixels (design pixels) from the stocking's top
             edge to the tip of the foot. When <= 0 the leg is bare (if
             `Shading.skin` > 0 the bare leg is still rendered with skin
-            shading, otherwise returned as-is); when >= leg.height the
+            shading, otherwise it is returned as-is); when >= leg.height the
             whole leg is covered.
-        seed: random source for texture-like random effects.
-        scale: output scale. When >1, everything is generated in a scale-x
-            pixel space — the stocking fabric texture, top edge, and shading
-            are true detail at that resolution, not an upscaled finished
-            image; built-in SVG assets are re-rasterized at that scale, and
-            external bitmap assets are resampled proportionally.
+        seed: the random source for texture-like random effects.
+        scale: the output scale. When > 1 everything is generated in a scale-x
+            pixel space — the stocking fabric texture, the top edge, and the
+            shading are true detail at that resolution, not an upscaled
+            finished image; built-in vector assets are re-rasterized at that
+            scale, and external bitmap assets are resampled proportionally
+            first.
             Textures are internally generated at 2x and then downsampled to
-            improve anti-aliasing on hard edges such as fishnet and lace.
-            The returned Leg's image is "design pixels x scale"
-            (`pixels_per_unit == scale`) while metadata such as width, height,
-            and foot center remains in design pixels; compositing layers
+            improve anti-aliasing on hard edges; this does not change the size
+            of the returned image or its `pixels_per_unit`.
+            The returned Leg's image is "design size x scale" pixels
+            (`pixels_per_unit == scale`); metadata such as `width`, `height`,
+            and `foot_center_x` stays in design pixels, and compositing layers
             1:1 yields scale-x output.
 
     Returns:
-        A new Leg: pixels replaced, design-coordinate metadata matching the
-        asset; when `scale != 1` the image is densified by the scale
-        (`pixels_per_unit == scale`) for 1:1 compositing.
+        A new Leg: the image is redrawn at scale-x density
+        (`pixels_per_unit == scale`), and the design-pixel metadata matches the
+        original asset.
 
     Raises:
         ValueError: `scale` is not a positive finite number.
-
-    Contract: this function is the outward contract of the stocking
-    rendering algorithm (the algorithm itself is implemented separately).
-    It always renders upward from the tip of the foot in the asset's own
-    coordinate system; vertical flipping of legs is handled by upper layers
-    at placement time (flipping and rendering commute, so it is not done
-    in this layer). `scale` merely enlarges the rendering space
-    proportionally and does not change geometric semantics; built-in SVG
-    assets are rasterized at the target scale; external bitmap assets
-    denser than the target are downsampled on demand (high-density assets
-    are never upscaled again).
     """
 ```
 
@@ -173,30 +164,29 @@ def draw_text(
     max_lines: int | None = None,
     line_height: float | None = None,
 ) -> None:
-    """Draw a piece of text, with `\n` multi-line support and wrapping by width.
+    r"""Draw a piece of text (supports \n and wrapping by width, with per-segment shaping that includes kerning and ligatures).
 
-    The text is split into segments by font and shaped through
-    skia.textlayout: kerning, ligatures (fi and other Latin ligatures),
-    intra-segment RTL, and composite emoji are all handled correctly. Missing
-    glyphs fall back per code point through system fonts; if nothing has the
-    glyph, a stroked placeholder box is drawn instead of raising. `\n`
-    hard-splits lines; `max_width` then greedily soft-wraps by pixel width
-    (preferring breaks after whitespace/punctuation, CJK breaking per
-    character); `max_lines` caps the line count, with a U+2026 ellipsis on
-    the last line when exceeded; `line_height` is the line-spacing factor,
-    None for the natural line height.
-
-    In the anchor nine-grid, the vertical component refers to the whole text
-    block (baseline means the first line's baseline) while the horizontal
-    component applies per line (center / right center or right-align each
-    line). rotation is the clockwise angle (degrees) around (x, y); 0 means
-    no rotation. The block is first positioned by anchor, then rotated as a
-    whole based on its exact bounding box.
+    Args:
+        canvas: the target canvas.
+        text: the text to draw; the empty string returns immediately.
+        x: the anchor x (canvas output pixels).
+        y: the anchor y (canvas output pixels).
+        size_px: the font size (pixels); it must be positive.
+        color: the text color (the placeholder box uses the same color).
+        font: the font candidates; None uses the platform default chain.
+        anchor: which point of the text block (x, y) refers to; the vertical
+            component refers to the whole block, the horizontal one applies
+            per line.
+        rotation: the clockwise rotation angle around (x, y) (degrees).
+        max_width: the maximum width per line (pixels); None does not wrap.
+        max_lines: the maximum number of lines; None means no limit.
+        line_height: the line-spacing factor; None uses the natural line
+            spacing.
 
     Raises:
-        ValueError: color is not a valid color, size_px is not positive,
-            anchor is not an allowed value, or the font candidate list is
-            empty / contains an empty name.
+        ValueError: color is not a valid RGB/RGBA tuple, size_px is not
+            positive, anchor is not an allowed value, or the font candidate
+            list is empty.
     """
 
 
@@ -206,16 +196,19 @@ def measure_text(
     size_px: float,
     font: FontSpec | None = None,
 ) -> float:
-    """Measure the width (pixels) of text laid out under the same rules as `draw_text`.
+    """Measure the width of text laid out under the same rules as draw_text (multi-line text takes the widest line).
 
-    Returns the advance width after shaping, including kerning and ligatures;
-    it is not the sum of per-character widths. Multi-line text takes the
-    widest line; the empty string is 0. Font fallback is per code point (see
-    [design notes](../design.md), "Fonts").
+    Args:
+        text: the text to measure; the empty string returns 0.
+        size_px: the font size (pixels).
+        font: the font candidates; None uses the platform default chain.
+
+    Returns:
+        The advance width (pixels, including kerning and ligatures).
 
     Raises:
-        ValueError: the font candidate list is empty or contains an empty name
-            (an empty string returns 0.0 without validating the font).
+        ValueError: the font candidate list is empty or contains an empty
+            name.
     """
 
 
@@ -226,14 +219,22 @@ def measure_text_height(
     font: FontSpec | None = None,
     line_height: float | None = None,
 ) -> float:
-    """Measure the real height (pixels) of a text block, computed from the fonts
-    actually resolved; multi-line blocks include line spacing.
+    """Measure the real height of a text block (computed from the metrics of the fonts actually resolved; multi-line blocks include line spacing).
 
-    `line_height` is the line-spacing factor, None for the natural line
-    height; the empty string is estimated as a single empty line.
+    Args:
+        text: the text to measure; the empty string is estimated as a single
+            empty line.
+        size_px: the font size (pixels).
+        font: the font candidates; None uses the platform default chain.
+        line_height: the line-spacing factor; None uses the natural line
+            spacing.
+
+    Returns:
+        The block height (pixels).
 
     Raises:
-        ValueError: the font candidate list is empty or contains an empty name.
+        ValueError: the font candidate list is empty or contains an empty
+            name.
     """
 
 
@@ -245,16 +246,27 @@ def wrap_text(
     font: FontSpec | None = None,
     max_lines: int | None = None,
 ) -> list[str]:
-    """Wrap text into multiple lines by pixel width and return the list of lines.
+    r"""Wrap text into multiple lines by pixel width (\n takes part in the splitting; the last line may get an ellipsis).
 
-    Same rules as `draw_text`'s `max_width` wrapping: greedy line breaking,
-    preferring breaks after whitespace or common punctuation, CJK breaking
-    per character; `\n` participates in splitting; when `max_lines` is
-    exceeded the last line gets a U+2026 ellipsis. The empty string returns
-    `[""]`; the result has at least one element.
+    Greedy line breaking is used, preferring breaks after whitespace or common
+    punctuation; Chinese text can break per character, and over-long English
+    words are still broken. When max_lines is exceeded the last line gets an
+    ellipsis; apart from a single glyph that is itself too wide, no line
+    exceeds max_width.
+
+    Args:
+        text: the text to wrap; the empty string returns [""].
+        max_width: the maximum width per line (pixels).
+        size_px: the font size (pixels).
+        font: the font candidates; None uses the platform default chain.
+        max_lines: the maximum number of lines; None means no limit.
+
+    Returns:
+        The list of wrapped line strings, with at least one element.
 
     Raises:
-        ValueError: the font candidate list is empty or contains an empty name.
+        ValueError: the font candidate list is empty or contains an empty
+            name.
     """
 
 
@@ -270,7 +282,21 @@ def sketch_line(
     wobble: float = DEFAULT_WOBBLE,
     seed: int | None = None,
 ) -> None:
-    """Hand-drawn-style straight line: deterministic subdivision wobble applied to the segment."""
+    """Draw a hand-drawn-style straight line.
+
+    Args:
+        canvas: the target canvas.
+        x1: the start x (canvas output pixels).
+        y1: the start y.
+        x2: the end x.
+        y2: the end y.
+        color: the line color.
+        width_px: the line width (pixels).
+        wobble: the wobble amplitude along the normal (pixels); 0 gives a
+            straight line.
+        seed: the random source; the same seed reproduces the same result,
+            omitting it gives a fresh random result each time.
+    """
 
 
 def sketch_axis(
@@ -288,14 +314,30 @@ def sketch_axis(
     seed: int | None = None,
     font: FontSpec | None = None,
 ) -> None:
-    """Hand-drawn-style axis: wobbles the axis spine, arrowhead, tick marks, and tick numbers.
+    """Draw a hand-drawn-style axis, with an optional arrowhead, tick marks, and tick numbers.
 
-    (x, y) is the axis origin; the spine extends toward direction for
-    length pixels, with the arrowhead (optional) at the far end; ticks is a
-    sequence of (pixel offset from the origin, label text): tick marks are
-    perpendicular to the spine, and numbers are drawn to the left of the
-    spine (vertical axis) or below it (horizontal axis). font sets the
-    tick-number font; None (default) uses the platform default chain.
+    (x, y) is the axis origin; the spine extends toward direction for length
+    pixels; the arrowhead (optional) sits at the far end. The ticks and the
+    numbers of a vertical axis are on the left of the spine, those of a
+    horizontal axis below it.
+
+    Args:
+        canvas: the target canvas.
+        direction: "up" / "down" / "right"; it decides the extension direction
+            and the tick side.
+        x: the axis origin x (canvas output pixels).
+        y: the axis origin y.
+        length: the length of the spine (pixels); <= 0 draws no arrowhead.
+        ticks: a sequence of (pixel offset from the origin, label text).
+        arrow: whether to draw the arrowhead at the far end.
+        color: the color of the axis, the ticks, and the text.
+        width_px: the line width (pixels).
+        wobble: the wobble amplitude of the spine; the arrowhead and the
+            ticks use half of it.
+        seed: the random source; the same seed reproduces the same result,
+            omitting it gives a fresh random result each time.
+        font: the font for the tick numbers (a family name, a font file path,
+            or a candidate list); None uses the platform default chain.
     """
 ```
 

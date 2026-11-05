@@ -8,7 +8,30 @@
 
 ```python
 class ChartOptions(TypedDict, total=False):
-    """Optional parameters L4 passes through to lower layers; key names match the L2 interfaces."""
+    """Optional parameters L4 passes through to lower layers; the key names match the L2 interfaces.
+
+    Attributes:
+        axis_style: axis style, "clean" or "handdrawn".
+        background: canvas background color.
+        bar_gap: gap between the edges of adjacent legs within a group (design pixels).
+        group_gap: gap between groups (design pixels).
+        font: chart-wide default font (family name, font file path or a list of
+            candidates), applied to the title, axis names, ticks, x labels, the
+            legend and the value labels; None uses the platform default chain.
+        grid: whether to draw the horizontal dashed lines at the y ticks.
+        ticks: explicit tick values; None means they are generated automatically.
+        x_label_pos: x label position strategy.
+        x_label_rotation: x label rotation strategy.
+        title_align: title alignment.
+        title_size_px: title font size (design pixels).
+        axis_name_size_px: axis name font size (design pixels).
+        legend_loc: whether the legend sits at the top or at the bottom.
+        legend_ncol: number of legend columns; None means it wraps automatically.
+        height_px: bar area height above the baseline; None means the tallest leg's
+            design height plus 10% headroom.
+        width_px: plot area width; None means it is computed automatically from the
+            legs, the gaps and the label widths.
+    """
 
     axis_style: Literal["clean", "handdrawn"]
     background: Color
@@ -69,77 +92,89 @@ def bar(
     seed: int | None = None,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
-    """An all-upward bar chart: automatically performs data -> stocking height mapping, leg selection, and layout, and returns a fully laid-out BarPlot (ready for .save() / .render(), or for further manual tweaks).
+    """All-upright bar chart: automatically performs the data to stocking height mapping, the leg selection and the layout.
 
-    The y axis and baseline are drawn automatically (straight by default;
-    axis_style="handdrawn" switches to hand-drawn wobble). When labels are
-    given, x labels align to each group automatically and tilt to avoid
-    collisions when too long; when the plot-area width is omitted it adapts
-    to the legs, spacing, and label widths, and the final canvas is wider
-    because of axes, labels, and title. Legend labels wrap automatically when
-    they exceed the plot-area width. labels feeds the x
-    labels and series_labels feeds the legend — the latter distinguishes
-    "series" (which leg within a group), the former distinguishes "groups".
+    The y axis and the baseline are drawn automatically; when labels are given the
+    x labels align with each group automatically; when the plot area width is
+    omitted it adapts to the legs, the gaps and the label widths, and the final
+    canvas ends up wider because of the axes, the labels and the title. The axes
+    are straight by default; axis_style="handdrawn" switches to a hand-drawn wobble.
 
     Args:
-        data: supports 1D/2D sequences, numpy arrays, dicts, pandas-style
-            table objects, and PlotData; a DataFrame's index/columns become
-            the x labels and series names automatically. See [Data input](data-input.md)
-            for the complete list.
-        labels: one label per group (per bar when there is no grouping);
-            defaults to labels inferred from the data.
+        data: supports 1D/2D sequences, numpy arrays, dicts, pandas-style table
+            objects and PlotData; a DataFrame's index/columns automatically become
+            the x labels and the series names. See docs/api/data-input.md for the
+            complete list.
+        labels: one label per group (per bar when there is no grouping); by default
+            the labels inferred from the data are used.
         series_labels: one name per series; providing it generates a legend
-            automatically (the swatches are the fabric of each series's
-            style); defaults to series names inferred from the data. Only
-            valid for 2D data; providing it with 1D data raises ValueError.
-        title: chart title, horizontally centered above the plot area by
-            default; title_align="left" switches to left-aligned.
+            automatically (the marker is a fabric swatch of each series' style);
+            by default the series names inferred from the data are used. Only
+            available for 2D data; providing it with 1D data raises ValueError.
+        title: chart title, horizontally centered above the plot area by default;
+            title_align="left" switches to left alignment.
         xlabel: x axis name, drawn below the x labels.
-        ylabel: y axis name, drawn to the left of the tick numbers
-            (CJK text vertical, the rest rotated).
-        style: a single style, or a list of styles — cycled according to
+        ylabel: y axis name, to the left of the tick numbers; CJK text is set
+            vertically character by character, while Latin letters and digits
+            are rotated 90 degrees (see add_y_axis_name).
+        style: a single style, or a list of styles — the cycling is decided by
             cycle.
-        cycle: how a style list cycles: "group" cycles by position within
-            the group (the i-th bar of a group uses styles[i % len], so a
-            list whose length equals the series count means "one style per
-            series"); "sequence" cycles in the draw order of all bars;
-            "auto" (default) takes "sequence" for 1D data (i.e. each bar
-            takes styles in order) and "group" for 2D data. With 2D data,
-            if "sequence" cannot be matched to a fixed per-series style when
-            series_labels is also given; providing both raises ValueError.
-        paired: leg-pairing strategy. "auto" (default) uses "none" for a
-            single series and "global" for multiple series; "group" takes
-            complete pairs independently within each group: series 0 and 1
-            share a pair (left, right), series 2 starts the next pair;
-            "global" takes pairs continuously across the whole chart, so a
-            pair may span groups; "none" draws every leg from a different
-            pair. For a single series, "group" takes the left leg of a fresh
-            pair for each group.
-        value_labels: when True, handwritten value labels above the
-            stocking tops (6 significant digits; scientific notation for
-            magnitudes of 10^6 and above, or below 10^-4; not part of layout).
-        max_fill: fraction of the asset design height the maximum maps to,
-            in (0, 1] (default 0.85).
-        min_fill: only enabled when the data contains negatives
-            (default 0.1); see below.
-        options: optional parameters passed through to lower layers; see
-            the `ChartOptions` table (grid, axis_style, legend_loc,
-            bar_gap, height_px, width_px, etc.).
+        cycle: "group" cycles by the position within the group (the i-th bar of a
+            group takes styles[i % len]), "sequence" cycles in the draw order of
+            all the bars; "auto" (default) takes "sequence" for 1D data (each bar
+            takes the styles in order) and "group" for 2D data (a length equal to
+            the series count means "one style per series"). With 2D data, if
+            "sequence" cannot be matched to the series styles of the legend,
+            providing series_labels as well raises ValueError.
+        paired: leg pairing strategy. "auto" (default) uses "none" for a single
+            series and "global" for multiple series; "group" takes complete pairs
+            independently within each group: series 0 and 1 share a pair (left,
+            right), series 2 onwards takes the next pair (for a single series,
+            each group takes the left leg of a fresh asset pair); "global" takes
+            pairs continuously across the whole chart, so a pair may span groups;
+            "none" draws every leg from a different asset pair.
+        value_labels: when True, the values are handwritten above the stocking
+            tops (6 significant digits; scientific notation for magnitudes of 10^6
+            and above, or below 10^-4; not part of layout).
+        max_fill: the fraction of the asset design height the maximum value maps
+            to; it must be in (0, 1] (default 0.85).
+        min_fill: only enabled when the data contains negatives (default 0.1);
+            see below.
+        options: optional parameters passed through to lower layers (grid,
+            axis_style, legend_loc, bar_gap, height_px, width_px, etc.); see the
+            ChartOptions table in docs/api/charts.md. height_px is the bar area
+            height above the baseline, by default the tallest leg's design height
+            plus 10% headroom; an explicit value smaller than the full leg height
+            still expands to the full leg height. width_px is the plot area width,
+            adaptive by default.
+
+    Returns:
+        A laid-out BarPlot with the legend/axes/title added; it can be saved
+        directly with `.save()` / `.render()`, or tweaked by hand afterwards.
+
+    Raises:
+        TypeError: the data type is not supported, or options contains an unknown
+            key.
+        ValueError: the label count does not match, series_labels is used with 1D
+            data, cycle is invalid, max_fill/min_fill/height_px/width_px are
+            invalid, the style list is empty or holds an unknown preset, or the
+            data content is invalid.
 
     Data -> stocking height (the data value at the baseline defaults to 0):
-        - The reference height is the smallest design height among the
-          selected legs, so no leg is clipped; built-in assets are all 720.
-        - All values are 0: all legs bare.
-        - No negatives: height = v / max x max_fill x reference height;
-          a value of 0 means a bare leg.
-        - Negatives present: the entire value range [min, max] is linearly
-          compressed into [min_fill, max_fill]. A value of 0 then gets a
-          leg with some stocking, and the y axis's 0 tick floats somewhere
-          mid-stocking — an accepted trade-off to fully preserve the
-          ordering of the values. All-negative data follows the same rule:
-          the larger the value, the higher the stocking. When all values
-          are the same negative number there is no ordering to preserve,
-          so every leg uses min_fill.
+        - The reference height is the smallest design height among the legs picked
+          for this chart, so that no leg is clipped at the top; the built-in assets
+          are all 720.
+        - All the data is 0: all legs are bare.
+        - No negatives: height = v / max x max_fill x reference height, a value of 0
+          means a bare leg.
+        - Negatives present: the whole value range [min, max] is linearly
+          compressed into [min_fill, max_fill]. In this case the leg of a 0 value
+          wears a stretch of stocking and the 0 tick of the y axis floats somewhere
+          in the middle of the stocking — an accepted trade-off made to fully
+          preserve the ordering of the values. All-negative data follows the
+          same rule: the larger the value, the higher the stocking; when all the
+          values are the same negative number (there is no ordering to preserve)
+          min_fill is used throughout.
     """
 
 
@@ -160,48 +195,60 @@ def mirror_bar(
     seed: int | None = None,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
-    """A positive/negative mirrored bar chart: positive values draw a leg above the baseline, negative values a flipped leg below it (foot against the baseline).
+    """Positive/negative mirrored bar chart: positive values draw a leg above the baseline, negative values a flipped leg below it (the foot against the baseline).
+
+    The y axis extends downward with the negative ticks.
 
     Args:
-        data: same semantics as bar(); supports exactly the same data
-            formats.
-        mode: "single" draws only the leg on the data's side; "both" draws
-            on both sides — the data side wears a stocking, the other side
-            is bare.
-        labels: one label per group (per bar when there is no grouping);
-            defaults to labels inferred from the data.
+        data: same semantics as bar(), supports exactly the same data formats.
+        mode: "single" draws only the leg on the side of the data; "both" draws on
+            both sides, the data side wears a stocking, the other side is a bare
+            leg.
+        labels: one label per group (per bar when there is no grouping); by default
+            the labels inferred from the data are used.
         series_labels: same semantics as bar().
         title: chart title, centered by default.
         xlabel: x axis name.
-        ylabel: y axis name.
+        ylabel: same semantics as bar().
         style: same semantics as bar().
         cycle: same semantics as bar().
         paired: same semantics as bar(); mirrored charts also default to "auto".
-        value_labels: when True, handwritten value labels — above the
-            stocking top for upper legs, below it for lower legs (6
-            significant digits; scientific notation for magnitudes of 10^6
-            and above, or below 10^-4; not part of layout).
-        max_abs_fill: fraction of the asset design height the largest
-            absolute value maps to, in (0, 1] (default 0.85).
-        options: same semantics as bar(). height_px controls the bar-area
-            height above the baseline, defaulting to the tallest leg's design
-            height plus 10% headroom; width_px controls the plot-area width and
-            adapts to content by default. x_label_pos defaults
-            to "auto": mirrored charts often leave one side entirely empty,
-            so labels sit by the baseline on the side without legs (e.g.
-            above the baseline for all-negative data); when both sides have
-            legs (mixed signs or mode="both") it falls back to "content",
-            drawn below the lowest point of all content.
+        value_labels: when True, the values are handwritten — above the stocking
+            top for the upper legs, below it for the lower legs (6 significant
+            digits; scientific notation for magnitudes of 10^6 and above, or below
+            10^-4; not part of layout).
+        max_abs_fill: the fraction of the asset design height the largest absolute
+            value maps to; it must be in (0, 1] (default 0.85).
+        options: same semantics as bar(). height_px controls the bar area height
+            above the baseline, by default the tallest leg's design height plus 10%
+            headroom; width_px controls the plot area width, adaptive by default.
+            An explicit height_px smaller than the full leg height still expands to
+            the full leg height. x_label_pos defaults to "auto": mirrored charts
+            often leave one side entirely empty, so the labels sit by the baseline
+            on the side without legs (e.g. above the baseline for all-negative
+            data); when both sides have legs (mixed signs or mode="both") it falls
+            back to "content", drawn below the lowest point of all the content.
+
+    Returns:
+        A laid-out BarPlot with the legend/axes/title added; it can be saved
+        directly with `.save()` / `.render()`, or tweaked by hand afterwards.
+
+    Raises:
+        TypeError: the data type is not supported, or options contains an unknown
+            key.
+        ValueError: the label count does not match, series_labels is used with 1D
+            data, mode/cycle is invalid, max_abs_fill/height_px/width_px are
+            invalid, the style list is empty or holds an unknown preset, or the
+            data content is invalid.
 
     Rules:
-        - The reference height is the smallest design height among the
-          selected legs; scale = max_abs_fill x reference height / max|v|,
-          the same for positive and negative.
-        - 0 counts as +0: under "single" one bare leg pointing up is drawn;
-          under "both" bare legs are drawn on both sides (the upper one is
-          the data side).
-        - Space below: "single" reserves it only when negatives exist;
-          "both" always reserves it.
+        - The reference height is the smallest design height among the legs picked
+          for this chart; the scale = max_abs_fill x reference height / max|v|, the
+          same for positive and negative values.
+        - 0 counts as +0: under "single" one upward bare leg is drawn; under "both"
+          bare legs are drawn on both sides (the upper one is the data side).
+        - Space below: "single" reserves it only when negatives exist; "both"
+          always reserves it.
     """
 ```
 

@@ -15,12 +15,26 @@ def add_bars(
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
-    """单序列：统一间距从左到右排开，自动按左、右、左、右……交替选腿。
+    """单序列：统一间距从左到右排开，自动交替选腿。
 
-    legs 可显式指定每根柱子的素材（长度须与 heights_px 一致，不参与循环，
-    此时 paired 忽略）。单序列下 "auto" 用 "none"；显式 "group" 时每根柱子
-    取新素材对的左腿，"global" 时相邻柱子成对取素材。style 为列表时按柱序
-    循环取用。
+    legs 可显式指定每根柱的素材（长度须与 heights_px 一致，不参与循环，
+    此时 paired 忽略）。style 为列表时按柱序循环取用。多次调用 L3 方法
+    时从上一次内容的右缘续排。
+
+    Args:
+        heights_px: 每根柱的丝袜高度（设计像素）。
+        bar_gap: 相邻腿边缘之间的空隙。
+        style: 单个样式或样式列表。
+        paired: 选腿配对策略；"auto" 在单序列下等价于 "none"。
+        legs: 显式指定腿素材；None 时自动选取。
+        seed: 自动选腿的随机源；None 时由构造时的 seed 派生。
+
+    Returns:
+        self，便于链式调用。
+
+    Raises:
+        ValueError: heights_px 为空、legs 长度不符、自动选腿时 paired
+            不合法，或样式列表为空/含未知预设。
     """
 
 
@@ -36,17 +50,27 @@ def add_grouped_bars(
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
-    """(组数, 系列数) 的像素高度：组内用 bar_gap、组间用 group_gap，
-    跨列按左、右、左、右……交替选腿。
+    """按 (组数, 系列数) 的像素高度排布分组柱状图。
 
-    paired="auto"（默认）单系列用 "none"、多系列用 "global"；"group"
-    时每组独立取完整对（相邻两腿同一对素材，单系列即每组取左腿），
-    "global" 时整张图连续取对，"none" 时每条腿来自不同素材对。legs
-    显式时 paired 忽略。
+    组内用 bar_gap、组间用 group_gap；跨列按左、右、左、右……交替选腿。
 
-    style 为列表时按 cycle 取用："group"（默认）按组内位置循环，组内第 i 根
-    用 styles[i % len]，列表长度等于系列数时即"每系列一个样式"；"sequence"
-    按全部柱子的绘制顺序循环（组 0 第 0 根、组 0 第 1 根、组 1 第 0 根……）。
+    Args:
+        heights_px: 二维高度表；每行一组，组内每列一个系列。
+        bar_gap: 组内相邻腿边缘之间的空隙。
+        group_gap: 相邻组之间的空隙。
+        style: 单个样式或样式列表。
+        cycle: "group" 按组内位置循环；"sequence" 按全部柱子的绘制顺序循环。
+        paired: 选腿配对策略；"auto" 单系列用 "none"、多系列用 "global"。
+        legs: 显式腿素材，按行优先展平；None 时自动选取。
+        seed: 自动选腿的随机源；None 时由构造时的 seed 派生。
+
+    Returns:
+        self，便于链式调用。
+
+    Raises:
+        ValueError: heights_px 为空、含空组、各组系列数不一致、legs 长度
+            不符、自动选腿时 paired 不合法、cycle 不合法，或样式列表
+            为空/含未知预设。
     """
 
 
@@ -62,9 +86,20 @@ def add_paired_bars(
 ) -> BarPlot:
     """每组恰好 2 个值：同组使用同一对素材，系列 0 左腿、系列 1 右腿。
 
-    style 为列表时按 cycle 取用（"group" 默认：系列 0 取 styles[0]、系列 1
-    取 styles[1 % len]；"sequence" 按全部柱子的绘制顺序循环）。
-    pairs 缺省时自动选取不重复的素材对。
+    Args:
+        heights_px: 每组的 (左腿高度, 右腿高度)。
+        group_gap: 相邻组之间的空隙。
+        style: 单个样式或样式列表。
+        cycle: "group" 按组内位置循环；"sequence" 按全部柱子的绘制顺序循环。
+        pairs: 显式素材对，长度须等于组数；None 时自动选取。
+        seed: 自动选对的随机源；None 时由构造时的 seed 派生。
+
+    Returns:
+        self，便于链式调用。
+
+    Raises:
+        ValueError: heights_px 为空、某组不是恰好 2 个值、pairs 长度/形状
+            不符、cycle 不合法，或样式列表为空/含未知预设。
     """
 ```
 

@@ -33,18 +33,18 @@ type DataInput = (
 ```python
 @dataclass(slots=True, frozen=True)
 class PlotData:
-    """归一后的数据：(组数, 系列数) 浮点矩阵 + 可选标签。
+    """归一后的数据：(组数, 系列数) 的浮点矩阵与可选标签。
 
     Attributes:
-        values: 每组的各系列数值，行数即组数、列数即系列数；行不能为空、
+        values: 每组的各系列数值；行数即组数、列数即系列数，行不能为空、
             等长且全部为有限数值。
         is_1d: 输入是否为一维（决定样式循环默认值等）。
         labels: 每组一个 x 轴标签；None 表示由调用方或默认均分决定。
         series_labels: 每系列一个名字；None 表示不出图例。
 
     Raises:
-        ValueError: 矩阵为空、存在空组、各组长度不一致、含非有限数值、
-            is_1d 与系列数矛盾，或标签/系列名数量与数据不符。
+        ValueError: 矩阵为空、存在空组、各组长度不一致、is_1d 与系列数
+            矛盾、含非有限数值，或标签/系列名数量与数据不符。
     """
 
     values: tuple[tuple[float, ...], ...]
@@ -55,11 +55,33 @@ class PlotData:
 
 @singledispatch
 def normalize_data(data: object) -> PlotData:
-    """把各种数据格式归一为 PlotData；未识别的类型抛 TypeError。"""
+    """把各种数据格式归一为 PlotData。
+
+    支持一维/二维序列、`numpy.ndarray`、`dict` / `Mapping`、已归一化的
+    `PlotData`，以及带 `index` + `to_numpy()` 的表对象（pandas DataFrame /
+    Series 等）。
+
+    Args:
+        data: 待归一的数据；具体形式见 DataInput。
+
+    Returns:
+        统一形状的 PlotData。
+
+    Raises:
+        TypeError: 数据类型不受支持。
+        ValueError: 数据结构或数值不合法（空数据、维度过多、非数值等）。
+    """
 
 
 def register_data_type[T](cls: type[T], handler: Callable[[T], PlotData]) -> None:
-    """为自定义数据类型注册归一化函数（等价于 normalize_data.register）。"""
+    """为自定义数据类型注册归一化函数。
+
+    等价于 `normalize_data.register(cls, handler)`。
+
+    Args:
+        cls: 要注册的类型。
+        handler: 把该类型转换为 PlotData 的函数。
+    """
 ```
 
 ## 最小示例

@@ -5,11 +5,14 @@
 ```python
 @dataclass(slots=True, frozen=True)
 class Scale:
-    """线性比例尺：数据值 ↔ 基线上方像素。柱高与轴刻度共用同一个 Scale 即可保证一致。
+    """线性比例尺：数据值 ↔ 基线上方像素。
+
+    柱高与轴刻度共用同一个 Scale 即可保证一致。
 
     Attributes:
         domain: (值下限, 值上限)，须下限 < 上限。
-        range_px: (像素下限, 像素上限)，基线为 0、向上为正；须下限 < 上限。
+        range_px: (像素下限, 像素上限)，以基线为 0、向上为正；负像素表示
+            基线下方，且须下限 < 上限。
 
     Raises:
         ValueError: domain 或 range_px 的下限不小于上限。
@@ -19,14 +22,36 @@ class Scale:
     range_px: tuple[float, float]
 
     def to_px(self, value: float) -> float:
-        """数据值 → 像素。"""
+        """把数据值换算为基线相对的像素。
+
+        Args:
+            value: 数据值。
+
+        Returns:
+            对应的像素值；向上为正。
+        """
 
     def from_px(self, px: float) -> float:
-        """像素 → 数据值。"""
+        """把基线相对的像素换算为数据值。
+
+        Args:
+            px: 像素值；向上为正。
+
+        Returns:
+            对应的数据值。
+        """
 
     @classmethod
     def fit(cls, values: Sequence[float], extent_px: float, *, margin: float = 0.0) -> Scale:
-        """构造 [min(values), max(values)] → [0, extent_px] 的比例尺，margin 两端留边。
+        """构造覆盖给定值域的比例尺。
+
+        Args:
+            values: 数据值序列；不能为空且不能全部相同。
+            extent_px: 映射到的像素高度，须为正数；range_px 为 (0, extent_px)。
+            margin: 两侧留边比例；domain 每端向外扩 (max − min) × margin。
+
+        Returns:
+            新的 Scale。
 
         Raises:
             ValueError: values 为空、含非有限数值、extent_px 不是正数、
@@ -39,25 +64,29 @@ class BarPlot:
     """自由柱状图：以 X 轴为基线，腿的位置与丝袜高度全部由调用者按设计像素指定。
 
     `width_px` 是绘图区宽度；`extent_up` / `extent_down` 只在基线上下为腿预留
-    高度，不含标题、轴名称、刻度数字、x 标签、图例等边缘；腿高于预留时柱区
-    自动扩张，轴、文字与图例另占空间。
+    高度，不含标题、轴名称、刻度数字、x 标签、图例等边缘。轴、文字、图例与
+    标题的空间在 render 时另行计算，所以最终画布通常大于
+    `width_px × (extent_up + extent_down)`；腿高于预留时柱区会自动扩张。
 
     Args:
-        width_px: 绘图区宽度，也是腿与坐标使用的 x 范围。
+        width_px: 绘图区宽度（设计像素），也是腿与坐标使用的 x 范围。
         extent_up: 基线以上为腿预留的设计像素高度；不含标题、图例等边缘。
         extent_down: 基线以下为向下腿预留的设计像素高度；不含 x 标签等边缘。
         background: 画布背景色。
-        axis_style: "clean"（默认）画直线坐标轴与网格；"handdrawn" 使用
-            seed 控制的手绘抖动。
-        seed: 随机源；影响默认的柱纹理、基线与手绘抖动。
-        font: 全图默认字体（FontSpec，见 [L1 — 渲染原语](rendering.md)）；
-            None 用平台默认链。标题、轴名称、x 标签、图例、刻度数字与数值
-            标签等内部绘制的文字都用它，各 add_* 方法显式传 font 可按元素
-            覆盖。
+        axis_style: "clean" 画直线坐标轴与网格；"handdrawn" 使用 seed
+            控制的手绘抖动。
+        font: 全图默认字体（家族名、字体文件路径或候选列表）；各 add_*
+            方法与数值标签不另指定 font 时使用，None 用平台默认链。
+        seed: 随机源；影响默认的柱纹理、基线与手绘抖动，不传则每次随机。
+
+    腿高于 extent_up / extent_down 时，柱区会自动向上/向下扩张；轴、标题、
+    标签与图例另占空间，不计入这两个值。
 
     Raises:
         ValueError: width_px 不是正数、extent_up / extent_down 为负数，或
             axis_style 不是允许值。
+
+    所有 add_* 方法记录绘制意图、返回自身以便链式调用，几何在 render() 统一计算。
     """
 
     def __init__(
@@ -74,7 +103,11 @@ class BarPlot:
 
     @property
     def width_px(self) -> int:
-        """绘图区宽度（腿与坐标使用的 x 范围），设计像素；不等于最终画布宽度。"""
+        """绘图区宽度（腿与坐标使用的 x 范围）。
+
+        Returns:
+            宽度（设计像素）；不等于最终画布宽度。
+        """
 
     def add_bar(
         self,
@@ -86,15 +119,24 @@ class BarPlot:
         side: Literal["up", "down"] = "up",
         seed: int | None = None,
     ) -> BarPlot:
-        """在 x 处贴一条腿：x 是足底中心的目标位置（腿宽不一，按脚对齐才均匀）。
+        """在 x 处贴一条腿。
+
+        x 是足底中心的目标位置：腿宽不一，按脚对齐才均匀。
 
         Args:
-            height_px: 丝袜高度（设计像素）。小于等于 0 为裸腿。
-            leg: 腿素材；side="down" 时素材竖直翻转、脚贴基线朝下。
+            x: 足底中心在绘图区坐标中的 x（设计像素）。
+            height_px: 丝袜高度（设计像素）；<= 0 为裸腿。腿本身始终按
+                完整 leg.height 绘制。
+            leg: 腿素材。
             style: StockingStyle 实例或 STYLES 预设名。
+            side: "up" 贴基线向上；"down" 竖直翻转、脚贴基线朝下。
+            seed: 该柱纹理随机源；缺省时由构造时的 seed 派生，保证整图可复现。
+
+        Returns:
+            self，便于链式调用。
 
         Raises:
-            ValueError: style 是未知预设名、side 不是 "up" / "down"，或
+            ValueError: style 是未知的预设名、side 不是 "up" / "down"，或
                 x / height_px 不是有限数值。
         """
 
@@ -106,14 +148,20 @@ class BarPlot:
         grid: bool = False,
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """添加 y 轴（含刻度数字）。ticks 缺省由 scale.domain 按整步长生成。
+        """添加 y 轴（含刻度数字）。
 
-        轴线与网格样式由构造参数 axis_style 决定。刻度按 scale 映射到基线
-        上下两侧：domain 含负值时干线向下延伸、下方刻度照常绘制，箭头仍在
-        最上端；刻度高于 extent_up 时画布顶部自动扩展以容纳轴顶与刻度数字。
-        grid=True 时沿各刻度画横向虚线（浅色，压在腿与袜之下）。
-        轴名称用 add_y_axis_name() 单独添加。font 指定刻度数字的字体；
-        None（默认）继承全图默认字体。
+        轴与网格的线条样式由构造参数 axis_style 决定。刻度按 scale 映射到
+        基线上下两侧：domain 含负值时干线向下延伸、下方刻度照常绘制，箭头
+        仍在最上端。轴名称用 `add_y_axis_name()` 单独添加。
+
+        Args:
+            scale: 数据值到像素的换算；刻度位置与下方延伸都来自它。
+            ticks: 要绘制的刻度值；None 时由 scale.domain 自动生成。
+            grid: 是否沿各刻度画横向虚线（压在腿与袜之下）。
+            font: 刻度数字字体；None 继承全图默认。
+
+        Returns:
+            self，便于链式调用。
 
         Raises:
             ValueError: ticks 含非有限数值。
@@ -128,25 +176,31 @@ class BarPlot:
         rotation: float | Literal["auto"] = "auto",
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """添加 x 轴标签。pos 决定标签写在哪儿，rotation 决定是否倾斜：
+        """添加 x 轴标签。
 
-        - "content"（默认）：全部内容最低点之下（含朝下腿与 y 轴向下延伸的
-          部分），与基线解耦——没有下方内容时自然贴着基线下方；
-        - "auto"：紧贴基线、选没有柱子的一侧（上方无腿→基线上方，下方无
-          腿→基线下方，两侧都有腿→退回 "content"）；
-        - "above" / "below"：强制写在基线上方 / 下方，该侧有腿时会与腿重叠。
+        位置与旋转规则：
 
-        rotation="auto"（默认）在相邻标签会互相压住时依次尝试 45°/60°/
-        75°/90°，取第一个不重叠的角度；传 0 禁止旋转，传固定角度（0–90）
-        始终按该角度倾斜。旋转方向随标签在基线上/下自动决定，画布也会
-        补足对应的上/下与左右边距。
+        - "content"（默认）画在全部内容最低点之下（含朝下腿与 y 轴向下延伸
+          的部分），与基线解耦；没有下方内容时自然贴着基线下方。
+        - "auto" 紧贴基线、选没有柱子的一侧；两侧都有腿时退回 "content"。
+        - "above" / "below" 强制写在基线上方 / 下方，该侧有腿时会重叠。
+        - rotation="auto" 在相邻标签会互相压住时依次尝试 45°/60°/75°/90°；
+          传 0 禁用旋转；传固定角度（0–90）则始终按该角度倾斜。
 
-        xs 缺省沿宽度均分；与 add_bars 系列方法配合时自动对齐组中心。
-        font 指定标签字体；None（默认）继承全图默认字体。
+        Args:
+            labels: 标签文本。
+            xs: 标签锚点在绘图区坐标中的位置（足底中心基准）；None 时优先
+                使用 `add_bars` 系列记录的组中心，否则沿绘图区宽度均分。
+            pos: 标签位置策略。
+            rotation: "auto" 或 0–90 的固定角度。
+            font: 标签字体；None 继承全图默认。
+
+        Returns:
+            self，便于链式调用。
 
         Raises:
-            ValueError: pos / rotation 不合法、xs 与 labels 长度不一致，或
-                xs 含非有限数值。
+            ValueError: pos 不合法、xs 与 labels 长度不一致、xs 含非有限
+                数值，或 rotation 不在允许范围。
         """
 
     def add_title(
@@ -158,12 +212,20 @@ class BarPlot:
         color: Color = DEFAULT_TEXT_COLOR,
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """添加整图标题（单行）。
+        """添加整图标题。
 
-        默认在绘图区上方水平居中（中心对齐柱子所占范围，而不是画布）；
-        align="left" 靠绘图区左缘。标题比画布宽时自动对称扩宽画布，不折行、
-        不裁字。标题占据的顶部高度自动计入布局，图例仍画在标题下方。
-        font 指定标题字体；None（默认）继承全图默认字体。
+        Args:
+            text: 标题文本。
+            align: "center" 在绘图区上方居中；"left" 与绘图区左缘对齐。
+            size_px: 字号（设计像素）。
+            color: 文字颜色。
+            font: 标题字体；None 继承全图默认。
+
+        Returns:
+            self，便于链式调用。
+
+        Raises:
+            ValueError: align 不是 "center" 或 "left"。
         """
 
     def add_x_axis_name(
@@ -174,10 +236,16 @@ class BarPlot:
         color: Color = DEFAULT_TEXT_COLOR,
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """添加 x 轴名称：横向居中写在 x 标签之下（底部图例之上）。
+        """添加 x 轴名称，横向居中写在 x 标签之下（底部图例之上）。
 
-        没有 x 标签时直接写在内容最低点之下。名称过长时扩宽画布，不裁字。
-        font 指定轴名字体；None（默认）继承全图默认字体。
+        Args:
+            text: 轴名称。
+            size_px: 字号（设计像素）。
+            color: 文字颜色。
+            font: 轴名称字体；None 继承全图默认。
+
+        Returns:
+            self，便于链式调用。
         """
 
     def add_y_axis_name(
@@ -188,12 +256,19 @@ class BarPlot:
         color: Color = DEFAULT_TEXT_COLOR,
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """添加 y 轴名称，写在刻度数字左侧。
+        """添加 y 轴名称。
 
-        中日韩文字逐字竖排（契合书写习惯）；拉丁、数字等文字整体旋转 90°
-        自下而上阅读。名称长于轴干线时自动续列/折行，并沿轴干线整体垂直
-        居中；占用左侧边距，不影响绘图区坐标。font 指定轴名字体；
-        None（默认）继承全图默认字体。
+        中日韩文字逐字竖排，其余文字旋转 90° 写在刻度数字左侧；名称长于
+        轴干线时自动续列/折行，并沿轴干线整体垂直居中。
+
+        Args:
+            text: 轴名称。
+            size_px: 字号（设计像素）。
+            color: 文字颜色。
+            font: 轴名称字体；None 继承全图默认。
+
+        Returns:
+            self，便于链式调用。
         """
 
     def add_legend(
@@ -204,29 +279,69 @@ class BarPlot:
         loc: Literal["top", "bottom"] = "top",
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """添加图例：每项为织物纹理色块 + 文字，色块取该样式袜身中部的织物。
+        """添加图例。
 
-        loc="top"（默认）画在标题下方、绘图区上方，"bottom" 画在最底部；
-        ncol 为一行几项，缺省自动：单行放得下就单行，否则按宽度换行。
-        ncol 指定时各列等宽，每行整体居中；末行项数较少时会与上方列错开。
-        列数设得过大可能溢出画布（库不做自动收缩），建议用缺省自动值。
-        单个标签超过一行可用宽度时自动折成多行（最多 3 行，仍放不下则末行省略），
-        ncol 下按列宽折行。
-        图例占据的高度与折行后的行高自动计入布局。font 指定图例文字字体；
-        None（默认）继承全图默认字体。
+        每项为真实渲染的织物纹理色块 + 文字；色块取自该样式袜身中部。
+        图例占据的高度自动计入布局。
+
+        Args:
+            items: (标签, 样式) 列表；样式可为 StockingStyle 或预设名。
+            ncol: 一行几项；None 表示单行放得下就单行，否则按宽度换行。
+            loc: "top" 画在标题下方、绘图区上方；"bottom" 画在最底部。
+            font: 图例文字字体；None 继承全图默认。
+
+        Returns:
+            self，便于链式调用；items 为空时直接返回。
+
+        Raises:
+            ValueError: ncol < 1、loc 不合法，或样式预设名不存在。
         """
 
     def render(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Canvas:
-        """渲染。scale 为输出像素密度，不影响设计像素坐标。"""
+        """计算布局并绘制整张图。
+
+        Args:
+            scale: 输出像素密度（1 = 设计尺寸，默认 2）。只影响输出分辨率与
+                纹理细节，不改变设计像素布局。
+
+        Returns:
+            绘制完成的 Canvas；尺寸为 round(final_w × scale) ×
+            round(final_h × scale)。
+
+        Raises:
+            ValueError: scale 不是正的有限数。
+        """
 
     def save(self, path: str | Path, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Path:
-        """渲染并直接写出 PNG。"""
+        """渲染并写出 PNG。
+
+        Args:
+            path: 输出路径，父目录须已存在。
+            scale: 输出像素密度。
+
+        Returns:
+            实际写出的路径。
+        """
 
     def to_pil(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Image:
-        """渲染并直接导出 PIL Image。"""
+        """渲染并导出 PIL Image。
+
+        Args:
+            scale: 输出像素密度。
+
+        Returns:
+            RGBA 模式的 PIL Image。
+        """
 
     def to_numpy(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> np.ndarray:
-        """渲染并直接导出 (H, W, 4) uint8 RGBA 数组。"""
+        """渲染并导出 NumPy 数组。
+
+        Args:
+            scale: 输出像素密度。
+
+        Returns:
+            (H, W, 4) uint8 RGBA 数组，H / W 为输出像素。
+        """
 ```
 
 ## 最小示例

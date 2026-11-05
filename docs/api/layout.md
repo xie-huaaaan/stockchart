@@ -15,14 +15,31 @@ def add_bars(
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
-    """Single series: laid out left to right with uniform spacing, automatically alternating leg selection in left, right, left, right ... order.
+    """Single series: laid out from left to right with uniform spacing, automatically alternating the leg selection.
 
-    legs may explicitly specify the asset for each bar (its length must
-    match heights_px and it does not participate in cycling; paired is
-    ignored in that case). For a single series, "auto" uses "none"; explicit
-    "group" takes the left leg of a fresh pair for each bar, and "global"
-    makes adjacent bars take legs from the same asset pair. When style is a
-    list, it is cycled in bar order.
+    legs may explicitly specify the asset of every bar (its length must
+    match heights_px, it does not participate in the cycling, and paired is
+    ignored in that case). When style is a list it is cycled in bar order.
+    Calling an L3 method several times continues the layout from the right
+    edge of the previous content.
+
+    Args:
+        heights_px: the stocking height of each bar (design pixels).
+        bar_gap: the gap between the edges of adjacent legs.
+        style: a single style or a list of styles.
+        paired: the leg-pairing strategy; for a single series "auto" is
+            equivalent to "none".
+        legs: explicitly given leg assets; None selects them automatically.
+        seed: random source for the automatic leg selection; None derives it
+            from the seed given at construction.
+
+    Returns:
+        self, for chaining.
+
+    Raises:
+        ValueError: heights_px is empty, the length of legs does not match,
+            paired is invalid when the legs are selected automatically, or
+            the style list is empty / contains an unknown preset.
     """
 
 
@@ -38,20 +55,35 @@ def add_grouped_bars(
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
-    """Pixel heights as (groups, series): bar_gap within a group, group_gap between groups, with legs alternated across columns in left, right, left, right ... order.
+    """Lay out a grouped bar plot from pixel heights given as (group count, series count).
 
-    With paired="auto" (default), a single series uses "none" and multiple
-    series use "global"; "group" takes complete pairs independently within
-    each group (adjacent legs share a pair; for a single series, each group
-    takes a left leg); "global" takes pairs continuously across the whole
-    chart; "none" draws every leg from a different pair. When legs is
-    explicit, paired is ignored.
+    Within a group use bar_gap, between groups use group_gap; across the
+    columns the legs alternate left, right, left, right ...
 
-    When style is a list it is cycled according to cycle: "group" (default)
-    cycles by position within the group — the i-th bar of a group uses
-    styles[i % len], so a list whose length equals the series count means
-    "one style per series"; "sequence" cycles in the draw order of all
-    bars (group 0 bar 0, group 0 bar 1, group 1 bar 0, ...).
+    Args:
+        heights_px: a 2D height table; every row is a group and every column
+            inside the group is one series.
+        bar_gap: the gap between the edges of adjacent legs inside a group.
+        group_gap: the gap between adjacent groups.
+        style: a single style or a list of styles.
+        cycle: "group" cycles by the position inside the group; "sequence"
+            cycles in the draw order of all the bars.
+        paired: the leg-pairing strategy; "auto" uses "none" for a single
+            series and "global" for multiple series.
+        legs: explicit leg assets, flattened in row-major order; None selects
+            them automatically.
+        seed: random source for the automatic leg selection; None derives it
+            from the seed given at construction.
+
+    Returns:
+        self, for chaining.
+
+    Raises:
+        ValueError: heights_px is empty, contains an empty group, the groups
+            have different series counts, the length of legs does not match,
+            paired is invalid when the legs are selected automatically,
+            cycle is invalid, or the style list is empty / contains an
+            unknown preset.
     """
 
 
@@ -65,13 +97,27 @@ def add_paired_bars(
     pairs: Sequence[tuple[Leg, Leg]] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
-    """Exactly 2 values per group: each group uses the same pair of assets, series 0 the left leg and series 1 the right leg.
+    """Exactly 2 values per group: the same pair of assets is used inside a group, series 0 takes the left leg and series 1 the right leg.
 
-    When style is a list it is cycled according to cycle ("group" default:
-    series 0 takes styles[0] and series 1 takes styles[1 % len];
-    "sequence" cycles in the draw order of all bars).
-    When pairs is omitted, non-repeating asset pairs are chosen
-    automatically.
+    Args:
+        heights_px: the (left leg height, right leg height) of every group.
+        group_gap: the gap between adjacent groups.
+        style: a single style or a list of styles.
+        cycle: "group" cycles by the position inside the group; "sequence"
+            cycles in the draw order of all the bars.
+        pairs: explicit asset pairs, their length must equal the number of
+            groups; None selects them automatically.
+        seed: random source for the automatic pair selection; None derives it
+            from the seed given at construction.
+
+    Returns:
+        self, for chaining.
+
+    Raises:
+        ValueError: heights_px is empty, some group does not have exactly 2
+            values, the length/shape of pairs does not match, cycle is
+            invalid, or the style list is empty / contains an unknown
+            preset.
     """
 ```
 

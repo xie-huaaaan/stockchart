@@ -16,6 +16,7 @@ L0–L4 已全部可用：腿素材、丝袜渲染、自由柱状图、布局封
 - `uv run python tools/render_plot_review.py`：重出评审图到 `out/plots/`
 - `uv run python tools/render_leg_catalog.py`：重出素材目录图到 `docs/images/`
 - `uv run python tools/check_docs.py`：校验文档结构、相对链接与中英分册的章节对应
+- `uv run python tools/check_docstrings.py`：校验 API 文档代码块里的 docstring 与源码一致
 - 素材管线：`uv run python tools/split_master.py dist/all_up_1.png`；改动素材后重出 `out/preview_svg.png` 并核对配对与左右。
 
 ## 目录
@@ -34,6 +35,7 @@ L0–L4 已全部可用：腿素材、丝袜渲染、自由柱状图、布局封
 - `BarPlot.extent_up` / `extent_down` 只表示基线上下给柱子（腿）预留的高度，不含标题、轴名称、刻度数字、x 标签、图例等边缘区域；这些空间由布局另行计算。L4 的 `height_px`（`ChartOptions`）同样只描述柱区高度，`width_px` 只描述绘图区宽度；`max_fill` / `max_abs_fill` 则相对素材设计高度，不与柱区尺寸混用。
 - pandas 只按 `index` / `columns` / `to_numpy()` 结构识别，不 import、不进依赖。
 - 公开 API 的 docstring 与 `docs/api.zh-CN/`（及英文版 `docs/api/`）同步；改签名先改文档。
+- API 文档代码块里的 docstring 必须是源码的真实 docstring（中文版逐字一致，英文版为其翻译）；源码 docstring 是唯一事实来源，先改源码再同步文档。
 - 新增 L4 透传参数时同步 `ChartOptions`、`_OPTION_KEYS` 与 `docs/api.zh-CN/charts.md` 的选项表。
 - 文档正文按普通 Markdown 写：段落、列表项各占一行，不按列硬折行；代码块与表格除外。中文正文用全角引号“”，行内代码与字符串字面量保持 ASCII，HTML 属性一律用 ASCII 引号。改完跑 `tools/check_docs.py`。
 - `ruff format` 会一并格式化 `.md` 里的 Python 代码块，示例代码因此被自动排版，不必手写对齐。

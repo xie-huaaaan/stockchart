@@ -39,8 +39,9 @@ type Color = tuple[int, int, int] | tuple[int, int, int, int]
 class Canvas:
     """最终渲染结果的载体：一块 RGBA 画布。
 
-    通常由 `BarPlot.render()` 产生并绘制；自由绘制时也可直接构造，
-    配合 L1 原语（`draw_text` / `sketch_*`）在上面作画。尺寸单位为输出像素。
+    通常由 `BarPlot.render()` 产生并绘制；自由绘制时也可直接构造，然后配合
+    L1 原语（`draw_text` / `sketch_*`）在上面作画。尺寸与坐标都以输出像素计，
+    不涉及设计像素；需要设计像素坐标系时由上层先设置画布变换。
 
     Args:
         width_px: 画布宽（输出像素），须为正数。
@@ -61,20 +62,43 @@ class Canvas:
 
     @property
     def width_px(self) -> int:
-        """画布宽（输出像素）。"""
+        """画布宽。
+
+        Returns:
+            宽度（输出像素）。
+        """
 
     @property
     def height_px(self) -> int:
-        """画布高（输出像素）。"""
+        """画布高。
+
+        Returns:
+            高度（输出像素）。
+        """
 
     def save(self, path: str | Path) -> Path:
-        """写出 PNG 文件。"""
+        """写出 PNG 文件。
+
+        Args:
+            path: 输出路径，父目录须已存在。
+
+        Returns:
+            实际写出的路径。
+        """
 
     def to_pil(self) -> Image:
-        """导出为 PIL Image（RGBA）。"""
+        """导出为 PIL Image。
+
+        Returns:
+            RGBA 模式的 PIL Image。
+        """
 
     def to_numpy(self) -> np.ndarray:
-        """导出为 (H, W, 4) uint8 RGBA 数组。"""
+        """导出为 NumPy 数组。
+
+        Returns:
+            (H, W, 4) uint8 RGBA 数组。
+        """
 ```
 
 `BarPlot` 也提供 `save` / `to_pil` / `to_numpy` 直通方法（见 [L2 — 自由柱状图](barplot.md)），保证 L4 一行能出图。

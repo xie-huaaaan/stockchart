@@ -5,34 +5,64 @@
 ```python
 @dataclass(slots=True, frozen=True)
 class Scale:
-    """Linear scale: data values <-> pixels above the baseline. Sharing one Scale between bar heights and axis ticks guarantees consistency.
+    """Linear scale: data values <-> pixels above the baseline.
+
+    Sharing one Scale between bar heights and axis ticks guarantees
+    consistency.
 
     Attributes:
-        domain: (lower value, upper value); lower must be < upper.
-        range_px: (lower pixel, upper pixel) with the baseline at 0 and
-            positive upward; lower must be < upper.
+        domain: (value lower bound, value upper bound); the lower bound must
+            be < the upper bound.
+        range_px: (pixel lower bound, pixel upper bound), measured with the
+            baseline at 0 and positive upwards; negative pixels are below
+            the baseline, and the lower bound must be < the upper bound.
 
     Raises:
-        ValueError: the lower bound of domain or range_px is not < the upper bound.
+        ValueError: the lower bound of domain or range_px is not less than
+            its upper bound.
     """
 
     domain: tuple[float, float]
     range_px: tuple[float, float]
 
     def to_px(self, value: float) -> float:
-        """Data value -> pixels."""
+        """Convert a data value to pixels relative to the baseline.
+
+        Args:
+            value: the data value.
+
+        Returns:
+            The corresponding pixel value; positive upwards.
+        """
 
     def from_px(self, px: float) -> float:
-        """Pixels -> data value."""
+        """Convert pixels relative to the baseline to a data value.
+
+        Args:
+            px: the pixel value; positive upwards.
+
+        Returns:
+            The corresponding data value.
+        """
 
     @classmethod
     def fit(cls, values: Sequence[float], extent_px: float, *, margin: float = 0.0) -> Scale:
-        """Build a scale mapping [min(values), max(values)] -> [0, extent_px], with margin on both ends.
+        """Build a scale that covers the given value range.
+
+        Args:
+            values: sequence of data values; must not be empty and must not be
+                all equal.
+            extent_px: the pixel height the values are mapped to; must be
+                positive; range_px is (0, extent_px).
+            margin: the margin ratio on both sides; each end of domain is
+                expanded outward by (max - min) × margin.
+
+        Returns:
+            A new Scale.
 
         Raises:
-            ValueError: values is empty, contains non-finite numbers,
-                extent_px is not positive, margin is negative, or all values
-                are equal.
+            ValueError: values is empty, contains non-finite numbers, extent_px
+                is not positive, margin is negative, or all values are equal.
         """
 ```
 
@@ -42,31 +72,40 @@ class BarPlot:
 
     `width_px` is the plot-area width; `extent_up` / `extent_down` reserve
     height above/below the baseline for legs only, excluding the title, axis
-    names, tick numbers, x labels, and legend. The plot area expands when a
-    leg exceeds the reservation; axes, text, and the legend take separate
-    space, so the final canvas is usually larger than
-    `width_px × (extent_up + extent_down)`.
+    names, tick numbers, x labels, and the legend. The space for the axes,
+    the text, the legend, and the title is computed separately at render
+    time, so the final canvas is usually larger than
+    `width_px × (extent_up + extent_down)`; the bar area expands
+    automatically when a leg is taller than the reservation.
 
     Args:
-        width_px: plot-area width and the x range used by legs and axes.
+        width_px: plot-area width (design pixels), also the x range used by
+            the legs and the coordinates.
         extent_up: design-pixel height reserved above the baseline for legs;
-            excludes title, legend, and other edge areas.
+            excludes the title, the legend, and other edge areas.
         extent_down: design-pixel height reserved below the baseline for
-            downward legs; excludes x labels and other edge areas.
+            downward legs; excludes the x labels and other edge areas.
         background: canvas background color.
-        axis_style: "clean" (default) draws straight axes and grid lines;
-            "handdrawn" uses hand-drawn wobble controlled by seed.
-        seed: random source for default bar textures, the baseline, and
-            hand-drawn wobble.
-        font: chart-wide default font (a FontSpec, see L1 rendering
-            primitives); None uses the platform default chain. All internally
-            drawn text — title, axis names, x labels, legend, tick numbers,
-            and value labels — uses it; each add_* method's own font
-            parameter overrides it per element.
+        axis_style: "clean" draws straight axes and grid lines; "handdrawn"
+            uses hand-drawn wobble controlled by seed.
+        font: the chart-wide default font (a family name, a font file path,
+            or a list of candidates); it is used by the add_* methods and by
+            the value labels when they do not specify a font of their own,
+            None uses the platform default chain.
+        seed: random source; it affects the default bar textures, the
+            baseline, and the hand-drawn wobble, omitting it gives a fresh
+            random result each time.
+
+    When a leg is taller than extent_up / extent_down, the bar area expands
+    upward/downward automatically; the axes, the title, the labels, and the
+    legend take separate space and are not counted in these two values.
 
     Raises:
         ValueError: width_px is not positive, extent_up / extent_down is
             negative, or axis_style is not an allowed value.
+
+    All add_* methods record the drawing intent and return self so that
+    calls can be chained; the geometry is computed uniformly in render().
     """
 
     def __init__(
@@ -83,7 +122,11 @@ class BarPlot:
 
     @property
     def width_px(self) -> int:
-        """Plot-area width (the x range for legs and coordinates) in design pixels; not the final canvas width."""
+        """Plot-area width (the x range used by the legs and the coordinates).
+
+        Returns:
+            The width (design pixels); not equal to the final canvas width.
+        """
 
     def add_bar(
         self,
@@ -95,17 +138,30 @@ class BarPlot:
         side: Literal["up", "down"] = "up",
         seed: int | None = None,
     ) -> BarPlot:
-        """Place a leg at x: x is the target position of the foot-sole center (leg widths vary, so aligning by foot keeps spacing even).
+        """Place a leg at x.
+
+        x is the target position of the foot-sole center: leg widths vary, so
+        aligning by the foot keeps the spacing even.
 
         Args:
-            height_px: stocking height (design pixels). <= 0 means a bare leg.
-            leg: the leg asset; with side="down" the asset is flipped
-                vertically with the foot on the baseline pointing down.
+            x: the x of the foot-sole center in plot-area coordinates (design
+                pixels).
+            height_px: stocking height (design pixels); <= 0 means a bare leg.
+                The leg itself is always drawn at its full leg.height.
+            leg: the leg asset.
             style: a StockingStyle instance or a STYLES preset name.
+            side: "up" attaches above the baseline; "down" flips the leg
+                vertically with the foot on the baseline pointing down.
+            seed: random source for the texture of this bar; when omitted it is
+                derived from the seed given at construction, so the whole chart
+                stays reproducible.
+
+        Returns:
+            self, for chaining.
 
         Raises:
-            ValueError: style is an unknown preset name, side is not
-                "up" / "down", or x / height_px is not finite.
+            ValueError: style is an unknown preset name, side is not "up" /
+                "down", or x / height_px is not a finite number.
         """
 
     def add_y_axis(
@@ -116,18 +172,27 @@ class BarPlot:
         grid: bool = False,
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """Add a y axis (with tick numbers). By default ticks are generated from scale.domain at whole-number steps.
+        """Add a y axis (including the tick numbers).
 
-        The axis and grid styles follow the constructor's axis_style. Ticks
-        are mapped through scale to both sides of the baseline: when the
-        domain contains negative values the spine extends downward and
-        lower ticks are drawn as usual, with the arrowhead still at the
-        very top. If a tick maps above extent_up, the top of the canvas
-        expands to keep the axis top and tick number inside. With grid=True,
-        horizontal dashed lines are drawn at each tick (light-colored,
-        layered beneath the legs and stockings).
-        Axis names are added separately via add_y_axis_name(). font sets the
-        tick-number font; None (default) inherits the chart-wide default.
+        The line style of the axis and of the grid is decided by the
+        constructor argument axis_style. The ticks are mapped through the scale
+        to both sides of the baseline: when the domain contains negative values
+        the trunk extends downward and the lower ticks are drawn as usual, with
+        the arrowhead still at the very top. The axis name is added separately
+        with `add_y_axis_name()`.
+
+        Args:
+            scale: the data-value-to-pixel conversion; both the tick positions
+                and the downward extension come from it.
+            ticks: the tick values to draw; None generates them from
+                scale.domain automatically.
+            grid: whether to draw horizontal dashed lines along each tick
+                (layered beneath the legs and the stockings).
+            font: font for the tick numbers; None inherits the chart-wide
+                default.
+
+        Returns:
+            self, for chaining.
 
         Raises:
             ValueError: ticks contains non-finite numbers.
@@ -142,32 +207,39 @@ class BarPlot:
         rotation: float | Literal["auto"] = "auto",
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """Add x axis labels. pos decides where labels go, rotation decides whether they tilt:
+        """Add x axis labels.
 
-        - "content" (default): below the lowest point of all content
-          (including downward legs and the y axis's downward extension),
-          decoupled from the baseline — with nothing below, they naturally
-          sit just under the baseline;
-        - "auto": flush against the baseline, on the side without bars
-          (no legs above -> above the baseline, no legs below -> below the
-          baseline, legs on both sides -> falls back to "content");
-        - "above" / "below": forced above / below the baseline; overlapping
-          legs on that side if any.
+        The positioning and rotation rules:
 
-        rotation="auto" (default) tries 45/60/75/90 degrees in order when
-        adjacent labels would overlap and takes the first non-overlapping
-        angle; passing 0 disables rotation, and passing a fixed angle
-        (0-90) always tilts by that angle. The rotation direction follows
-        the label's side of the baseline automatically, and the canvas
-        gains the corresponding top/bottom and left/right margins.
+        - "content" (default) is drawn below the lowest point of all content
+          (including the downward legs and the downward extension of the y
+          axis), decoupled from the baseline; with nothing below, it
+          naturally sits just under the baseline.
+        - "auto" hugs the baseline and picks the side without bars; when legs
+          exist on both sides it falls back to "content".
+        - "above" / "below" force the labels above / below the baseline, and
+          they overlap the legs on that side.
+        - rotation="auto" tries 45/60/75/90 degrees in turn when adjacent
+          labels would overlap each other; passing 0 disables the rotation;
+          passing a fixed angle (0-90) always tilts by that angle.
 
-        xs defaults to an even spread across the width; when combined with
-        the add_bars family it aligns to group centers automatically. font
-        sets the label font; None (default) inherits the chart-wide default.
+        Args:
+            labels: the label texts.
+            xs: the positions of the label anchors in plot-area coordinates
+                (based on the foot-sole center); None prefers the group centers
+                recorded by the `add_bars` family, otherwise the labels are
+                spread evenly across the plot-area width.
+            pos: the label positioning strategy.
+            rotation: "auto" or a fixed angle from 0-90.
+            font: label font; None inherits the chart-wide default.
+
+        Returns:
+            self, for chaining.
 
         Raises:
-            ValueError: pos / rotation is invalid, xs and labels differ in
-                length, or xs contains non-finite numbers.
+            ValueError: pos is invalid, xs and labels differ in length, xs
+                contains non-finite numbers, or rotation is outside the allowed
+                range.
         """
 
     def add_title(
@@ -179,15 +251,21 @@ class BarPlot:
         color: Color = DEFAULT_TEXT_COLOR,
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """Add a chart title (single line).
+        """Add the chart-wide title.
 
-        By default horizontally centered above the plot area (centered on
-        the range the bars occupy, not the canvas); align="left" aligns to
-        the left edge of the plot area. A title wider than the canvas
-        widens the canvas symmetrically — no wrapping, no clipping. The
-        height the title occupies is counted into layout automatically,
-        and the legend is still drawn below the title. font sets the title
-        font; None (default) inherits the chart-wide default.
+        Args:
+            text: the title text.
+            align: "center" centers it above the plot area; "left" aligns it
+                with the left edge of the plot area.
+            size_px: font size (design pixels).
+            color: text color.
+            font: title font; None inherits the chart-wide default.
+
+        Returns:
+            self, for chaining.
+
+        Raises:
+            ValueError: align is neither "center" nor "left".
         """
 
     def add_x_axis_name(
@@ -198,12 +276,16 @@ class BarPlot:
         color: Color = DEFAULT_TEXT_COLOR,
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """Add the x axis name: centered horizontally beneath the x labels (above a bottom legend).
+        """Add the x axis name, centered horizontally beneath the x labels (above a bottom legend).
 
-        With no x labels it goes directly below the lowest point of the
-        content. An overly long name widens the canvas — no clipping. font
-        sets the axis-name font; None (default) inherits the chart-wide
-        default.
+        Args:
+            text: the axis name.
+            size_px: font size (design pixels).
+            color: text color.
+            font: axis-name font; None inherits the chart-wide default.
+
+        Returns:
+            self, for chaining.
         """
 
     def add_y_axis_name(
@@ -214,16 +296,22 @@ class BarPlot:
         color: Color = DEFAULT_TEXT_COLOR,
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """Add the y axis name, drawn to the left of the tick numbers.
+        """Add the y axis name.
 
-        Chinese/Japanese/Korean characters are laid out vertically one
-        character at a time (matching their writing conventions); Latin
-        letters, digits, and similar text are rotated 90 degrees as a
-        whole, read bottom-up. When the name is longer than the axis trunk
-        it continues in additional columns/lines and stays vertically
-        centered on the trunk; it occupies the left margin and does not
-        affect plot-area coordinates. font sets the axis-name font; None
-        (default) inherits the chart-wide default.
+        Chinese, Japanese, and Korean characters are laid out vertically one
+        character at a time; all other text is rotated 90 degrees and written
+        to the left of the tick numbers; when the name is longer than the
+        axis trunk it automatically continues into extra columns/lines and
+        stays vertically centered on the axis trunk as a whole.
+
+        Args:
+            text: the axis name.
+            size_px: font size (design pixels).
+            color: text color.
+            font: axis-name font; None inherits the chart-wide default.
+
+        Returns:
+            self, for chaining.
         """
 
     def add_legend(
@@ -234,34 +322,75 @@ class BarPlot:
         loc: Literal["top", "bottom"] = "top",
         font: FontSpec | None = None,
     ) -> BarPlot:
-        """Add a legend: each item is a fabric-texture swatch + text; the swatch takes the fabric from the middle of that style's stocking.
+        """Add a legend.
 
-        loc="top" (default) draws below the title and above the plot area;
-        "bottom" draws at the very bottom; ncol is the number of items per
-        row, auto by default: one row if it fits, otherwise wrapped by
-        width. When ncol is given, all columns are equally wide and each
-        row is centered as a whole; a short last row may therefore not line
-        up with the columns above. An over-large ncol may overflow the canvas
-        (no automatic shrinking); prefer the default auto value. A single
-        label wider than the available
-        row width is wrapped onto multiple lines (at most 3; if it still
-        does not fit, the last line is elided); under a given ncol it wraps
-        by column width. The height the legend occupies and the wrapped line
-        heights are counted into layout automatically. font sets the legend
-        text font; None (default) inherits the chart-wide default.
+        Each item is a genuinely rendered fabric-texture swatch + text; the
+        swatch takes the fabric from the middle of that style's stocking. The
+        height the legend occupies is counted into the layout automatically.
+
+        Args:
+            items: a list of (label, style); the style may be a StockingStyle
+                or a preset name.
+            ncol: how many items per row; None means one row if everything
+                fits, otherwise it wraps by width.
+            loc: "top" draws below the title and above the plot area; "bottom"
+                draws at the very bottom.
+            font: legend text font; None inherits the chart-wide default.
+
+        Returns:
+            self, for chaining; it returns directly when items is empty.
+
+        Raises:
+            ValueError: ncol < 1, loc is invalid, or a style preset name does
+                not exist.
         """
 
     def render(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Canvas:
-        """Render. scale is the output pixel density and does not affect design-pixel coordinates."""
+        """Compute the layout and draw the whole chart.
+
+        Args:
+            scale: the output pixel density (1 = design size, 2 by default). It
+                only affects the output resolution and the texture detail, not
+                the design-pixel layout.
+
+        Returns:
+            The finished Canvas; its size is round(final_w × scale) ×
+            round(final_h × scale).
+
+        Raises:
+            ValueError: scale is not a positive finite number.
+        """
 
     def save(self, path: str | Path, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Path:
-        """Render and write out a PNG directly."""
+        """Render and write out a PNG.
+
+        Args:
+            path: the output path; the parent directory must already exist.
+            scale: the output pixel density.
+
+        Returns:
+            The path actually written.
+        """
 
     def to_pil(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Image:
-        """Render and export a PIL Image directly."""
+        """Render and export a PIL Image.
+
+        Args:
+            scale: the output pixel density.
+
+        Returns:
+            A PIL Image in RGBA mode.
+        """
 
     def to_numpy(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> np.ndarray:
-        """Render and export an (H, W, 4) uint8 RGBA array directly."""
+        """Render and export a NumPy array.
+
+        Args:
+            scale: the output pixel density.
+
+        Returns:
+            An (H, W, 4) uint8 RGBA array, with H / W in output pixels.
+        """
 ```
 
 ## Minimal example

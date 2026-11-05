@@ -108,24 +108,20 @@ def render_stocking(
             不小于 leg.height 时整腿全盖。
         seed: 纹理类随机效果的随机源。
         scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
-            光影都是该分辨率的真细节，不是把成品图放大；内置 SVG 素材按该倍率
-            重新栅格化，外部位图素材按比例重采样。
-            纹理还会在内部按 2 倍生成后降采样，改善网眼、蕾丝等硬边的抗锯齿。
-            返回的 Leg 图像为「设计像素 × scale」（`pixels_per_unit == scale`），
-            足底中心等元数据仍是设计像素；图层按 1:1 贴图即得到 scale 倍输出。
+            光影都是该分辨率的真细节，不是把成品放大；内置矢量素材按该倍率
+            重新栅格化，外部位图素材先按比例重采样。
+            纹理在内部再按 2 倍生成后降采样以改善硬边抗锯齿，这不改变返回
+            图像的尺寸与 `pixels_per_unit`。
+            返回的 Leg 图像为「设计尺寸 × scale」像素（`pixels_per_unit == scale`），
+            `width` / `height` / `foot_center_x` 等元数据仍是设计像素，
+            图层按 1:1 贴图即得到 scale 倍输出。
 
     Returns:
-        新的 Leg：像素已替换，设计坐标元数据与素材一致；`scale != 1` 时
-        图像按倍率加密（`pixels_per_unit == scale`），供 1:1 贴图。
+        新的 Leg：图像按 scale 倍密度重绘（`pixels_per_unit == scale`），
+        设计像素元数据与原素材一致。
 
     Raises:
         ValueError: scale 不是正的有限数。
-
-    约定：本函数是丝袜渲染算法的对外契约（算法由独立设计实现）。始终在素材
-    自身坐标系内从脚端向上渲染；腿的上下翻转由上层放置时处理（翻转与渲染
-    先后等价，不在此层做）。`scale` 只是把渲染空间等比例放大，几何语义不变；
-    内置 SVG 素材按目标倍率栅格化；外部位图素材比目标更密时按需降采样
-    （高清素材不会被重复放大）。
     """
 ```
 
@@ -158,22 +154,25 @@ def draw_text(
     max_lines: int | None = None,
     line_height: float | None = None,
 ) -> None:
-    """画一段文字，支持 `\n` 多行与按宽折行。
+    r"""画一段文字（支持 \n 与按宽折行，逐段整形含 kerning/连字）。
 
-    文本按字体切段后经 skia.textlayout 整形绘制：kerning、连字（fi 等拉丁
-    连字）、段内 RTL 与组合 emoji 均正确。缺字形逐码点回退系统字体，仍无则
-    画描边方框占位，不抛异常。`\n` 硬切分行；`max_width` 再按像素宽贪心软
-    折行（优先空白/标点后断，中文按字断）；`max_lines` 限定行数，超限时末行
-    加 U+2026 省略号；`line_height` 为行距倍率，None 用自然行距。
-
-    anchor 九宫格垂直方向参照整块文字块（baseline 指首行基线），水平方向
-    逐行生效（center / right 按行居中 / 右对齐）。rotation 为绕 (x, y) 锚点
-    的顺时针角度（度），0 不旋转；先按 anchor 定位整块，再基于精确包围盒
-    整体旋转。
+    Args:
+        canvas: 目标画布。
+        text: 待绘制文本；空串直接返回。
+        x: 锚点 x（画布输出像素）。
+        y: 锚点 y（画布输出像素）。
+        size_px: 字号（像素），须为正数。
+        color: 文字颜色（方框占位同色）。
+        font: 字体候选；None 用平台默认链。
+        anchor: (x, y) 对应文字块的哪一处；垂直参照整块，水平逐行生效。
+        rotation: 绕 (x, y) 顺时针旋转的角度（度）。
+        max_width: 每行最大宽度（像素）；None 不折行。
+        max_lines: 最多行数；None 不限。
+        line_height: 行距倍率；None 用自然行距。
 
     Raises:
-        ValueError: color 不是合法颜色、size_px 不是正数、anchor 取值非法，
-            或 font 候选列表为空 / 含空名。
+        ValueError: color 不是合法的 RGB/RGBA 元组、size_px 非正、
+            anchor 取值非法，或 font 候选列表为空。
     """
 
 
@@ -183,14 +182,18 @@ def measure_text(
     size_px: float,
     font: FontSpec | None = None,
 ) -> float:
-    """测量文字按 `draw_text` 相同规则排版后的宽度（像素）。
+    """测量文字按 draw_text 相同规则排版后的宽度（多行取最宽行）。
 
-    返回整形后的前进宽度，含 kerning 与连字，不等于逐字符宽度之和；多行
-    取最宽行；空串为 0。字体回退逐码点进行（见
-    [设计说明](../design.zh-CN.md)"字体"）。
+    Args:
+        text: 待测量文本；空串返回 0。
+        size_px: 字号（像素）。
+        font: 字体候选；None 用平台默认链。
+
+    Returns:
+        前进宽度（像素，含 kerning/连字）。
 
     Raises:
-        ValueError: font 候选列表为空或含空名（空串直接返回 0，不校验 font）。
+        ValueError: font 候选列表为空或包含空名字。
     """
 
 
@@ -201,12 +204,19 @@ def measure_text_height(
     font: FontSpec | None = None,
     line_height: float | None = None,
 ) -> float:
-    """测量文字块的真实高度（像素）：按实际解析到的字体度量计算，多行含行距。
+    """测量文字块的真实高度（按实际解析到的字体度量，多行含行距）。
 
-    `line_height` 为行距倍率，None 用自然行距；空串按单空行估算。
+    Args:
+        text: 待测量文本；空串按单空行估算。
+        size_px: 字号（像素）。
+        font: 字体候选；None 用平台默认链。
+        line_height: 行距倍率；None 用自然行距。
+
+    Returns:
+        块高（像素）。
 
     Raises:
-        ValueError: font 候选列表为空或含空名。
+        ValueError: font 候选列表为空或包含空名字。
     """
 
 
@@ -218,14 +228,24 @@ def wrap_text(
     font: FontSpec | None = None,
     max_lines: int | None = None,
 ) -> list[str]:
-    """按像素宽度把文本折成多行，返回行字符串列表。
+    r"""按像素宽度把文本折成多行（\n 参与切分，末行可加省略号）。
 
-    与 `draw_text` 的 `max_width` 折行同规则：贪心断行，优先在空白或常见
-    标点之后断开，中文按字断行；`\n` 参与切分；超过 `max_lines` 时末行加
-    U+2026 省略号。空串返回 `[""]`；结果至少含一个元素。
+    采用贪心断行，优先在空白或常见标点之后断开；中文可按字断行，英文单词
+    过长时仍会断开。超过 max_lines 时末行加省略号；除单个字形本身超宽外，
+    每行都不超过 max_width。
+
+    Args:
+        text: 待折行文本；空串返回 [""]。
+        max_width: 每行最大宽度（像素）。
+        size_px: 字号（像素）。
+        font: 字体候选；None 用平台默认链。
+        max_lines: 最多行数；None 表示不限。
+
+    Returns:
+        折行后的行字符串列表，至少包含一个元素。
 
     Raises:
-        ValueError: font 候选列表为空或含空名。
+        ValueError: font 候选列表为空或包含空名字。
     """
 
 
@@ -241,7 +261,19 @@ def sketch_line(
     wobble: float = DEFAULT_WOBBLE,
     seed: int | None = None,
 ) -> None:
-    """手绘风直线：对线段做确定性细分抖动。"""
+    """画一条手绘风直线。
+
+    Args:
+        canvas: 目标画布。
+        x1: 起点 x（画布输出像素）。
+        y1: 起点 y。
+        x2: 终点 x。
+        y2: 终点 y。
+        color: 线条颜色。
+        width_px: 线宽（像素）。
+        wobble: 法向抖动幅度（像素）；0 为直线。
+        seed: 随机源；同一 seed 结果可复现，不传则每次随机。
+    """
 
 
 def sketch_axis(
@@ -259,12 +291,25 @@ def sketch_axis(
     seed: int | None = None,
     font: FontSpec | None = None,
 ) -> None:
-    """手绘风坐标轴：抖动轴干线、箭头、刻度线与刻度数字。
+    """画一条手绘风坐标轴，可带箭头、刻度线与刻度数字。
 
-    (x, y) 为轴起点，干线向 direction 延伸 length 像素，箭头（可选）在远端；
-    ticks 为 (距起点的像素偏移, 标签文字)：刻度线垂直于干线，数字画在
-    干线左侧（垂直轴）或下侧（水平轴）。font 为刻度数字的字体；None
-    （默认）用平台默认链。
+    (x, y) 为轴起点，干线向 direction 延伸 length 像素；箭头（可选）在远端。
+    垂直轴的刻度与数字在干线左侧，水平轴的在其下侧。
+
+    Args:
+        canvas: 目标画布。
+        direction: "up" / "down" / "right"；决定延伸方向与刻度侧。
+        x: 轴起点 x（画布输出像素）。
+        y: 轴起点 y。
+        length: 干线长度（像素）；<= 0 时不画箭头。
+        ticks: (距起点的像素偏移, 标签文字) 序列。
+        arrow: 是否在远端画箭头。
+        color: 轴、刻度与文字颜色。
+        width_px: 线条宽度（像素）。
+        wobble: 干线抖动幅度；箭头与刻度使用其一半。
+        seed: 随机源；同一 seed 结果可复现，不传则每次随机。
+        font: 刻度数字字体（家族名、字体文件路径或候选列表）；None 用
+            平台默认链。
     """
 ```
 
