@@ -43,7 +43,14 @@ from stockchart.stocking import (
     Welt,
     render_stocking,
 )
-from stockchart.text import FontSpec, TextAnchor, draw_text, measure_text
+from stockchart.text import (
+    FontSpec,
+    TextAnchor,
+    draw_text,
+    measure_text,
+    measure_text_height,
+    wrap_text,
+)
 from stockchart.topline import ChartOptions, bar, mirror_bar
 
 __all__ = [
@@ -81,10 +88,12 @@ __all__ = [
     "draw_text",
     "load_leg",
     "measure_text",
+    "measure_text_height",
     "mirror_bar",
     "normalize_data",
     "register_data_type",
     "render_stocking",
     "sketch_axis",
     "sketch_line",
+    "wrap_text",
 ]

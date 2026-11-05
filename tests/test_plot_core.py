@@ -94,6 +94,15 @@ class TestBarPlotCore:
         diff = np.abs(a1[:, :, :3].astype(int) - bg).sum(axis=2) > 30
         assert diff.any()
 
+    def test_to_numpy_and_to_pil_match_render(self) -> None:
+        p = BarPlot(400, extent_up=760, seed=0)
+        p.add_bar(200, 500, make_leg(), style="black_sheer")
+        arr = p.to_numpy(scale=1)
+        assert arr.dtype == np.uint8
+        assert arr.shape[2] == 4
+        assert (arr == p.render(scale=1).to_numpy()).all()
+        assert p.to_pil(scale=1).size == (arr.shape[1], arr.shape[0])
+
     def test_down_side_flips_foot_to_baseline(self) -> None:
         p = BarPlot(400, extent_up=0, extent_down=0, background=BG)
         p.add_bar(200, 300, make_leg(h=400, w=100), side="down")

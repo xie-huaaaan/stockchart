@@ -1434,6 +1434,17 @@ class BarPlot:
         """
         return self.render(scale=scale).to_pil()
 
+    def to_numpy(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> NDArray[np.uint8]:
+        """渲染并导出 NumPy 数组。
+
+        Args:
+            scale: 输出像素密度。
+
+        Returns:
+            (H, W, 4) uint8 RGBA 数组，H / W 为输出像素。
+        """
+        return self.render(scale=scale).to_numpy()
+
     # ------------------------------------------------------------------
     # 布局与绘制
     # ------------------------------------------------------------------
