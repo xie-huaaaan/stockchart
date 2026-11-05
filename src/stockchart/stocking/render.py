@@ -27,7 +27,6 @@ from stockchart.stocking.ink import boost_ink_lines
 from stockchart.stocking.shading import (
     apply_shading,
     composite,
-    downsample_rendered,
     render_shading,
     resample_leg,
     shade_bare_leg,
@@ -36,10 +35,6 @@ from stockchart.stocking.styles import Fade, Lace, StockingStyle, Welt, scale_st
 
 if TYPE_CHECKING:
     from stockchart.legs import Leg
-
-
-# 纹理在输出密度之上再按该倍率生成，然后降采样；只影响画质，不改变公开的 scale 语义。
-_SUPERSAMPLE = 2
 
 
 def render_stocking(
@@ -62,8 +57,6 @@ def render_stocking(
         scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
             光影都是该分辨率的真细节，不是把成品放大；内置矢量素材按该倍率
             重新栅格化，外部位图素材先按比例重采样。
-            纹理在内部再按 2 倍生成后降采样以改善硬边抗锯齿，这不改变返回
-            图像的尺寸与 `pixels_per_unit`。
             返回的 Leg 图像为「设计尺寸 × scale」像素（`pixels_per_unit == scale`），
             `width` / `height` / `foot_center_x` 等元数据仍是设计像素，
             图层按 1:1 贴图即得到 scale 倍输出。
@@ -78,13 +71,11 @@ def render_stocking(
     if not math.isfinite(scale) or scale <= 0:
         raise ValueError(f"scale 须为正数，得到 {scale}")
 
-    # 输出密度的腿图：返回尺寸、alpha 轮廓与元数据都以它为准。
-    output_leg = resample_leg(leg, scale)
+    # 直接在输出密度生成纹理，避免额外超采样和整条腿的降采样。
+    leg = resample_leg(leg, scale)
     if height_px <= 0 and style.shading.skin <= 0:
-        return output_leg
+        return leg
 
-    # 纹理在更高的密度上生成，最后缩回输出密度。
-    leg = resample_leg(leg, scale * _SUPERSAMPLE)
     density = leg.pixels_per_unit
     if density != 1.0:
         style = scale_style(style, density)
@@ -92,7 +83,7 @@ def render_stocking(
 
     if height_px <= 0:
         # 裸腿也要参与皮肤光影，否则同一张图里裸腿比穿袜腿少一层受光
-        return downsample_rendered(shade_bare_leg(leg, style), output_leg, scale)
+        return shade_bare_leg(leg, style)
 
     H, W = leg.image.shape[:2]
     height_px = min(height_px, H)
@@ -105,13 +96,6 @@ def render_stocking(
 
     # 渲染区域：图像底部 height_px 行（脚在底部）
     y_start = H - height_px  # 袜口顶端所在行（含）
-
-    # 袜口以上没有绘制内容时保留输出密度的原像素，避免整图重采样；
-    # 余量覆盖袜口边线与抖动，皮肤光影开启时整条腿都会被修改。
-    margin = 3 + math.ceil(style.shading.wobble * scale / density)
-    content_top = (
-        0 if style.shading.skin > 0 else min(H, max(0, round(y_start * scale / density) - margin))
-    )
 
     # 每行腿的宽度剖面：用于圆柱透视压缩
     col_profile = column_profile(alpha_mask)  # (H, W) float，横向归一化坐标
@@ -236,5 +220,6 @@ def render_stocking(
     )
 
     out = (np.clip(result, 0.0, 1.0) * 255.0).astype(np.uint8)
-
-    return downsample_rendered(replace(leg, image=out), output_leg, scale, content_top=content_top)
+    # 织物与光影只改变 RGB，轮廓覆盖率直接保留素材像素，避免浮点量化漂移。
+    out[..., 3] = leg.image[..., 3]
+    return replace(leg, image=out)

@@ -182,42 +182,6 @@ def _resize_rgba(
     return (out * 255).round().astype(np.uint8)
 
 
-def downsample_rendered(
-    leg: Leg,
-    output_leg: Leg,
-    density: float,
-    *,
-    content_top: int = 0,
-) -> Leg:
-    """把超采样渲染结果缩到输出密度。
-
-    轮廓 alpha 直接沿用输出密度的腿图，避免边缘漂移；袜口以上不参与重采样。
-
-    Args:
-        leg: 当前超采样密度下的渲染结果。
-        output_leg: 输出密度的参考腿图，提供尺寸与轮廓 alpha。
-        density: 输出密度（像素 / 设计像素）。
-        content_top: 该行以上的像素直接复制 output_leg；0 表示不保留。
-
-    Returns:
-        输出密度下的 Leg。
-    """
-    height, width = output_leg.image.shape[:2]
-    if leg.image.shape[:2] == (height, width):
-        image = leg.image.copy()
-    else:
-        image = _resize_rgba(leg.image, width, height, resample=Image.Resampling.LANCZOS)
-    alpha = output_leg.image[..., 3]
-    # 超采样 alpha 在轮廓最外侧可能已为 0，而输出密度仍有覆盖率；
-    # 这些像素没有可用的织物颜色，用原腿颜色补齐，避免出现黑边。
-    empty = (image[..., 3] == 0) & (alpha > 0)
-    image[empty, :3] = output_leg.image[empty, :3]
-    image[..., 3] = alpha
-    if content_top > 0:
-        image[:content_top] = output_leg.image[:content_top]
-    return replace(leg, image=image, pixels_per_unit=density)
-
-
 def resample_leg(leg: Leg, density: float) -> Leg:
     """把腿图重采样到指定密度，元数据仍是设计像素。
 
@@ -271,7 +235,9 @@ def shade_bare_leg(leg: Leg, style: StockingStyle) -> Leg:
     shadow[..., 3] *= sh.skin
     highlight *= sh.skin
     out = apply_shading(src.copy(), shadow, highlight)
-    return replace(leg, image=(np.clip(out, 0.0, 1.0) * 255.0).astype(np.uint8))
+    image = (np.clip(out, 0.0, 1.0) * 255.0).astype(np.uint8)
+    image[..., 3] = leg.image[..., 3]
+    return replace(leg, image=image)
 
 
 def apply_shading(

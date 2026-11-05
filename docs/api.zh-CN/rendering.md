@@ -110,8 +110,6 @@ def render_stocking(
         scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
             光影都是该分辨率的真细节，不是把成品放大；内置矢量素材按该倍率
             重新栅格化，外部位图素材先按比例重采样。
-            纹理在内部再按 2 倍生成后降采样以改善硬边抗锯齿，这不改变返回
-            图像的尺寸与 `pixels_per_unit`。
             返回的 Leg 图像为「设计尺寸 × scale」像素（`pixels_per_unit == scale`），
             `width` / `height` / `foot_center_x` 等元数据仍是设计像素，
             图层按 1:1 贴图即得到 scale 倍输出。

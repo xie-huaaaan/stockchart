@@ -115,9 +115,6 @@ def render_stocking(
             finished image; built-in vector assets are re-rasterized at that
             scale, and external bitmap assets are resampled proportionally
             first.
-            Textures are internally generated at 2x and then downsampled to
-            improve anti-aliasing on hard edges; this does not change the size
-            of the returned image or its `pixels_per_unit`.
             The returned Leg's image is "design size x scale" pixels
             (`pixels_per_unit == scale`); metadata such as `width`, `height`,
             and `foot_center_x` stays in design pixels, and compositing layers

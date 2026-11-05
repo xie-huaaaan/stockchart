@@ -13,7 +13,6 @@ import pytest
 from PIL import Image
 
 import stockchart
-import stockchart.stocking.render as render_module
 from stockchart import (
     STYLES,
     Dotted,
@@ -265,7 +264,11 @@ class TestSkinShading:
         style = replace(STYLES["black_sheer"], shading=Shading(skin=0.5))
         out = render_stocking(leg, style, 0, seed=1)
         diff = np.abs(out.image.astype(int) - leg.image.astype(int))[:, :, :3]
-        assert diff.max() > 20
+        # 验证受光的方向，避免依赖采样方法对边缘极值的影响。
+        delta = out.image[..., :3].astype(int) - leg.image[..., :3].astype(int)
+        covered = leg.image[..., 3] > 0
+        assert delta[covered].min() < 0
+        assert delta[covered].max() > 0
         # 左侧缘（边缘阴影）与高光带（u≈-0.35）都要变
         assert diff[:, leg.width // 2 - 32].max() > 0
         assert diff[:, leg.width // 2 - 11].max() > 0
@@ -340,16 +343,6 @@ class TestRenderScale:
         diff = np.abs(small[:, :, :3] - a.astype(int)[:, :, :3])
         # 高频条纹在降采样时会有少量差异，整体应高度一致
         assert diff.mean() < 12
-
-    def test_internal_supersampling_is_used(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        leg = make_synthetic_leg(200, 80)
-        style = STYLES["fishnet_black"]
-        supersampled = render_stocking(leg, style, 150, seed=1).image
-        monkeypatch.setattr(render_module, "_SUPERSAMPLE", 1)
-        direct = render_stocking(leg, style, 150, seed=1).image
-        assert supersampled.shape == direct.shape
-        # 二值网线边缘经过 2× 生成再降采样后不应与直接生成完全相同
-        assert not np.array_equal(supersampled, direct)
 
     def test_dense_asset_is_downsampled_not_upscaled(self) -> None:
         """2 倍密素材在 1 倍输出下应降采样，设计坐标不变。"""
@@ -469,7 +462,14 @@ class TestRenderStocking:
         result = render_stocking(leg, STYLES["black_sheer"], leg.height + 100, seed=0)
         assert result.image.shape == leg.image.shape
 
-    def test_alpha_channel_unchanged(self, leg: "stockchart.Leg") -> None:
-        """渲染后 alpha 通道应与原腿一致。"""
-        result = render_stocking(leg, STYLES["black_tights"], 100, seed=0)
-        np.testing.assert_array_equal(result.image[..., 3], leg.image[..., 3])
+    @pytest.mark.parametrize("height_px", [0, 100, 300])
+    def test_alpha_channel_unchanged(self, leg: "stockchart.Leg", height_px: int) -> None:
+        """裸腿、局部穿袜与全覆盖都保留素材的半透明轮廓。"""
+        image = leg.image.copy()
+        rng = np.random.default_rng(42)
+        image[..., 3] = np.where(
+            image[..., 3] > 0, rng.integers(1, 256, size=image.shape[:2], dtype=np.uint8), 0
+        )
+        translucent = replace(leg, image=image)
+        result = render_stocking(translucent, STYLES["black_tights"], height_px, seed=0)
+        np.testing.assert_array_equal(result.image[..., 3], image[..., 3])
