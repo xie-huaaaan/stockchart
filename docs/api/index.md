@@ -2,7 +2,7 @@
 
 stockchart's public API is organized in five layers (L0–L4); higher layers work only through the public interfaces of lower ones. Coordinates are design pixels, randomness is seed-controlled, and a bare leg is simply a stocking of height 0.
 
-**Contents**
+## Contents
 
 - [L0 — leg assets](leg-assets.md)
 - [L1 — rendering primitives](rendering.md)

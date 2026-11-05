@@ -2,8 +2,6 @@
 
 ← [API index](index.md) · Related: [L4 — bar() and mirror_bar()](charts.md)
 
-## Data input (L4)
-
 The `data` of `bar` / `mirror_bar` is first normalized by `normalize_data` into `PlotData`, then fed into height mapping. The following forms are supported:
 
 | Input | Interpretation |

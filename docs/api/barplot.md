@@ -2,8 +2,6 @@
 
 ← [API index](index.md) · Related: [L1 rendering primitives](rendering.md) · [L3 layout helpers](layout.md)
 
-## L2 free-form bar plot
-
 ```python
 @dataclass(slots=True, frozen=True)
 class Scale:
@@ -79,8 +77,8 @@ class BarPlot:
         extent_down: int = 0,
         background: Color = DEFAULT_BACKGROUND,
         axis_style: Literal["clean", "handdrawn"] = "clean",
-        seed: int | None = None,
         font: FontSpec | None = None,
+        seed: int | None = None,
     ) -> None: ...
 
     def add_bar(

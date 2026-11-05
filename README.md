@@ -2,32 +2,20 @@
 
 English | [简体中文](README.zh-CN.md)
 
-[![PyPI](https://img.shields.io/pypi/v/stockchart)](https://pypi.org/project/stockchart/)
-[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
-[![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
-[![Assets: ARR](https://img.shields.io/badge/assets-ARR-orange)](ASSETS-LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/stockchart)](https://pypi.org/project/stockchart/) [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/) [![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE) [![Assets: ARR](https://img.shields.io/badge/assets-ARR-orange)](ASSETS-LICENSE)
 
 **A creative plotting library that draws data as stockings pulled up over a pair of legs.**
 
 ![A grouped stockchart: two series over three months](docs/images/hero.png)
 
-`stockchart` is a playful alternative to the bar chart. Each value becomes the height of a
-stocking pulled up over a leg: a larger value means more stocking, and zero is a bare leg.
-It is made for infographics, slides, posters, and anywhere a chart should be memorable
-rather than conventional.
+`stockchart` is a playful alternative to the bar chart. Each value becomes the height of a stocking pulled up over a leg: a larger value means more stocking, and zero is a bare leg. It is made for infographics, slides, posters, and anywhere a chart should be memorable rather than conventional.
 
-- **Values → stocking height.** Grouped, paired, and positive/negative mirror charts are
-  supported.
-- **19 built-in styles.** Sheer, opaque tights, stripes, knit, fishnet, polka dots, hearts,
-  lace trims, and more.
-- **Data-science friendly.** Lists, NumPy arrays, dictionaries, and pandas
-  `DataFrame`/`Series`. pandas is optional and never imported by the library itself.
-- **Native high-resolution output.** Stocking textures and lighting are generated at the
-  target pixel density, not upscaled from a bitmap.
-- **Composable by design.** Start with one-line `bar()`; drop down to pixel-level placement
-  when you need a custom layout.
-- **No matplotlib.** Text and lines are rendered with Skia, including a per-character font
-  fallback for Chinese, Japanese, and Korean.
+- **Values → stocking height.** Grouped, paired, and positive/negative mirror charts are supported.
+- **19 built-in styles.** Sheer, opaque tights, stripes, knit, fishnet, polka dots, hearts, lace trims, and more.
+- **Data-science friendly.** Lists, NumPy arrays, dictionaries, and pandas `DataFrame`/`Series`. pandas is optional and never imported by the library itself.
+- **Native high-resolution output.** Stocking textures and lighting are generated at the target pixel density, not upscaled from a bitmap.
+- **Composable by design.** Start with one-line `bar()`; drop down to pixel-level placement when you need a custom layout.
+- **No matplotlib.** Text and lines are rendered with Skia, including a per-character font fallback for Chinese, Japanese, and Korean.
 
 <table>
   <tr>
@@ -64,8 +52,7 @@ or with [uv](https://docs.astral.sh/uv/):
 uv add stockchart
 ```
 
-Requires Python 3.12 or newer. Runtime dependencies are `skia-python`, `numpy`, and
-`pillow`.
+Requires Python 3.12 or newer. Runtime dependencies are `skia-python`, `numpy`, and `pillow`.
 
 ## Quick start
 
@@ -85,9 +72,7 @@ bar(
 ).save("chart.png")
 ```
 
-The result is the image at the top of this README. `bar()` maps the data, chooses leg
-assets, lays out groups, and draws the axes. It returns a `BarPlot` that can be saved
-directly or adjusted further.
+The result is the image at the top of this README. `bar()` maps the data, chooses leg assets, lays out groups, and draws the axes. It returns a `BarPlot` that can be saved directly or adjusted further.
 
 A mirror chart for positive and negative values:
 
@@ -132,9 +117,7 @@ df = pd.DataFrame(
 bar(df, title="Monthly report", style=["black_sheer", "white_sheer"]).save("chart.png")
 ```
 
-Explicit `labels=` and `series_labels=` override anything inferred from the data. Custom
-containers can be registered with `register_data_type`; see the
-[data input reference](docs/api/data-input.md).
+Explicit `labels=` and `series_labels=` override anything inferred from the data. Custom containers can be registered with `register_data_type`; see the [data input reference](docs/api/data-input.md).
 
 ## Stocking styles
 
@@ -159,11 +142,7 @@ bar(
 )
 ```
 
-The 19 presets cover sheer stockings, opaque tights, stripes, ribbed knit, fishnet,
-polka dots, hearts, lace trims, and more. For direct control, pass a `StockingStyle`
-built from `Plain`, `Striped`, `Ribbed`, `Fishnet`, or `Dotted` fabrics with a
-`Bare`, `Welt`, `Lace`, or `Fade` top edge. The full style table is in the
-[rendering reference](docs/api/rendering.md).
+The 19 presets cover sheer stockings, opaque tights, stripes, ribbed knit, fishnet, polka dots, hearts, lace trims, and more. For direct control, pass a `StockingStyle` built from `Plain`, `Striped`, `Ribbed`, `Fishnet`, or `Dotted` fabrics with a `Bare`, `Welt`, `Lace`, or `Fade` top edge. The full style table is in the [rendering reference](docs/api/rendering.md).
 
 ## Titles, axis names, and options
 
@@ -180,10 +159,7 @@ bar(
 )
 ```
 
-Chart-level parameters stay in the signature; lower-level options such as `grid`,
-`axis_style`, `legend_loc`, `legend_ncol`, `x_label_rotation`, `bar_gap`, and `group_gap`
-are passed through a typed option bag. See the
-[`ChartOptions` table](docs/api/charts.md).
+Chart-level parameters stay in the signature; lower-level options such as `grid`, `axis_style`, `legend_loc`, `legend_ncol`, `x_label_rotation`, `bar_gap`, and `group_gap` are passed through a typed option bag. See the [`ChartOptions` table](docs/api/charts.md).
 
 ## API layers
 
@@ -220,8 +196,7 @@ image = plot.to_pil()
 array = plot.to_numpy()
 ```
 
-`scale` controls output pixel density; stocking textures and lighting are regenerated at
-that density. SVG and PDF output are intentionally not supported.
+`scale` controls output pixel density; stocking textures and lighting are regenerated at that density. SVG and PDF output are intentionally not supported.
 
 ## Documentation
 
@@ -243,17 +218,10 @@ Issues and pull requests are welcome.
 
 ## Status
 
-`0.1.x` is an early public release. The rendering pipeline is stable, but the public API
-may still change in minor releases.
+`0.1.x` is an early public release. The rendering pipeline is stable, but the public API may still change in minor releases.
 
 ## License
 
-The source code is released under the [Mozilla Public License 2.0](LICENSE) (MPL-2.0).
-You can use `stockchart` in closed-source projects; if you modify MPL-covered source
-files, those files must remain available under MPL-2.0.
+The source code is released under the [Mozilla Public License 2.0](LICENSE) (MPL-2.0). You can use `stockchart` in closed-source projects; if you modify MPL-covered source files, those files must remain available under MPL-2.0.
 
-The built-in leg artwork (`src/stockchart/assets/leg_*.svg` and `legs.json`) is
-**All Rights Reserved** and is not covered by MPL-2.0; see the
-[asset license](ASSETS-LICENSE). The artwork may be used to render charts
-with `stockchart`, and charts you generate are your own work. The artwork itself may not
-be extracted or redistributed except as part of an unmodified stockchart package.
+The built-in leg artwork (`src/stockchart/assets/leg_*.svg` and `legs.json`) is **All Rights Reserved** and is not covered by MPL-2.0; see the [asset license](ASSETS-LICENSE). The artwork may be used to render charts with `stockchart`, and charts you generate are your own work. The artwork itself may not be extracted or redistributed except as part of an unmodified stockchart package.

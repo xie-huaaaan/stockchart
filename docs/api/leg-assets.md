@@ -22,8 +22,6 @@
 | pair_12 | leg_23 | leg_24 | 181 / 145 |
 | pair_13 | leg_25 | leg_26 | 145 / 150 |
 
-## L0 assets
-
 ```python
 @dataclass(slots=True, frozen=True)
 class Leg:

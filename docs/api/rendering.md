@@ -4,11 +4,7 @@
 
 ## Stocking styles
 
-A stocking = fabric kind (`Fabric`) + top edge (`TopEdge`) + shading (`Shading`). All three are
-`dataclass(slots=True, frozen=True, kw_only=True)`; invalid parameters raise `ValueError` at construction.
-Length units are design pixels and refer to dimensions at the front of the leg (the sides are compressed
-by cylindrical `perspective`, default 0.8). Colors are `Color`; when an alpha component is present,
-it is multiplied into the corresponding opacity.
+A stocking = fabric kind (`Fabric`) + top edge (`TopEdge`) + shading (`Shading`). All three are `dataclass(slots=True, frozen=True, kw_only=True)`; invalid parameters raise `ValueError` at construction. Length units are design pixels and refer to dimensions at the front of the leg (the sides are compressed by cylindrical `perspective`, default 0.8). Colors are `Color`; when an alpha component is present, it is multiplied into the corresponding opacity.
 
 ```python
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -43,8 +39,7 @@ The horizontal density of ribs, mesh, and printed patterns uses cylindrical pers
 | `Lace` | Lace trim | `height`(28); `scallop`(28, minimum 20) wave period; `color`(None: taken from the fabric's main color); `opacity`(0.85, openwork fabric lets the skin show through); `holes`(True) hole-dot pattern |
 | `Fade` | Pantyhose-style fade with no distinct edge | `length`(60) length of the gradient region |
 
-**Definition of data height**: the distance from the top of the stocking's top edge to the tip of the foot, measured at the leg's centerline; for `Lace` it is the average position of the waves; for `Fade` the fade completes within `length` pixels below the top of the stocking (transparent at the top, no boundary line).
-Horizontal lines (stripes, welts, lace, mesh lines) all curve downward along the arc of `Shading.curve`, and the arc of the fabric's top edge coincides everywhere with the top-edge lines.
+**Definition of data height**: the distance from the top of the stocking's top edge to the tip of the foot, measured at the leg's centerline; for `Lace` it is the average position of the waves; for `Fade` the fade completes within `length` pixels below the top of the stocking (transparent at the top, no boundary line). Horizontal lines (stripes, welts, lace, mesh lines) all curve downward along the arc of `Shading.curve`, and the arc of the fabric's top edge coincides everywhere with the top-edge lines.
 
 **Top-edge quiet zone**: the fabric patterns (stripes, ribs, mesh, printed patterns) inside the area covered by a `Welt` / `Lace` band are counted from the bottom of the band — for `Welt` along its bottom-edge arc, for `Lace` hugging the wavy edge column by column; the band itself lies directly on the skin (the band is the fabric of that region): `Welt` is a double fabric layer, opaque; `Lace` is openwork, defaulting to 0.85 so skin shows through, and even more so at the hole dots.
 
@@ -54,7 +49,7 @@ Horizontal lines (stripes, welts, lace, mesh lines) all curve downward along the
 | --- | --- | --- |
 | `curve` | 0.12 | How much ring-shaped lines (top edge, stripes, mesh) bow downward (slight top-down view); 0 for straight lines |
 | `rim_shadow` | 0.5 | How much the edges on the side away from the light are darkened |
-| `shadow_color` | (150, 140, 180) | Multiply-blending color for shadows (a cool light purple, common in anime) |
+| `shadow_color` | (150, 140, 180, 180) | Multiply-blending color for shadows (a cool light purple, common in anime) |
 | `highlight` | 0.35 | Intensity of the vertical highlight, 0 disables |
 | `highlight_pos` | -0.35 | Highlight position along the leg's width, -1 left edge to 1 right edge; the light source is shared across the whole chart, so left and right legs are not mirrored |
 | `highlight_width` | 0.18 | Highlight half-width (as a fraction of the leg's half-width) |
@@ -90,8 +85,7 @@ type StyleSeq = StyleLike | Sequence[StyleLike]
 """Style parameter: a single style, or a list of styles cycled by position (cycling semantics see L3/L4)."""
 ```
 
-L2's `add_bar` accepts only a single `StyleLike`; the bulk methods of L3/L4 accept `StyleSeq`,
-defaulting to `DEFAULT_STOCKING_STYLE = "black_sheer"`.
+L2's `add_bar` accepts only a single `StyleLike`; the bulk methods of L3/L4 accept `StyleSeq`, defaulting to `DEFAULT_STOCKING_STYLE = "black_sheer"`.
 
 ## render_stocking
 
@@ -121,8 +115,7 @@ def render_stocking(
             image; built-in SVG assets are re-rasterized at that scale, and
             external bitmap assets are resampled proportionally.
             Textures are internally generated at 2x and then downsampled to
-            improve anti-aliasing on hard edges such as fishnet and lace; the
-            returned image size and `pixels_per_unit` are unchanged.
+            improve anti-aliasing on hard edges such as fishnet and lace.
             The returned Leg's image is "design pixels x scale"
             (`pixels_per_unit == scale`) while metadata such as width, height,
             and foot center remains in design pixels; compositing layers
@@ -132,6 +125,9 @@ def render_stocking(
         A new Leg: pixels replaced, design-coordinate metadata matching the
         asset; when `scale != 1` the image is densified by the scale
         (`pixels_per_unit == scale`) for 1:1 compositing.
+
+    Raises:
+        ValueError: `scale` is not a positive finite number.
 
     Contract: this function is the outward contract of the stocking
     rendering algorithm (the algorithm itself is implemented separately).
@@ -218,7 +214,8 @@ def measure_text(
     [design notes](../design.md), "Fonts").
 
     Raises:
-        ValueError: the font candidate list is empty or contains an empty name.
+        ValueError: the font candidate list is empty or contains an empty name
+            (an empty string returns 0.0 without validating the font).
     """
 
 

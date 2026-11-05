@@ -4,8 +4,7 @@
 
 ## L4 参数透传
 
-`bar` / `mirror_bar` 只保留图表语义参数；当前层不消耗、需要传给 [BarPlot](barplot.md) 或
-`add_*` 的选项通过 `**options` 接收。选项集中定义在 `ChartOptions`：
+`bar` / `mirror_bar` 只保留图表语义参数；当前层不消耗、需要传给 [BarPlot](barplot.md) 或 `add_*` 的选项通过 `**options` 接收。选项集中定义在 `ChartOptions`：
 
 ```python
 class ChartOptions(TypedDict, total=False):
@@ -48,12 +47,7 @@ class ChartOptions(TypedDict, total=False):
 | `height_px` | `None`（最高整腿 + 10% 留白） | `BarPlot(extent_up=)` / y 轴长度；显式值小于整腿高时仍会扩到整腿高 |
 | `width_px` | `None`（按腿、间距与标签自动） | `BarPlot(width_px=)` / x 轴长度 |
 
-`font` 是全图默认字体，透传给 `BarPlot(font=)`，作用于标题、轴名、x 标签、
-图例、刻度数字与数值标签；取值为 `FontSpec`（家族名 / 字体文件路径 / 候选
-列表，见 [L1 — 渲染原语](rendering.md)），None 用平台默认链。
-未知键在运行时报 `TypeError` 并列出可用选项；静态类型由 `TypedDict` 检查。
-`axis_style` / `grid` / `x_label_pos` 等旧关键字仍可照常传入，只是不再出现在
-函数签名里。
+`font` 是全图默认字体，透传给 `BarPlot(font=)`，作用于标题、轴名、x 标签、图例、刻度数字与数值标签；取值为 `FontSpec`（家族名 / 字体文件路径 / 候选列表，见 [L1 — 渲染原语](rendering.md)），None 用平台默认链。未知键在运行时报 `TypeError` 并列出可用选项；静态类型由 `TypedDict` 检查。`axis_style` / `grid` / `x_label_pos` 等旧关键字仍可照常传入，只是不再出现在函数签名里。
 
 ## L4 一行出图
 
@@ -175,19 +169,8 @@ def mirror_bar(
     """
 ```
 
-参数校验：`max_fill` / `max_abs_fill` 须在 (0, 1]，
-`0 <= min_fill < max_fill`，`height_px` / `width_px` 显式传入时须为正数，
-`cycle` 与 `mirror_bar` 的 `mode` 只接受文档列出的取值；数据中的
-NaN / Infinity 会在归一阶段报 `ValueError`。
+参数校验：`max_fill` / `max_abs_fill` 须在 (0, 1]，`0 <= min_fill < max_fill`，`height_px` / `width_px` 显式传入时须为正数，`cycle` 与 `mirror_bar` 的 `mode` 只接受文档列出的取值；数据中的 NaN / Infinity 会在归一阶段报 `ValueError`。
 
 ## 默认值集中定义
 
-所有 `DEFAULT_*` 常量集中放在 `src/stockchart/defaults.py`：`DEFAULT_MAX_FILL`（0.85）、
-`DEFAULT_BAR_GAP`（28）、`DEFAULT_GROUP_GAP`（120）、`DEFAULT_OUTPUT_SCALE`、背景色、墨色、
-文字色、`DEFAULT_AXIS_STYLE`（clean）、抖动幅度、字号（刻度 26 / x 标签 30 / 标题 52 /
-轴名 30 / 图例 28 / 数值标签 26）、`DEFAULT_TITLE_ALIGN`（center）、轴名间距、
-行高系数（标题 1.4 / 轴名 1.25 / x 标签 1.35 / 图例 1.25，乘以字体自然行高
-得到行距）、x 标签避让角度、图例折行行数与行距、图例色块尺寸与间距、
-网格线颜色、默认字体链 `DEFAULT_FONT_FAMILIES` 等。
-绘制代码里不自带魔法数字，调参改一处。L2 的 `BarPlot.extent_up` 默认值仍是
-`DEFAULT_Y_EXTENT`（760）。
+所有 `DEFAULT_*` 常量集中放在 `src/stockchart/defaults.py`：`DEFAULT_MAX_FILL`（0.85）、`DEFAULT_BAR_GAP`（28）、`DEFAULT_GROUP_GAP`（120）、`DEFAULT_OUTPUT_SCALE`、背景色、墨色、文字色、`DEFAULT_AXIS_STYLE`（clean）、抖动幅度、字号（刻度 26 / x 标签 30 / 标题 52 / 轴名 30 / 图例 28 / 数值标签 26）、`DEFAULT_TITLE_ALIGN`（center）、轴名间距、行高系数（标题 1.4 / 轴名 1.25 / x 标签 1.35 / 图例 1.25，乘以字体自然行高得到行距）、x 标签避让角度、图例折行行数与行距、图例色块尺寸与间距、网格线颜色、默认字体链 `DEFAULT_FONT_FAMILIES` 等。绘制代码里不自带魔法数字，调参改一处。L2 的 `BarPlot(extent_up=)` 缺省仍是 `DEFAULT_Y_EXTENT`（792）。

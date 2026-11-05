@@ -2,45 +2,39 @@
 
 [English](README.md) | 简体中文
 
-[![PyPI](https://img.shields.io/pypi/v/stockchart)](https://pypi.org/project/stockchart/)
-[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
-[![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
-[![Assets: ARR](https://img.shields.io/badge/assets-ARR-orange)](ASSETS-LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/stockchart)](https://pypi.org/project/stockchart/) [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/) [![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE) [![Assets: ARR](https://img.shields.io/badge/assets-ARR-orange)](ASSETS-LICENSE)
 
 **用丝袜被拉起的高度表示数据的创意绘图库。**
 
 ![分组丝袜图：三个月、两个系列](docs/images/hero-zh.png)
 
-`stockchart` 是柱状图的一种有趣替代：每个数值对应一条腿上丝袜被拉起的高度，
-数值越大丝袜越高，0 则是一条裸腿。它适合信息图、幻灯片、海报，以及任何希望
-图表更有个性、而不只是“标准”的场合。
+`stockchart` 是柱状图的一种有趣替代：每个数值对应一条腿上丝袜被拉起的高度，数值越大丝袜越高，0 则是一条裸腿。它适合信息图、幻灯片、海报，以及任何希望图表更有个性、而不只是“标准”的场合。
 
 - **数值 → 丝袜高度**：支持分组、成对，以及正负值上下镜像。
 - **19 种内置样式**：透肉丝袜、厚袜、条纹、针织、网袜、波点、爱心、蕾丝边等。
-- **支持常见数据类型**：列表、NumPy 数组、字典、pandas `DataFrame` / `Series`。
-  pandas 是可选依赖，库本身不会 import 它。
+- **支持常见数据类型**：列表、NumPy 数组、字典、pandas `DataFrame` / `Series`。pandas 是可选依赖，库本身不会 import 它。
 - **原生高分辨率输出**：丝袜纹理与光影按目标像素密度重新生成，不是把小图放大。
 - **分层可组合**：一行 `bar()` 即可出图；需要自由排版时可下沉到逐像素放置。
 - **不依赖 matplotlib**：文字与线条由 Skia 渲染，逐字符字体回退，中文可正常显示。
 
 <table>
   <tr>
-    <td width="50%" align="center">
-      <img src="docs/images/showcase-grouped-zh.png" alt="分组图：周末计划与实际的小时数对比"><br>
+    <td width=“50%” align=“center”>
+      <img src=“docs/images/showcase-grouped-zh.png” alt=“分组图：周末计划与实际的小时数对比”><br>
       <sub>分组图 —— <code>black_sheer</code>（松紧袜口）与 <code>white_sheer</code>（蕾丝边）</sub>
     </td>
-    <td width="50%" align="center">
-      <img src="docs/images/showcase-single-zh.png" alt="含负值的单系列图，全部朝上的腿"><br>
+    <td width=“50%” align=“center”>
+      <img src=“docs/images/showcase-single-zh.png” alt=“含负值的单系列图，全部朝上的腿”><br>
       <sub>单系列含负值 —— 依旧全是朝上的腿（<code>heart_white</code>）</sub>
     </td>
   </tr>
   <tr>
-    <td width="62%" align="center">
-      <img src="docs/images/showcase-styles-zh.png" width="95%" alt="七条腿穿着七种不同的丝袜样式"><br>
+    <td width=“62%” align=“center”>
+      <img src=“docs/images/showcase-styles-zh.png” width=“95%” alt=“七条腿穿着七种不同的丝袜样式”><br>
       <sub>样式巡礼 —— 5 种袜身、4 种上沿</sub>
     </td>
-    <td width="38%" align="center">
-      <img src="docs/images/showcase-mirror-zh.png" width="62%" alt="正负值镜像图"><br>
+    <td width=“38%” align=“center”>
+      <img src=“docs/images/showcase-mirror-zh.png” width=“62%” alt=“正负值镜像图”><br>
       <sub>镜像图 —— 正负值上下分布</sub>
     </td>
   </tr>
@@ -78,8 +72,7 @@ bar(
 ).save("chart.png")
 ```
 
-输出就是本文顶部那张图。`bar()` 会自动完成数值映射、选腿、分组布局与坐标轴绘制，
-返回一个可以直接 `.save()`、也可以继续微调的 `BarPlot`。
+输出就是本文顶部那张图。`bar()` 会自动完成数值映射、选腿、分组布局与坐标轴绘制，返回一个可以直接 `.save()`、也可以继续微调的 `BarPlot`。
 
 正负值镜像图：
 
@@ -124,9 +117,7 @@ df = pd.DataFrame(
 bar(df, title="每月活跃用户", style=["black_sheer", "white_sheer"]).save("chart.png")
 ```
 
-显式传入的 `labels=` / `series_labels=` 会覆盖从数据推断出的值。自定义容器可以用
-`register_data_type` 注册，详见
-[数据输入参考](docs/api.zh-CN/data-input.md)。
+显式传入的 `labels=` / `series_labels=` 会覆盖从数据推断出的值。自定义容器可以用 `register_data_type` 注册，详见 [数据输入参考](docs/api.zh-CN/data-input.md)。
 
 ## 丝袜样式
 
@@ -151,10 +142,7 @@ bar(
 )
 ```
 
-19 个预设覆盖透肉丝袜、厚袜、条纹、针织、网袜、波点、爱心、蕾丝边等。需要更细的
-控制时，可以直接构造 `StockingStyle`：袜身用 `Plain` / `Striped` / `Ribbed` /
-`Fishnet` / `Dotted`，上沿用 `Bare` / `Welt` / `Lace` / `Fade`。完整样式表见
-[渲染原语参考](docs/api.zh-CN/rendering.md)。
+19 个预设覆盖透肉丝袜、厚袜、条纹、针织、网袜、波点、爱心、蕾丝边等。需要更细的控制时，可以直接构造 `StockingStyle`：袜身用 `Plain` / `Striped` / `Ribbed` / `Fishnet` / `Dotted`，上沿用 `Bare` / `Welt` / `Lace` / `Fade`。完整样式表见 [渲染原语参考](docs/api.zh-CN/rendering.md)。
 
 ## 标题、轴名与选项
 
@@ -173,10 +161,7 @@ bar(
 )
 ```
 
-图表语义参数留在函数签名里；`grid`、`axis_style`、`legend_loc`、`legend_ncol`、
-`x_label_rotation`、`bar_gap`、`group_gap` 等下层选项通过类型化的选项包透传。
-完整列表见
-[`ChartOptions` 表](docs/api.zh-CN/charts.md)。
+图表语义参数留在函数签名里；`grid`、`axis_style`、`legend_loc`、`legend_ncol`、`x_label_rotation`、`bar_gap`、`group_gap` 等下层选项通过类型化的选项包透传。完整列表见 [`ChartOptions` 表](docs/api.zh-CN/charts.md)。
 
 ## API 分层
 
@@ -213,8 +198,7 @@ image = plot.to_pil()
 array = plot.to_numpy()
 ```
 
-`scale` 控制输出像素密度；丝袜纹理与光影会按该密度重新生成。库不提供 SVG / PDF
-输出：袜身是逐像素算法，转矢量需要另写渲染器，输出只有 PNG。
+`scale` 控制输出像素密度；丝袜纹理与光影会按该密度重新生成。库不提供 SVG / PDF 输出：袜身是逐像素算法，转矢量需要另写渲染器，输出只有 PNG。
 
 ## 文档
 
@@ -242,10 +226,6 @@ uv run python -m pyright
 
 Copyright © 2026 xie-huaaaan。
 
-源代码以 [Mozilla Public License 2.0](LICENSE)（MPL-2.0）发布。你可以在闭源项目中
-使用 `stockchart`；如果修改了受 MPL 覆盖的源文件，这些文件需要继续以 MPL-2.0 提供。
+源代码以 [Mozilla Public License 2.0](LICENSE)（MPL-2.0）发布。你可以在闭源项目中使用 `stockchart`；如果修改了受 MPL 覆盖的源文件，这些文件需要继续以 MPL-2.0 提供。
 
-内置腿部素材（`src/stockchart/assets/leg_*.svg` 与 `legs.json`）为
-**All Rights Reserved（保留所有权利）**，不在 MPL-2.0 覆盖范围内，详见
-[素材许可](ASSETS-LICENSE)。素材可用于通过 `stockchart` 渲染图表，
-你生成的图表归你所有；素材本身除作为未修改的完整软件包的一部分外，不得单独提取或再分发。
+内置腿部素材（`src/stockchart/assets/leg_*.svg` 与 `legs.json`）为 **All Rights Reserved（保留所有权利）**，不在 MPL-2.0 覆盖范围内，详见 [素材许可](ASSETS-LICENSE)。素材可用于通过 `stockchart` 渲染图表，你生成的图表归你所有；素材本身除作为未修改的完整软件包的一部分外，不得单独提取或再分发。

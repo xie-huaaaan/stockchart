@@ -2,8 +2,7 @@
 
 ← [API 索引](index.md) · 相关：[L4 — bar() 与 mirror_bar()](charts.md) · [L3 — 布局封装](layout.md)
 
-`bar` / `mirror_bar` 的 `data` 先经 `normalize_data` 归一为 `PlotData`，再进入高度映射。
-支持以下形式：
+`bar` / `mirror_bar` 的 `data` 先经 `normalize_data` 归一为 `PlotData`，再进入高度映射。支持以下形式：
 
 | 输入 | 解释 |
 | --- | --- |
@@ -15,10 +14,7 @@
 | pandas 风格表对象 | 带 `index` + `to_numpy()`：有 `columns` 视为 DataFrame（index → x 标签、columns → 系列名），否则视为 Series（index → x 标签） |
 | `PlotData` | 已归一化数据，原样使用 |
 
-pandas **不是**运行时依赖、也不会被 import：DataFrame / Series 通过结构
-（`index` / `columns` / `to_numpy()`）识别，未安装 pandas 时其余功能不受影响。
-显式传入的 `labels` / `series_labels` 覆盖数据推断出的标签。空数据、空组、
-行不齐、非数值以及 NaN / Infinity 都会抛 `ValueError`。
+pandas **不是**运行时依赖、也不会被 import：DataFrame / Series 通过结构（`index` / `columns` / `to_numpy()`）识别，未安装 pandas 时其余功能不受影响。显式传入的 `labels` / `series_labels` 覆盖数据推断出的标签。空数据、空组、行不齐、非数值以及 NaN / Infinity 都会抛 `ValueError`。
 
 `DataInput` 是对上述形式的类型别名（表对象用结构协议描述，不硬依赖具体库）：
 

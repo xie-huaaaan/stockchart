@@ -2,8 +2,6 @@
 
 ← [API index](index.md) · Related: [L2 free-form bar plot](barplot.md)
 
-## L3 layout helpers
-
 The following are all `BarPlot` convenience methods: they only solve "spacing + leg selection"; stocking heights are still given in pixels by the caller.
 
 ```python
@@ -77,10 +75,6 @@ def add_paired_bars(
     """
 ```
 
-`add_grouped_bars` requires a rectangular `heights_px` table (non-empty,
-same-length, non-empty groups); `add_paired_bars` requires exactly 2 values
-per group and exactly 2 legs per explicit pair; `cycle` only accepts "group"
-/ "sequence". When `legs` / `pairs` are passed explicitly, `paired` is not
-validated.
+`add_grouped_bars` requires a rectangular `heights_px` table (non-empty, same-length, non-empty groups); `add_paired_bars` requires exactly 2 values per group and exactly 2 legs per explicit pair; `cycle` only accepts "group" / "sequence". When `legs` / `pairs` are passed explicitly, `paired` is not validated.
 
 **Spacing semantics**: `bar_gap` / `group_gap` both mean the gap between the **edges** of adjacent legs (leg widths vary from 144 to 181; spacing by edge looks visually even), not foot-sole-center distance.

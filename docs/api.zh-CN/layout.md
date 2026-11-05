@@ -2,7 +2,7 @@
 
 ← [API 索引](index.md) · 相关：[L2 — 自由柱状图](barplot.md) · [L4 — bar() 与 mirror_bar()](charts.md)
 
-以下均为 `BarPlot` 的便捷方法：只解决"间距 + 选腿"，丝袜高度仍由调用者给像素。
+以下均为 `BarPlot` 的便捷方法：只解决“间距 + 选腿”，丝袜高度仍由调用者给像素。
 
 ```python
 def add_bars(
@@ -68,9 +68,6 @@ def add_paired_bars(
     """
 ```
 
-`add_grouped_bars` 的 `heights_px` 须为矩形表（非空、各组等长且非空）；`add_paired_bars`
-每组须恰好 2 个值，显式 `pairs` 每项也须恰好 2 条腿；`cycle` 只接受 "group" / "sequence"。
-`legs` / `pairs` 显式传入时，`paired` 不参与校验。
+`add_grouped_bars` 的 `heights_px` 须为矩形表（非空、各组等长且非空）；`add_paired_bars` 每组须恰好 2 个值，显式 `pairs` 每项也须恰好 2 条腿；`cycle` 只接受 “group” / “sequence”。`legs` / `pairs` 显式传入时，`paired` 不参与校验。
 
-**间距语义**：`bar_gap` / `group_gap` 均指相邻腿**边缘之间**的空隙（腿宽 144–181 不等，
-按边缘留白视觉才均匀），不是足底中心距。
+**间距语义**：`bar_gap` / `group_gap` 均指相邻腿**边缘之间**的空隙（腿宽 145–183 不等，按边缘留白视觉才均匀），不是足底中心距。

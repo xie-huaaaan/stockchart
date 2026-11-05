@@ -68,8 +68,8 @@ class BarPlot:
         extent_down: int = 0,
         background: Color = DEFAULT_BACKGROUND,
         axis_style: Literal["clean", "handdrawn"] = "clean",
-        seed: int | None = None,
         font: FontSpec | None = None,
+        seed: int | None = None,
     ) -> None: ...
 
     def add_bar(

@@ -7,8 +7,7 @@
 - 提供在 matplotlib `Axes` 上绘制的适配层，坐标映射、DPI 与保存行为跟随画布。
 - matplotlib 作为可选依赖，不影响现有运行时依赖；缺失时给出清晰提示。
 - 明确多子图、图例与交互显示的行为。
-- markdown 与 $…$ 公式现阶段不支持；适配 matplotlib 画布后由 matplotlib
-  原生渲染能力提供，不在 stockchart 自研文字引擎内实现。
+- markdown 与 $…$ 公式现阶段不支持；适配 matplotlib 画布后由 matplotlib 原生渲染能力提供，不在 stockchart 自研文字引擎内实现。
 
 ## 外部素材支持
 
@@ -24,16 +23,13 @@
 
 ## 样式的像素长度与外部素材
 
-- 各 Fabric / TopEdge / Shading 字段的像素长度目前按腿高 720 的设计尺寸写死；
-  `scale_style` 只按渲染密度缩放，没有按素材实际高度归一化。
+- 各 Fabric / TopEdge / Shading 字段的像素长度目前按腿高 720 的设计尺寸写死；`scale_style` 只按渲染密度缩放，没有按素材实际高度归一化。
 - 换用不同设计高度的外部素材时，纹理（条纹宽度、网眼、蕾丝扇贝等）的相对大小会失真。
-- 方向：用 `leg.height / 720` 参与样式缩放，并确认与 `render_stocking(scale=)`、
-  外部位图素材组合时的语义。
+- 方向：用 `leg.height / 720` 参与样式缩放，并确认与 `render_stocking(scale=)`、外部位图素材组合时的语义。
 
 ## 已知边界与低优先级问题
 
-- `Color.check_color` 接受浮点分量，`skia_color` 用 `int` 截断；纹理路径却按浮点
-  处理。需决定统一为“严格整数 + 明确报错”、`round` 取整，还是改成 0–1 浮点颜色。
+- `Color.check_color` 接受浮点分量，`skia_color` 用 `int` 截断；纹理路径却按浮点处理。需决定统一为“严格整数 + 明确报错”、`round` 取整，还是改成 0–1 浮点颜色。
 
 ## 性能问题
 
