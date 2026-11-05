@@ -22,7 +22,7 @@ L0–L4 已全部可用：腿素材、丝袜渲染、自由柱状图、布局封
 
 ## 目录
 
-- `src/stockchart/`：库源码；`assets/` 只放 `leg_XX.svg` 与 `legs.json`。`plot/` 与 `stocking/` 是子包，按职责分模块（数据形状 / 计算 / 绘制），不要把文件重新堆回一个大文件。
+- `src/stockchart/`：库源码；`assets/` 只放 `leg_XX.svg` 与 `legs.json`。`plot/`、`stocking/`、`topline/` 是子包，按职责分模块（数据形状 / 计算 / 绘制），不要把文件重新堆回一个大文件。
 - `tests/`、`docs/`；`tests/conftest.py` 让整轮测试共用一份已光栅化的腿素材，删掉它整套测试会慢数倍。
 - `tools/`：开发脚本，不属于公开 API，可依赖 scipy / vtracer。
 - `dist/`、`out/`：开发素材与评审产物，不打包、运行时不引用。
