@@ -35,7 +35,8 @@ L0–L4 已全部可用：腿素材、丝袜渲染、自由柱状图、布局封
 - pandas 只按 `index` / `columns` / `to_numpy()` 结构识别，不 import、不进依赖。
 - 公开 API 的 docstring 与 `docs/api.zh-CN/`（及英文版 `docs/api/`）同步；改签名先改文档。
 - 新增 L4 透传参数时同步 `ChartOptions`、`_OPTION_KEYS` 与 `docs/api.zh-CN/charts.md` 的选项表。
-- 文档正文按普通 Markdown 写：段落、列表项各占一行，不按列硬折行；代码块与表格除外。中文正文用全角引号“”，行内代码与字符串字面量保持 ASCII。改完跑 `tools/check_docs.py`。
+- 文档正文按普通 Markdown 写：段落、列表项各占一行，不按列硬折行；代码块与表格除外。中文正文用全角引号“”，行内代码与字符串字面量保持 ASCII，HTML 属性一律用 ASCII 引号。改完跑 `tools/check_docs.py`。
+- `ruff format` 会一并格式化 `.md` 里的 Python 代码块，示例代码因此被自动排版，不必手写对齐。
 
 ## 风格与提交
 
