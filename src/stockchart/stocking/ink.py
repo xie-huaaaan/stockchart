@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -28,10 +30,30 @@ def _luminance(rgb: NDArray[np.float64]) -> NDArray[np.float64]:
     return rgb @ _LUM_WEIGHTS
 
 
+def _min_filter(mask: NDArray[np.uint8], win: int) -> NDArray[np.uint8]:
+    """用分离的水平与垂直窗口计算方形最小值滤波。
+
+    Args:
+        mask: 二维 uint8 掩码。
+        win: 奇数窗口宽度。
+
+    Returns:
+        与输入尺寸相同的腐蚀掩码。
+    """
+    pad = win // 2
+    horizontal = np.lib.stride_tricks.sliding_window_view(
+        np.pad(mask, ((0, 0), (pad, pad)), mode="edge"), win, axis=1
+    ).min(axis=-1)
+    return np.lib.stride_tricks.sliding_window_view(
+        np.pad(horizontal, ((pad, pad), (0, 0)), mode="edge"), win, axis=0
+    ).min(axis=-1)
+
+
 def _ink_mask(
     src: NDArray[np.float64],
     alpha: NDArray[np.float64],
     scale: float = 1.0,
+    active: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float64]:
     """检测素材内部的手绘线条（膝盖褶皱等），返回软掩码。
 
@@ -43,6 +65,7 @@ def _ink_mask(
         src: (H, W, 4) 归一化腿图。
         alpha: (H, W) 腿的 alpha 覆盖。
         scale: 当前渲染密度；腐蚀窗口与模糊半径按此放大。
+        active: 仅需返回墨线掩码的区域；其余区域视为零。
 
     Returns:
         (H, W) 的 [0, 1] 软掩码；无覆盖或无暗线时全零。
@@ -58,23 +81,41 @@ def _ink_mask(
     if t_full >= t_start:
         return np.zeros_like(lum)
 
-    ink = np.clip((t_start - lum) / (t_start - t_full), 0.0, 1.0)
-
-    # 排除轮廓：对腿 mask 做约 3px 腐蚀（窗口随倍率放大，保持相对宽度）
     win = max(3, 2 * round(3 * scale) + 1)
     leg_u8 = (alpha > 0.05).astype(np.uint8) * 255
-    interior = (
-        np.asarray(Image.fromarray(leg_u8).filter(ImageFilter.MinFilter(win))).astype(np.float64)
-        / 255.0
-    )
+    height, width = alpha.shape
+    if active is None:
+        target_y0, target_y1, target_x0, target_x1 = 0, height, 0, width
+    else:
+        ys, xs = np.nonzero(active)
+        if ys.size == 0:
+            return np.zeros_like(lum)
+        target_y0, target_y1 = int(ys.min()), int(ys.max()) + 1
+        target_x0, target_x1 = int(xs.min()), int(xs.max()) + 1
+
+    # Keep the full min-filter and blur support around the active fabric bounds.
+    blur_radius = 0.8 * scale
+    blur_support = math.ceil(3.0 * blur_radius) + 2
+    support = win // 2 + blur_support
+    y0, y1 = max(0, target_y0 - support), min(height, target_y1 + support)
+    x0, x1 = max(0, target_x0 - support), min(width, target_x1 + support)
+    ink = np.clip((t_start - lum[y0:y1, x0:x1]) / (t_start - t_full), 0.0, 1.0)
+
+    # 排除轮廓：按分离窗口腐蚀腿 mask，计算量只随图像面积线性增长。
+    interior = _min_filter(leg_u8[y0:y1, x0:x1], win).astype(np.float64) / 255.0
     ink *= interior
 
     # 轻微模糊（半径同样按倍率放大）
     ink_img = Image.fromarray((ink * 255).astype(np.uint8))
     ink = (
-        np.asarray(ink_img.filter(ImageFilter.GaussianBlur(0.8 * scale))).astype(np.float64) / 255.0
+        np.asarray(ink_img.filter(ImageFilter.GaussianBlur(blur_radius))).astype(np.float64) / 255.0
     )
-    return ink
+    result = np.zeros_like(lum)
+    result[target_y0:target_y1, target_x0:target_x1] = ink[
+        target_y0 - y0 : target_y1 - y0,
+        target_x0 - x0 : target_x1 - x0,
+    ]
+    return result
 
 
 def boost_ink_lines(
@@ -115,12 +156,7 @@ def boost_ink_lines(
     if sh.ink <= 0:
         return img
 
-    ink = _ink_mask(src, alpha, scale)
-    if not (ink > 0.01).any():
-        return img
-
     H, W = alpha.shape
-    # 增强只发生在袜子区域内，且按织物覆盖率加权
     coverage = fabric_layer[..., 3]
     if isinstance(fabric, Fishnet):
         # 网孔直接透出皮肤线，只对底袜部分增强，避免碎线
@@ -129,6 +165,12 @@ def boost_ink_lines(
         else:
             return img
 
+    active = (coverage > 0) & (ys_grid >= top_arc)
+    ink = _ink_mask(src, alpha, scale, active)
+    if not (ink > 0.01).any():
+        return img
+
+    # 增强只发生在袜子区域内，且按织物覆盖率加权
     w = ink * sh.ink * coverage
     w *= (ys_grid >= top_arc).astype(np.float64)  # 弧线之上不增强
     if not (w > 0.01).any():
