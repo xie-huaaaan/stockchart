@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from stockchart.stocking.edge import lace_wave, render_top_edge
-from stockchart.stocking.fabric import render_fabric
+from stockchart.stocking.fabric import fabric_plain, render_fabric
 from stockchart.stocking.geometry import curve_dip
 from stockchart.stocking.ink import boost_ink_lines
 from stockchart.stocking.pixels import FloatArray
@@ -31,7 +31,7 @@ from stockchart.stocking.shading import (
     resample_leg,
     shade_bare_leg,
 )
-from stockchart.stocking.styles import Fade, Lace, StockingStyle, Welt, scale_style
+from stockchart.stocking.styles import Fade, Fishnet, Lace, StockingStyle, Welt, scale_style
 
 if TYPE_CHECKING:
     from stockchart.legs import Leg
@@ -154,9 +154,23 @@ def render_stocking(
     # 合成：将腿皮肤与袜子融合（光影后置，使上沿条带同样受光）
     result = composite(src, fabric_layer, alpha_mask, y_start)
 
+    # 合成后复用纹理层记录实际材质：网眼只增强底袜，上沿则独立参与增强。
+    if style.shading.ink > 0 and isinstance(style.fabric, Fishnet):
+        if style.fabric.underlay is None:
+            fabric_layer[..., 3] = 0.0
+        else:
+            underlay = fabric_plain(
+                style.fabric.underlay, src, alpha_mask, col_profile, y_start, H, W
+            )
+            fabric_layer[..., 3] = underlay[..., 3]
+            fabric_layer[ys_grid < origin_col[np.newaxis, :]] = 0.0
+            if fade_ramp is not None:
+                fabric_layer[..., 3] *= fade_ramp
+
     # 绘制上沿
     result = render_top_edge(
         result,
+        fabric_layer if style.shading.ink > 0 else None,
         style.top,
         style.fabric,
         style.shading,
@@ -174,16 +188,7 @@ def render_stocking(
     result = apply_lighting(result, style.shading, col_profile, prepared.rim, w_sock)
 
     # 膝盖褶皱等素材内部墨线增强：以"织物压痕"的方式补画到袜子上
-    result = boost_ink_lines(
-        result,
-        leg,
-        col_profile,
-        style.fabric,
-        style.shading,
-        fabric_layer,
-        top_arc,
-        y_start,
-    )
+    result = boost_ink_lines(result, leg, style.shading, fabric_layer)
 
     out = (np.clip(result, 0.0, 1.0) * 255.0).astype(np.uint8)
     # 织物与光影只改变 RGB，轮廓覆盖率直接保留素材像素，避免浮点量化漂移。

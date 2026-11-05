@@ -33,7 +33,7 @@ stockchart 的公开 API 分五层（L0–L4），上层只通过下层的公开
 
 ```python
 type Color = tuple[int, int, int] | tuple[int, int, int, int]
-"""0–255，可带 alpha。"""
+"""0–255 的整数分量，可带 alpha；不接受浮点数或布尔值。"""
 
 
 class Canvas:

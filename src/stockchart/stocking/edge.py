@@ -66,6 +66,7 @@ def lace_wave(
 
 def render_top_edge(
     img: FloatArray,
+    material: FloatArray | None,
     top: Bare | Welt | Lace | Fade,
     fabric: Fabric,
     sh: Shading,
@@ -78,13 +79,15 @@ def render_top_edge(
     dip: FloatArray | None = None,
     wave: tuple[FloatArray, float, float, float] | None = None,
 ) -> FloatArray:
-    """在图像上原地绘制上沿效果。
+    """在图像上原地绘制上沿，并记录其织物覆盖率与颜色。
 
     Bare 画细边线，Welt 画加厚条带，Lace 画波浪蕾丝；Fade 的渐隐已在织物
     alpha 中实现，此处不额外绘制。
 
     Args:
         img: (H, W, 4) 归一化图像；原地修改并返回。
+        material: (H, W, 4) 袜身材质层；合入上沿，供后续墨线增强使用。
+            关闭墨线增强时为 None，跳过材质记录。
         top: 上沿样式。
         fabric: 袜身种类，用于取主色。
         sh: 光影参数。
@@ -112,6 +115,7 @@ def render_top_edge(
         return img
     full_img = img
     img = img[start:stop]
+    material = material[start:stop] if material is not None else None
     alpha = alpha[start:stop]
     dip = dip[start:stop] if dip is not None else None
     y0 -= start
@@ -120,12 +124,14 @@ def render_top_edge(
         wave = (wave[0] - start, wave[1], wave[2], wave[3])
 
     if isinstance(top, Bare):
-        img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng, color=(0.1, 0.1, 0.1))
+        img = _draw_edge_line(
+            img, material, alpha, _edge_base(y0, W, dip), sh, rng, color=(0.1, 0.1, 0.1)
+        )
     elif isinstance(top, Welt):
-        img = _draw_welt(img, fabric, alpha, y0, crop_height, W, top, sh, rng, dip)
+        img = _draw_welt(img, material, fabric, alpha, y0, crop_height, W, top, sh, rng, dip)
     else:
         assert wave is not None
-        img = _draw_lace(img, fabric, alpha, y0, crop_height, W, top, sh, rng, dip, wave)
+        img = _draw_lace(img, material, fabric, alpha, y0, crop_height, W, top, sh, rng, dip, wave)
     return full_img
 
 
@@ -218,8 +224,30 @@ def _smooth_wobble(
     return raw / peak * amplitude
 
 
+def _blend_material(
+    img: FloatArray,
+    material: FloatArray | None,
+    color: FloatArray,
+    coverage: FloatArray,
+) -> None:
+    """混入上沿颜色，同时按 alpha over 更新局部材质，避免墨线只看到袜身。
+
+    材质记录不包含皮肤与光照；上沿颜色可与袜身不同，不能用最终像素的亮度
+    代替材质亮度来决定墨线应提亮还是压暗。
+    """
+    t = coverage[..., np.newaxis]
+    img[..., :3] = img[..., :3] * (1.0 - t) + color * t
+    if material is None:
+        return
+    below = material[..., 3:4] * (1.0 - t)
+    combined = t + below
+    material[..., :3] = (color * t + material[..., :3] * below) / np.maximum(combined, 1e-6)
+    material[..., 3:4] = combined
+
+
 def _draw_edge_line(
     img: FloatArray,
+    material: FloatArray | None,
     alpha: FloatArray,
     y_base: FloatArray,
     sh: Shading,
@@ -232,6 +260,7 @@ def _draw_edge_line(
 
     Args:
         img: (H, W, 4) 归一化图像；原地修改并返回。
+        material: 同尺寸材质层；记录边线的覆盖率与颜色。
         alpha: (H, W) 腿的 alpha 覆盖；腿外不画。
         y_base: 每列的基准 y。
         sh: 光影参数，提供抖动幅度。
@@ -247,13 +276,13 @@ def _draw_edge_line(
     rows = np.arange(H, dtype=np.float32)[:, np.newaxis]
     dist = rows - (y_base + wobble)[np.newaxis, :]
     cov = np.clip(1.0 - np.abs(dist) / 1.4, 0.0, 1.0) * (alpha > 0.05)
-    t = (0.7 * cov)[..., np.newaxis]
-    img[..., :3] = img[..., :3] * (1.0 - t) + color_arr * t
+    _blend_material(img, material, color_arr, 0.7 * cov)
     return img
 
 
 def _draw_welt(
     img: FloatArray,
+    material: FloatArray | None,
     fabric: Fabric,
     alpha: FloatArray,
     y0: int,
@@ -271,6 +300,7 @@ def _draw_welt(
 
     Args:
         img: (H, W, 4) 归一化图像；原地修改并返回。
+        material: 同尺寸材质层；记录条带和边线。
         fabric: 袜身种类，用于取主色。
         alpha: (H, W) 腿的 alpha 覆盖。
         y0: 袜口顶端所在行。
@@ -299,20 +329,22 @@ def _draw_welt(
 
     in_leg = alpha > 0.05
     band = _soft_cover(ys, top_arc) * (1.0 - _soft_cover(ys, bot_arc)) * in_leg
-    t = (welt_a * band)[..., np.newaxis]
-    img[..., :3] = img[..., :3] * (1.0 - t) + welt_rgb * t
+    _blend_material(img, material, welt_rgb, welt_a * band)
 
     # 勒痕：条带上沿之上一条细暗线（按覆盖率软过渡，避免逐列取整出锯齿）
     if top.pinch > 0:
         line = np.clip(1.0 - np.abs(ys - (top_arc - 1.5)) / 1.4, 0.0, 1.0) * in_leg
         img[..., :3] *= (1.0 - top.pinch * 0.3 * line)[..., np.newaxis]
 
-    img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng, color=tuple(welt_rgb))  # type: ignore[arg-type]
+    img = _draw_edge_line(
+        img, material, alpha, _edge_base(y0, W, dip), sh, rng, color=tuple(welt_rgb)
+    )  # type: ignore[arg-type]
     return img
 
 
 def _draw_lace(
     img: FloatArray,
+    material: FloatArray | None,
     fabric: Fabric,
     alpha: FloatArray,
     y0: int,
@@ -330,6 +362,7 @@ def _draw_lace(
 
     Args:
         img: (H, W, 4) 归一化图像；原地修改并返回。
+        material: 同尺寸材质层；记录蕾丝和边线。
         fabric: 袜身种类，用于取主色。
         alpha: (H, W) 腿的 alpha 覆盖。
         y0: 蕾丝带顶端所在行。
@@ -382,14 +415,18 @@ def _draw_lace(
             k += 1
 
     eff_t = weight * in_zone * t
-    img[..., :3] = img[..., :3] * (1.0 - eff_t[..., np.newaxis]) + lace_rgb * eff_t[..., np.newaxis]
+    _blend_material(img, material, lace_rgb, eff_t)
 
     # 孔点加深（镂空阴影感），软边圆盘
     img[..., :3] *= (1.0 - hole_map * 0.5)[..., np.newaxis]
+    if material is not None:
+        material[..., :3] *= (1.0 - hole_map * 0.5)[..., np.newaxis]
 
     # 波浪下沿细边线：勾勒扇贝轮廓（蕾丝色加深）
-    img = _draw_edge_line(img, alpha, wave_bot, sh, rng, color=tuple(lace_rgb * 0.55))  # type: ignore[arg-type]
+    img = _draw_edge_line(img, material, alpha, wave_bot, sh, rng, color=tuple(lace_rgb * 0.55))  # type: ignore[arg-type]
 
     # 袜口顶端画一条手绘边线
-    img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng, color=tuple(lace_rgb * 0.8))  # type: ignore[arg-type]
+    img = _draw_edge_line(
+        img, material, alpha, _edge_base(y0, W, dip), sh, rng, color=tuple(lace_rgb * 0.8)
+    )  # type: ignore[arg-type]
     return img

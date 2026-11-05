@@ -33,7 +33,7 @@ stockchart's public API is organized in five layers (L0–L4); higher layers wor
 
 ```python
 type Color = tuple[int, int, int] | tuple[int, int, int, int]
-"""0-255, with an optional alpha channel."""
+"""Integer components from 0 to 255, with optional alpha; floats and booleans are rejected."""
 
 
 class Canvas:

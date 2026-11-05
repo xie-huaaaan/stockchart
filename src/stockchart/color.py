@@ -4,25 +4,32 @@
 alpha，或直接转成 skia 的 ARGB 整数。所有颜色入口都应先经过 `check_color()` 校验。
 """
 
+from typing import cast
+
 import numpy as np
 import skia
 from numpy.typing import NDArray
 
 type Color = tuple[int, int, int] | tuple[int, int, int, int]
-"""0–255，可带 alpha。"""
+"""0–255 的整数分量，可带 alpha；不接受浮点数或布尔值。"""
 
 
 def check_color(color: Color, name: str) -> None:
-    """校验颜色元组的长度与分量范围。
+    """校验颜色元组的长度、整数分量与范围。
 
     Args:
         color: 待校验的 RGB/RGBA 元组。
         name: 出错信息中使用的参数名，便于定位调用点。
 
     Raises:
-        ValueError: 长度不是 3 或 4，或任一分量不在 0–255。
+        ValueError: 长度不是 3 或 4，或任一分量不是 0–255 的整数；
+            浮点数与布尔值不接受。
     """
-    if len(color) not in (3, 4) or any(not 0 <= c <= 255 for c in color):
+    components = cast(tuple[object, ...], color)
+    if len(components) not in (3, 4) or any(
+        isinstance(c, (bool, np.bool_)) or not isinstance(c, (int, np.integer)) or not 0 <= c <= 255
+        for c in components
+    ):
         raise ValueError(f"{name} 必须是 3 或 4 个 0–255 的整数，得到 {color!r}")
 
 

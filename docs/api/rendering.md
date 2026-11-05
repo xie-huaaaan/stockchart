@@ -54,7 +54,7 @@ The horizontal density of ribs, mesh, and printed patterns uses cylindrical pers
 | `highlight_pos` | -0.35 | Highlight position along the leg's width, -1 left edge to 1 right edge; the light source is shared across the whole chart, so left and right legs are not mirrored |
 | `highlight_width` | 0.18 | Highlight half-width (as a fraction of the leg's half-width) |
 | `cel_steps` | 0 | 0 for smooth gradients; 2 or 3 for anime-style stepped color bands |
-| `ink` | 1.0 | Strength with which the asset's outlines show through (automatically deepened on dark stockings) |
+| `ink` | 1.0 | Asset ink enhancement on the body and top edge; brightens dark fabric and darkens light fabric |
 | `wobble` | 0.6 | Amplitude (pixels) of hand-drawn wobble for newly added lines (welt, lace trim), controlled by seed |
 | `skin` | 0.5 | Shading intensity on the bare skin above the stocking top (relative to the intensity on the stocking): 0 applies shading only to the stocking (the old look), 1 equals the stocking's intensity; bare legs participate as well |
 | `skin_shadow_color` | (206,168,158,200) | Shadow color on skin. Stockings use the cool `shadow_color`; a cool purple on skin looks dirty, so a separate warm, skin-toned shadow is used |
