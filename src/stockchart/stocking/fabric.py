@@ -8,10 +8,10 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from numpy.typing import NDArray
 
 from stockchart.color import color_alpha, color_rgb
 from stockchart.stocking.geometry import surface_abs_x
+from stockchart.stocking.pixels import FloatArray
 from stockchart.stocking.shading import alpha_over
 from stockchart.stocking.styles import (
     Dotted,
@@ -25,16 +25,16 @@ from stockchart.stocking.styles import (
 
 def render_fabric(
     fabric: Fabric,
-    src: NDArray[np.float64],
-    alpha: NDArray[np.float64],
-    u: NDArray[np.float64],
+    src: FloatArray,
+    alpha: FloatArray,
+    u: FloatArray,
     y_start: int,
     H: int,
     W: int,
     rng: np.random.Generator,
-    dip: NDArray[np.float64] | None = None,
+    dip: FloatArray | None = None,
     pattern_offset: float = 0.0,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """生成袜身 RGBA 纹理层。
 
     Args:
@@ -52,8 +52,6 @@ def render_fabric(
     Returns:
         (H, W, 4) float64 RGBA 层；袜口以上与腿外均为全透明。
     """
-    layer = np.zeros((H, W, 4), dtype=np.float64)
-
     if isinstance(fabric, Plain):
         layer = fabric_plain(fabric, src, alpha, u, y_start, H, W)
     elif isinstance(fabric, Striped):
@@ -74,13 +72,13 @@ def render_fabric(
 
 def fabric_plain(
     f: Plain,
-    src: NDArray[np.float64],
-    alpha: NDArray[np.float64],
-    u: NDArray[np.float64],
+    src: FloatArray,
+    alpha: FloatArray,
+    u: FloatArray,
     y0: int,
     H: int,
     W: int,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """生成纯色袜纹理：不透明度随圆柱曲率和腿截面宽度变化。
 
     Args:
@@ -95,7 +93,7 @@ def fabric_plain(
     Returns:
         (H, W, 4) RGBA 层。
     """
-    layer = np.zeros((H, W, 4), dtype=np.float64)
+    layer = np.zeros((H, W, 4), dtype=np.float32)
     rgb = color_rgb(f.color)  # (3,)
     base_a = f.opacity * color_alpha(f.color)
 
@@ -110,7 +108,7 @@ def fabric_plain(
     # stretch：腿宽越大越薄（用 y 方向腿宽估计）
     if f.stretch > 0:
         xs = np.where(alpha > 0.05, 1, 0)
-        row_w = xs.sum(axis=1, keepdims=True).astype(np.float64)  # (H,1)
+        row_w = xs.sum(axis=1, keepdims=True).astype(np.float32)  # (H,1)
         max_w = np.clip(row_w.max(), 1.0, None)
         stretch_factor = 1.0 - f.stretch * (row_w / max_w - 0.5)
         stretch_factor = np.clip(stretch_factor, 0.1, 1.0)
@@ -123,9 +121,7 @@ def fabric_plain(
     return layer
 
 
-def _stripe_opacity_at_y(
-    fabric: Striped, ys: NDArray[np.float64]
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+def _stripe_opacity_at_y(fabric: Striped, ys: FloatArray) -> tuple[FloatArray, FloatArray]:
     """按每点相对条纹周期的位置计算颜色与不透明度。
 
     条带边界做约 1.2px 的亚像素软化，避免逐列相位取整产生阶梯锯齿。
@@ -141,9 +137,9 @@ def _stripe_opacity_at_y(
     phase = (ys - fabric.offset) % period
     soft = min(1.2, period / 8.0)
 
-    rgb = np.zeros((*ys.shape, 3), dtype=np.float64)
-    opa = np.zeros(ys.shape, dtype=np.float64)
-    w_sum = np.zeros(ys.shape, dtype=np.float64)
+    rgb = np.zeros((*ys.shape, 3), dtype=np.float32)
+    opa = np.zeros(ys.shape, dtype=np.float32)
+    w_sum = np.zeros(ys.shape, dtype=np.float32)
     acc = 0.0
     for stripe in fabric.stripes:
         center = acc + stripe.width / 2.0
@@ -162,15 +158,15 @@ def _stripe_opacity_at_y(
 
 def _fabric_striped(
     f: Striped,
-    src: NDArray[np.float64],
-    alpha: NDArray[np.float64],
-    u: NDArray[np.float64],
+    src: FloatArray,
+    alpha: FloatArray,
+    u: FloatArray,
     y0: int,
     H: int,
     W: int,
-    dip: NDArray[np.float64] | None = None,
+    dip: FloatArray | None = None,
     pattern_offset: float = 0.0,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """生成横条纹袜纹理，相位从袜口条带下沿起算并沿弧线下弯。
 
     Args:
@@ -187,8 +183,8 @@ def _fabric_striped(
     Returns:
         (H, W, 4) RGBA 层。
     """
-    layer = np.zeros((H, W, 4), dtype=np.float64)
-    ys_pat = np.arange(H, dtype=np.float64).reshape(H, 1) - y0 - pattern_offset
+    layer = np.zeros((H, W, 4), dtype=np.float32)
+    ys_pat = np.arange(H, dtype=np.float32).reshape(H, 1) - y0 - pattern_offset
     if dip is not None:
         ys_pat = ys_pat - dip
     rgb_map, opa_map = _stripe_opacity_at_y(f, ys_pat)
@@ -200,13 +196,13 @@ def _fabric_striped(
 
 def _fabric_ribbed(
     f: Ribbed,
-    src: NDArray[np.float64],
-    alpha: NDArray[np.float64],
-    u: NDArray[np.float64],
+    src: FloatArray,
+    alpha: FloatArray,
+    u: FloatArray,
     y0: int,
     H: int,
     W: int,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """生成竖罗纹纹理：用 cos 在 u 方向产生明暗交替的条纹。
 
     Args:
@@ -221,7 +217,7 @@ def _fabric_ribbed(
     Returns:
         (H, W, 4) RGBA 层。
     """
-    layer = np.zeros((H, W, 4), dtype=np.float64)
+    layer = np.zeros((H, W, 4), dtype=np.float32)
     rgb = color_rgb(f.color)
 
     # 将屏幕坐标映射到圆柱表面；perspective 越大，两侧图案越密。
@@ -239,12 +235,12 @@ def _fabric_ribbed(
 
 
 def _fishnet_mask(
-    W_abs: NDArray[np.float64],
-    ys: NDArray[np.float64],
+    W_abs: FloatArray,
+    ys: FloatArray,
     cell: float,
     line_w: float,
     angle_deg: float,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """在腿面绝对坐标中计算网线覆盖率。
 
     Args:
@@ -271,20 +267,20 @@ def _fishnet_mask(
     # 两方向任一在线宽内则属于网线
     on_x = dx < line_w / 2
     on_y = dy < line_w / 2
-    return (on_x | on_y).astype(np.float64)
+    return (on_x | on_y).astype(np.float32)
 
 
 def _fabric_fishnet(
     f: Fishnet,
-    src: NDArray[np.float64],
-    alpha: NDArray[np.float64],
-    u: NDArray[np.float64],
+    src: FloatArray,
+    alpha: FloatArray,
+    u: FloatArray,
     y0: int,
     H: int,
     W: int,
     rng: np.random.Generator,
-    dip: NDArray[np.float64] | None = None,
-) -> NDArray[np.float64]:
+    dip: FloatArray | None = None,
+) -> FloatArray:
     """生成网袜纹理：网线不透明、网孔透明，可叠一层底袜。
 
     Args:
@@ -301,10 +297,10 @@ def _fabric_fishnet(
     Returns:
         (H, W, 4) RGBA 层。
     """
-    layer = np.zeros((H, W, 4), dtype=np.float64)
+    layer = np.zeros((H, W, 4), dtype=np.float32)
 
     abs_x = surface_abs_x(u, alpha, f.perspective)
-    ys = np.arange(H, dtype=np.float64).reshape(H, 1) * np.ones((1, W))
+    ys = np.arange(H, dtype=np.float32).reshape(H, 1) * np.ones((1, W))
     if dip is not None:
         ys = ys - dip
 
@@ -325,14 +321,14 @@ def _fabric_fishnet(
 
 
 def dot_mask(
-    abs_x: NDArray[np.float64],
-    ys: NDArray[np.float64],
+    abs_x: FloatArray,
+    ys: FloatArray,
     spacing: float,
     size: float,
     layout: str,
     shape: str,
     rng: np.random.Generator,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """生成印花图案的 alpha 掩码。
 
     Args:
@@ -368,8 +364,8 @@ def dot_mask(
         # 每格 0~1 的伪随机偏移（确定性，不依赖 rng）
         raw_x = (seed_arr * np.uint32(0x5DEECE6D) + np.uint32(11)) & mask32
         raw_y = (seed_arr * np.uint32(0xDEADBEEF) + np.uint32(0x12345)) & mask32
-        raw_x = raw_x.astype(np.float64)
-        raw_y = raw_y.astype(np.float64)
+        raw_x = raw_x.astype(np.float32)
+        raw_y = raw_y.astype(np.float32)
         cx = (gi + 0.5) * cell + (raw_x / float(0xFFFFFF) - 0.5) * 0.6 * cell
         cy = (gj + 0.5) * cell + (raw_y / float(0xFFFFFF) - 0.5) * 0.6 * cell
         dx = abs_x - cx
@@ -377,7 +373,7 @@ def dot_mask(
 
     if shape == "dot":
         dist = np.sqrt(dx**2 + dy**2)
-        mask = (dist < size).astype(np.float64)
+        mask = (dist < size).astype(np.float32)
     elif shape == "heart":
         # 标准心形：用参数方程近似
         # 归一化坐标，使心形高约为 size*2
@@ -385,32 +381,32 @@ def dot_mask(
         nx, ny = dx / s, -dy / s  # y 轴翻转使心形尖朝下
         # 心形判别式：(x^2+y^2-1)^3 - x^2*y^3 < 0
         val = (nx**2 + ny**2 - 1.0) ** 3 - nx**2 * ny**3
-        mask = (val < 0).astype(np.float64)
+        mask = (val < 0).astype(np.float32)
     elif shape == "star":
         # 五角星（极坐标近似）
         theta = np.arctan2(dy, dx)
         r = np.sqrt(dx**2 + dy**2)
         # 五角星：在 5 个角方向 r_outer，5 个凹陷方向 r_inner
         r_star = size * (0.4 + 0.6 * np.abs(np.cos(2.5 * theta)))
-        mask = (r < r_star).astype(np.float64)
+        mask = (r < r_star).astype(np.float32)
     else:
-        mask = np.zeros((H, W), dtype=np.float64)
+        mask = np.zeros((H, W), dtype=np.float32)
 
     return mask
 
 
 def _fabric_dotted(
     f: Dotted,
-    src: NDArray[np.float64],
-    alpha: NDArray[np.float64],
-    u: NDArray[np.float64],
+    src: FloatArray,
+    alpha: FloatArray,
+    u: FloatArray,
     y0: int,
     H: int,
     W: int,
     rng: np.random.Generator,
-    dip: NDArray[np.float64] | None = None,
+    dip: FloatArray | None = None,
     pattern_offset: float = 0.0,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """生成印花袜纹理：底袜 + 图案叠加。
 
     图案行沿弧线下弯，相位从袜口条带下沿起算。
@@ -433,13 +429,13 @@ def _fabric_dotted(
     base = fabric_plain(f.base, src, alpha, u, y0, H, W)
 
     abs_x = surface_abs_x(u, alpha, f.perspective)
-    ys = (np.arange(H, dtype=np.float64) - y0 - pattern_offset).reshape(H, 1) * np.ones((1, W))
+    ys = (np.arange(H, dtype=np.float32) - y0 - pattern_offset).reshape(H, 1) * np.ones((1, W))
     if dip is not None:
         ys = ys - dip
 
     dot = dot_mask(abs_x, ys, f.spacing, f.size, f.layout, f.shape, rng)
 
-    dot_layer = np.zeros((H, W, 4), dtype=np.float64)
+    dot_layer = np.zeros((H, W, 4), dtype=np.float32)
     dot_layer[..., :3] = color_rgb(f.color)
     dot_layer[..., 3] = dot * f.opacity * color_alpha(f.color)
     dot_layer[:y0] = 0.0

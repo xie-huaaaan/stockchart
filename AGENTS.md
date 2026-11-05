@@ -23,7 +23,8 @@ stockchart 是一个创意绘图库：用丝袜被拉起的高度表示数据大
 ## 目录
 
 - `src/stockchart/`：库源码；`assets/` 只放 `leg_XX.svg` 与 `legs.json`。`plot/`、`stocking/`、`topline/` 是子包，按职责分模块（数据形状 / 计算 / 绘制），不要把文件重新堆回一个大文件。
-- `tests/`、`docs/`；`tests/conftest.py` 让整轮测试共用一份已光栅化的腿素材，删掉它整套测试会慢数倍。
+- `tests/`、`docs/`；素材栅格与预处理缓存已在生产代码中跨实例共享，测试不再额外替换栅格化函数。
+- `src/stockchart/_precomputed/` 存放随包分发的内置素材墨线数据，由 `uv run python tools/prepare_asset_data.py` 生成；修改 SVG 或墨线提取算法后重生成，数据沿用素材 ARR 许可。缺失或过期时运行时从素材提取一次并缓存在内存中。
 - `tools/`：开发脚本，不属于公开 API，可依赖 scipy / vtracer（可引入其他库，要求没运行时依赖那么严格）。
 - `dist/`、`out/`：开发素材与评审产物，不打包、运行时不引用。
 

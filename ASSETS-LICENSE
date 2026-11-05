@@ -4,7 +4,8 @@ Leg artwork license
 Copyright (c) 2026 xie-huaaaan. All rights reserved.
 
 The built-in leg artwork distributed with stockchart -- the SVG files
-src/stockchart/assets/leg_*.svg and the metadata in src/stockchart/assets/legs.json
+src/stockchart/assets/leg_*.svg, the metadata in src/stockchart/assets/legs.json,
+and their derived preprocessing data in src/stockchart/_precomputed/leg_*.npz
 -- is NOT covered by the Mozilla Public License 2.0 (MPL-2.0) that applies to the
 stockchart source code.
 

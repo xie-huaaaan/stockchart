@@ -8,12 +8,17 @@ SVG 的容器尺寸必须保持固有尺寸，`clipPath` 才能正确应用；�
 from __future__ import annotations
 
 import re
+from hashlib import sha256
 
 import numpy as np
 import skia
 from numpy.typing import NDArray
 
+from stockchart._cache import ByteCache
+from stockchart.defaults import DEFAULT_RASTER_CACHE_BYTES
+
 _SVG_SIZE = re.compile(r'<svg[^>]*\bwidth="([0-9.]+)"[^>]*\bheight="([0-9.]+)"')
+_raster_cache = ByteCache[NDArray[np.uint8]](DEFAULT_RASTER_CACHE_BYTES)
 
 
 def rasterize_svg(svg: bytes, width: int, height: int) -> NDArray[np.uint8]:
@@ -36,6 +41,10 @@ def rasterize_svg(svg: bytes, width: int, height: int) -> NDArray[np.uint8]:
     """
     if width <= 0 or height <= 0:
         raise ValueError(f"目标尺寸须为正数，得到 {width}×{height}")
+    key = (sha256(svg).digest(), width, height)
+    cached = _raster_cache.get(key)
+    if cached is not None:
+        return cached
     m = _SVG_SIZE.search(svg.decode("utf-8", errors="ignore"))
     if m is None:
         raise ValueError("SVG 根节点缺少 width/height")
@@ -52,4 +61,6 @@ def rasterize_svg(svg: bytes, width: int, height: int) -> NDArray[np.uint8]:
         canvas.scale(width / intrinsic_w, height / intrinsic_h)
         dom.render(canvas)
     # skia 的光栅缓冲是 BGRA，导出时换回 RGBA
-    return surface.makeImageSnapshot().toarray()[:, :, [2, 1, 0, 3]].copy()
+    image = surface.makeImageSnapshot().toarray()[:, :, [2, 1, 0, 3]].copy()
+    image.flags.writeable = False
+    return _raster_cache.put(key, image, image.nbytes)

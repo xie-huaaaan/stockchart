@@ -7,7 +7,7 @@ Leg 同时保存设计像素元数据、布局预览位图与可选矢量源；�
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Literal
 
 import numpy as np
@@ -52,11 +52,6 @@ class Leg:
     pair_id: str | None = None
     side: Literal["left", "right"] | None = None
     svg: bytes | None = None
-    _raster_cache: dict[tuple[int, int], NDArray[np.uint8]] = field(
-        default_factory=lambda: dict[tuple[int, int], NDArray[np.uint8]](),
-        repr=False,
-        compare=False,
-    )
 
     def __post_init__(self) -> None:
         if self.width <= 0 or self.height <= 0:
@@ -75,7 +70,7 @@ class Leg:
             raise ValueError(f"Leg.image 尺寸须为 {expected_h}×{expected_w}，得到 {got_h}×{got_w}")
 
     def raster_at(self, pixels_per_unit: float) -> NDArray[np.uint8]:
-        """按目标密度把矢量源直接渲染成位图，并缓存在当前 Leg 上。
+        """按目标密度栅格化矢量源，并在进程内共享只读像素缓存。
 
         Args:
             pixels_per_unit: 目标像素 / 设计像素。
@@ -92,12 +87,7 @@ class Leg:
             raise ValueError("该素材没有矢量源")
         w = max(1, round(self.width * pixels_per_unit))
         h = max(1, round(self.height * pixels_per_unit))
-        key = (w, h)
-        cached = self._raster_cache.get(key)
-        if cached is None:
-            cached = rasterize_svg(self.svg, w, h)
-            self._raster_cache[key] = cached
-        return cached
+        return rasterize_svg(self.svg, w, h)
 
     def at_density(self, pixels_per_unit: float) -> Leg:
         """返回指定密度下可直接绘制的 Leg，已有缓存位图时复用。
@@ -120,5 +110,4 @@ class Leg:
             self,
             image=self.raster_at(pixels_per_unit),
             pixels_per_unit=pixels_per_unit,
-            _raster_cache=self._raster_cache,
         )

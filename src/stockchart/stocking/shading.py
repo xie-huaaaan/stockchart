@@ -1,7 +1,7 @@
 """光影与合成：明暗层计算、与素材的混合，以及重采样。
 
-光影按“袜身全强度 + 袜口以上裸皮按 skin 强度”两层计算后加权合并，
-最后在袜口条带绘制之后统一应用，保证袜口与袜身受光一致。
+袜身与裸皮共用一次光照几何计算，在袜口条带绘制之后按各自权重直接混色，
+保证袜口与袜身受光一致，避免建立两份完整的阴影 RGBA 图层。
 """
 
 from __future__ import annotations
@@ -14,78 +14,14 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from stockchart.color import color_alpha, color_rgb
-from stockchart.stocking.geometry import column_profile
+from stockchart.stocking.pixels import FloatArray
 from stockchart.stocking.styles import Shading, StockingStyle
 
 if TYPE_CHECKING:
     from stockchart.legs import Leg
 
 
-def render_shading(
-    sh: Shading,
-    src: NDArray[np.float64],
-    alpha: NDArray[np.float64],
-    u: NDArray[np.float64],
-    y0: int,
-    H: int,
-    W: int,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """生成光影覆盖层。
-
-    边缘阴影使用正片叠底（multiply），高光使用屏幕（screen）。阴影色与阴影
-    强度放在 RGBA 层里，高光强度单独返回，避免复用颜色通道造成串色。
-
-    Args:
-        sh: 光影参数。
-        src: (H, W, 4) 归一化腿图；本实现不读取，保留统一签名。
-        alpha: (H, W) 腿的 alpha 覆盖。
-        u: (H, W) 横向归一化坐标。
-        y0: 袜子区域起始行。
-        H: 图像高。
-        W: 图像宽。
-
-    Returns:
-        `(shadow_layer, highlight)`：shadow_layer 为 (H, W, 4)，RGB 是阴影色、
-        alpha 是阴影强度；highlight 为 (H, W) 的 [0, 1] 高光强度。
-    """
-    layer = np.zeros((H, W, 4), dtype=np.float64)
-    highlight = np.zeros((H, W), dtype=np.float64)
-
-    if sh.rim_shadow <= 0 and sh.highlight <= 0:
-        return layer, highlight
-
-    shadow_rgb = color_rgb(sh.shadow_color)
-    shadow_a_base = color_alpha(sh.shadow_color)
-
-    cos_u = np.sqrt(np.maximum(1.0 - u**2, 0.0))  # (H, W)
-
-    # 边缘阴影：cos_u → 0 时最深
-    rim = (1.0 - cos_u) ** 1.5  # 让阴影更集中于极侧缘
-    shadow_a = sh.rim_shadow * shadow_a_base * rim
-
-    # 高光：在 highlight_pos 附近的竖向高亮条
-    hl_u = (u - sh.highlight_pos) / max(sh.highlight_width, 0.01)
-    hl = np.exp(-0.5 * hl_u**2)  # 高斯形高光
-    hl_a = sh.highlight * hl
-
-    if sh.cel_steps >= 2:
-        # 分阶：将连续阴影量化为 cel_steps + 1 阶
-        steps = sh.cel_steps
-        shadow_a = np.round(shadow_a * steps) / steps
-        hl_a = np.round(hl_a * steps) / steps
-
-    layer[..., :3] = shadow_rgb
-    layer[..., 3] = shadow_a
-    in_leg = alpha > 0.05
-    layer[:y0] = 0.0
-    layer[~in_leg] = 0.0
-    highlight = hl_a.copy()
-    highlight[:y0] = 0.0
-    highlight[~in_leg] = 0.0
-    return layer, highlight
-
-
-def alpha_over(dst: NDArray[np.float64], src_: NDArray[np.float64]) -> NDArray[np.float64]:
+def alpha_over(dst: FloatArray, src_: FloatArray) -> FloatArray:
     """按 Porter-Duff 'A over B' 合成两层 RGBA。
 
     Args:
@@ -110,14 +46,14 @@ def alpha_over(dst: NDArray[np.float64], src_: NDArray[np.float64]) -> NDArray[n
 
 
 def composite(
-    src_leg: NDArray[np.float64],
-    fabric: NDArray[np.float64],
-    alpha: NDArray[np.float64],
+    src_leg: FloatArray,
+    fabric: FloatArray,
+    alpha: FloatArray,
     y0: int,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """把腿皮肤与袜身纹理合成为 RGBA。
 
-    袜口以上保留原腿；光影由 `apply_shading` 在后续步骤应用。
+    袜口以上保留原腿；光影由 `apply_lighting` 在后续步骤应用。
 
     Args:
         src_leg: (H, W, 4) 归一化腿图。
@@ -130,19 +66,61 @@ def composite(
     """
     result = src_leg.copy()
 
-    fa = fabric[..., 3:4]  # 袜子 alpha (H,W,1)
-    frgb = fabric[..., :3]  # 袜子 RGB
-
-    leg_rgb = src_leg[..., :3]
-    blended_rgb = frgb * fa + leg_rgb * (1.0 - fa)
-    blended_rgb = np.clip(blended_rgb, 0.0, 1.0)
-
-    H, W = src_leg.shape[:2]
-    mask = np.zeros((H, W, 1), dtype=np.float64)
-    mask[y0:] = 1.0
-
-    result[..., :3] = blended_rgb * mask + leg_rgb * (1.0 - mask)
+    rgb = result[y0:, :, :3]
+    rgb += (fabric[y0:, :, :3] - rgb) * fabric[y0:, :, 3:4]
+    np.clip(rgb, 0.0, 1.0, out=rgb)
     return result
+
+
+def apply_lighting(
+    img: FloatArray,
+    sh: Shading,
+    u: FloatArray,
+    rim: FloatArray,
+    sock_weight: FloatArray,
+) -> FloatArray:
+    """一次生成光照几何，并直接在 RGB 上应用袜身与裸皮的不同光照。
+
+    Args:
+        img: 原地修改的 RGBA 图像。
+        sh: 共同光影参数。
+        u: 横向归一化坐标。
+        rim: 素材预处理得到的侧缘阴影形状。
+        sock_weight: 袜身的光照权重；其余部分按 skin 强度受光。
+
+    Returns:
+        已修改的图像。
+    """
+    if sh.rim_shadow <= 0 and sh.highlight <= 0:
+        return img
+    in_leg = img[..., 3] > 0.05
+    skin_weight = (1.0 - sock_weight) * sh.skin
+    sock_a = rim * (sh.rim_shadow * color_alpha(sh.shadow_color))
+    skin_a = rim * (sh.rim_shadow * color_alpha(sh.skin_shadow_color))
+    highlight = sh.highlight * np.exp(
+        -0.5 * ((u - sh.highlight_pos) / max(sh.highlight_width, 0.01)) ** 2
+    )
+    if sh.cel_steps >= 2:
+        sock_a = np.round(sock_a * sh.cel_steps) / sh.cel_steps
+        skin_a = np.round(skin_a * sh.cel_steps) / sh.cel_steps
+        highlight = np.round(highlight * sh.cel_steps) / sh.cel_steps
+    sock_a *= sock_weight * in_leg
+    skin_a *= skin_weight * in_leg
+    total = sock_a + skin_a
+    correction = np.minimum(total, 1.0) / np.maximum(total, 1e-6)
+    highlight *= (sock_weight + skin_weight) * in_leg
+    np.clip(highlight, 0.0, 1.0, out=highlight)
+    sock_color = color_rgb(sh.shadow_color)
+    skin_color = color_rgb(sh.skin_shadow_color)
+    for channel in range(3):
+        rgb = img[..., channel]
+        rgb *= (
+            1.0
+            - (sock_a * (1.0 - sock_color[channel]) + skin_a * (1.0 - skin_color[channel]))
+            * correction
+        )
+        rgb += (1.0 - rgb) * highlight
+    return img
 
 
 def _resize_rgba(
@@ -167,12 +145,12 @@ def _resize_rgba(
         (height, width, 4) uint8 RGBA。
     """
 
-    def resize_float(channel: NDArray[np.float64]) -> NDArray[np.float64]:
+    def resize_float(channel: FloatArray) -> FloatArray:
         """把单通道浮点图缩放为目标尺寸。"""
         img = Image.fromarray(channel.astype(np.float32), mode="F")
-        return np.asarray(img.resize((width, height), resample), dtype=np.float64)
+        return np.asarray(img.resize((width, height), resample), dtype=np.float32)
 
-    src = image.astype(np.float64) / 255.0
+    src = image.astype(np.float32) / 255.0
     alpha = src[..., 3]
     premultiplied = src[..., :3] * alpha[..., np.newaxis]
     rgb = np.stack([resize_float(premultiplied[..., i]) for i in range(3)], axis=-1)
@@ -224,47 +202,16 @@ def shade_bare_leg(leg: Leg, style: StockingStyle) -> Leg:
     Returns:
         光照后的 Leg。
     """
-    H, W = leg.image.shape[:2]
-    src = leg.image.astype(np.float64) / 255.0
-    alpha = src[..., 3]
-    prof = column_profile(alpha)
-    sh = style.shading
-    shadow, highlight = render_shading(
-        replace(sh, shadow_color=sh.skin_shadow_color), src, alpha, prof, 0, H, W
+    from stockchart.stocking.preprocess import prepare_leg
+
+    prepared = prepare_leg(leg)
+    out = apply_lighting(
+        prepared.src.copy(),
+        style.shading,
+        prepared.u,
+        prepared.rim,
+        np.zeros(leg.image.shape[:2], dtype=np.float32),
     )
-    shadow[..., 3] *= sh.skin
-    highlight *= sh.skin
-    out = apply_shading(src.copy(), shadow, highlight)
     image = (np.clip(out, 0.0, 1.0) * 255.0).astype(np.uint8)
     image[..., 3] = leg.image[..., 3]
     return replace(leg, image=image)
-
-
-def apply_shading(
-    img: NDArray[np.float64],
-    shadow: NDArray[np.float64],
-    highlight: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """对合成结果应用光影。
-
-    边缘阴影按正片叠底压暗，竖向高光按 screen 提亮；在上沿条带绘制之后调用，
-    使袜口与蕾丝同样受光。
-
-    Args:
-        img: (H, W, 4) 归一化图像；原地修改并返回。
-        shadow: (H, W, 4) 阴影层：RGB 为阴影色，alpha 为阴影强度。
-        highlight: (H, W) 高光强度。
-
-    Returns:
-        修改后的图像。
-    """
-    sh_a = shadow[..., 3:4]
-    sh_rgb = shadow[..., :3]
-
-    # 正片叠底阴影：shadow_rgb 通常偏冷，乘在当前颜色上
-    mul = img[..., :3] * sh_rgb
-    img[..., :3] = img[..., :3] * (1.0 - sh_a) + mul * sh_a
-
-    # screen 高光（白色）：提亮
-    img[..., :3] = img[..., :3] + (1.0 - img[..., :3]) * highlight[..., np.newaxis]
-    return img

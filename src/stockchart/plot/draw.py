@@ -32,7 +32,6 @@ from stockchart.defaults import (
     DEFAULT_X_LABEL_SIZE,
 )
 from stockchart.legs import Leg
-from stockchart.library import LegLibrary
 from stockchart.plot.layout import (
     axis_name_metrics,
     effective_extents,
@@ -43,7 +42,8 @@ from stockchart.plot.layout import (
 from stockchart.plot.scale import format_tick
 from stockchart.plot.types import PlotLayout, RenderInput
 from stockchart.sketch import sketch_axis, sketch_line
-from stockchart.stocking import StockingStyle, render_stocking
+from stockchart.stocking import render_stocking
+from stockchart.stocking.swatch import render_swatch
 from stockchart.text import TextAnchor, draw_text, measure_text, measure_text_height
 
 _SAMPLING_NATIVE = skia.SamplingOptions()
@@ -83,54 +83,6 @@ def _sock_top_center_x(leg: Leg, height_px: float) -> float:
     if len(cols) == 0:
         return float(leg.foot_center_x)
     return float((cols[0] + cols[-1]) / 2 / leg.pixels_per_unit)
-
-
-# 图例色块统一用同一条固定腿渲染，取其袜身中段的织物
-_swatch_leg_cache: Leg | None = None
-
-
-def _swatch_leg() -> Leg:
-    """返回图例色块使用的固定腿素材，首次调用时加载并缓存。
-
-    Returns:
-        leg_01 的 Leg 实例。
-    """
-    global _swatch_leg_cache
-    if _swatch_leg_cache is None:
-        _swatch_leg_cache = LegLibrary(seed=0).get("leg_01")
-    return _swatch_leg_cache
-
-
-def _render_swatch(
-    style: StockingStyle, size: int, seed: int, *, scale: float = 1.0
-) -> NDArray[np.uint8]:
-    """渲染样式并裁取袜身中部的一小块织物，作为图例色块。
-
-    Args:
-        style: 丝袜样式。
-        size: 色块边长（设计像素）。
-        seed: 纹理随机源。
-        scale: 输出密度；>1 时裁出 size × scale 见方的色块，供 1:1 贴图。
-
-    Returns:
-        (size × scale, size × scale, 4) uint8 RGBA。
-    """
-    leg = _swatch_leg()
-    sh = round(leg.height * 0.55)
-    img = render_stocking(leg, style, sh, seed=seed, scale=scale).image
-    h, w = img.shape[:2]
-    px = max(1, round(size * scale))
-    # 袜身中段：袜区（底部 sh 行）内垂直居中的 px 行
-    sock_h = round(sh * scale)
-    top = (h - sock_h) + max(0, (sock_h - px) // 2)
-    band = img[top : top + px]
-    cols = np.where(band[:, :, 3].max(axis=0) > 0)[0]
-    center = int((cols[0] + cols[-1]) // 2) if len(cols) else w // 2
-    left = min(max(0, center - px // 2), max(0, w - px))
-    out = np.zeros((px, px, 4), np.uint8)
-    crop = band[:, left : left + px]
-    out[: crop.shape[0], : crop.shape[1]] = crop
-    return out
 
 
 def _draw_grid(canvas: Canvas, layout: PlotLayout, inp: RenderInput) -> None:
@@ -391,11 +343,11 @@ def _draw_legend(
             label_lines = lines_all[i]
             swatch_y = y + (row_h - DEFAULT_LEGEND_SWATCH) / 2
             swatch = _skia_image(
-                _render_swatch(
+                render_swatch(
                     rec.items[i][1],
                     DEFAULT_LEGEND_SWATCH,
                     rec.seed + i,
-                    scale=scale,
+                    scale,
                 )
             )
             sc.save()

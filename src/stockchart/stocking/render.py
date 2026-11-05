@@ -18,16 +18,16 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy.typing import NDArray
 
 from stockchart.stocking.edge import lace_wave, render_top_edge
 from stockchart.stocking.fabric import render_fabric
-from stockchart.stocking.geometry import column_profile, curve_dip
+from stockchart.stocking.geometry import curve_dip
 from stockchart.stocking.ink import boost_ink_lines
+from stockchart.stocking.pixels import FloatArray
+from stockchart.stocking.preprocess import prepare_leg
 from stockchart.stocking.shading import (
-    apply_shading,
+    apply_lighting,
     composite,
-    render_shading,
     resample_leg,
     shade_bare_leg,
 )
@@ -89,7 +89,8 @@ def render_stocking(
     height_px = min(height_px, H)
     rng = np.random.default_rng(seed)
 
-    src = leg.image.astype(np.float64) / 255.0  # (H, W, 4) float64 [0,1]
+    prepared = prepare_leg(leg)
+    src = prepared.src
 
     # 腿的 alpha mask（0/1 float）
     alpha_mask = src[..., 3]  # (H, W)
@@ -98,7 +99,7 @@ def render_stocking(
     y_start = H - height_px  # 袜口顶端所在行（含）
 
     # 每行腿的宽度剖面：用于圆柱透视压缩
-    col_profile = column_profile(alpha_mask)  # (H, W) float，横向归一化坐标
+    col_profile = prepared.u
 
     # 环形线条（横纹、袜口、蕾丝）的透视下弯量：中线最大、两侧缘为 0
     dip = curve_dip(col_profile, alpha_mask, style.shading.curve)
@@ -135,52 +136,20 @@ def render_stocking(
     )
 
     # 织物沿条带下沿逐列裁剪：图案与上沿边缘处处贴合（Lace 沿波浪无缺口）
-    ys_grid = np.arange(H, dtype=np.float64)[:, np.newaxis]  # (H, 1)
+    ys_grid = np.arange(H, dtype=np.float32)[:, np.newaxis]  # (H, 1)
     fabric_layer[ys_grid < origin_col[np.newaxis, :]] = 0.0
     top_arc = y_start + dip  # (H, W) 袜口弧线
 
     # Fade：渐隐沿弧线自袜口顶端向下 length 像素内完成（顶端透明，底端全显）
-    fade_ramp: NDArray[np.float64] | None = None
+    fade_ramp: FloatArray | None = None
     if isinstance(style.top, Fade):
         ramp = np.clip((ys_grid - top_arc) / max(style.top.length, 1.0), 0.0, 1.0)
         fade_ramp = ramp
         fabric_layer[..., 3] *= ramp
 
-    # 光影：袜身用全强度与冷色阴影；袜口以上的裸皮按 Shading.skin 强度并换成
-    # 暖色阴影（冷紫落在皮肤上会显脏）。两层按覆盖率加权合并后一次应用。
-    shading_layer, shading_hl = render_shading(style.shading, src, alpha_mask, col_profile, 0, H, W)
-    skin = style.shading.skin
+    # 仅保留袜身权重，冷暖阴影与高光在上沿之后共用一次几何计算。
     above = ys_grid < top_arc
-    if fade_ramp is None:
-        w_sock = np.where(above, 0.0, 1.0)
-        w_skin = np.where(above, skin, 0.0)
-    else:
-        # 渐隐区里袜子逐渐消失：光影由 sock 全强度过渡到裸皮的 skin 强度，
-        # 避免袜口处出现一条阴影断层
-        w_sock = np.where(above, 0.0, fade_ramp)
-        w_skin = np.where(above, 1.0, 1.0 - fade_ramp) * skin
-    if skin > 0:
-        skin_layer, skin_hl = render_shading(
-            replace(style.shading, shadow_color=style.shading.skin_shadow_color),
-            src,
-            alpha_mask,
-            col_profile,
-            0,
-            H,
-            W,
-        )
-        a_sock = shading_layer[..., 3:4] * w_sock[..., np.newaxis]
-        a_skin = skin_layer[..., 3:4] * w_skin[..., np.newaxis]
-        total = np.clip(a_sock + a_skin, 0.0, 1.0)
-        safe = np.maximum(a_sock + a_skin, 1e-6)
-        shading_layer[..., :3] = (
-            shading_layer[..., :3] * a_sock + skin_layer[..., :3] * a_skin
-        ) / safe
-        shading_layer[..., 3:4] = total
-        shading_hl = np.clip(shading_hl * w_sock + skin_hl * w_skin, 0.0, 1.0)
-    else:
-        shading_layer[..., 3] *= w_sock
-        shading_hl *= w_sock
+    w_sock = (~above).astype(np.float32) if fade_ramp is None else np.where(above, 0.0, fade_ramp)
 
     # 合成：将腿皮肤与袜子融合（光影后置，使上沿条带同样受光）
     result = composite(src, fabric_layer, alpha_mask, y_start)
@@ -202,21 +171,18 @@ def render_stocking(
     )
 
     # 应用光影：在条带绘制之后，袜口/蕾丝与袜身统一受光
-    result = apply_shading(result, shading_layer, shading_hl)
+    result = apply_lighting(result, style.shading, col_profile, prepared.rim, w_sock)
 
     # 膝盖褶皱等素材内部墨线增强：以"织物压痕"的方式补画到袜子上
     result = boost_ink_lines(
         result,
-        src,
-        alpha_mask,
+        leg,
         col_profile,
         style.fabric,
         style.shading,
         fabric_layer,
-        ys_grid,
         top_arc,
         y_start,
-        density,
     )
 
     out = (np.clip(result, 0.0, 1.0) * 255.0).astype(np.uint8)

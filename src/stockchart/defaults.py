@@ -15,6 +15,18 @@ from typing import Literal
 DEFAULT_STOCKING_STYLE = "black_sheer"
 """各层接口 style 参数的默认预设名。"""
 
+DEFAULT_RASTER_CACHE_BYTES = 64 * 1024 * 1024
+"""进程共享 SVG 栅格缓存的像素数据预算（字节）。"""
+
+DEFAULT_PREPARED_CACHE_BYTES = 64 * 1024 * 1024
+"""进程共享腿形预处理缓存的数据预算（字节）。"""
+
+DEFAULT_INK_CACHE_ENTRIES = 32
+"""已读取或现场提取的素材墨线数据缓存条目数。"""
+
+DEFAULT_SWATCH_CACHE_ENTRIES = 128
+"""图例织物色块缓存条目数。"""
+
 # ---------------------------------------------------------------------------
 # 画布
 # ---------------------------------------------------------------------------

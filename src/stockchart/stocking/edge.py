@@ -9,9 +9,9 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from numpy.typing import NDArray
 
 from stockchart.color import color_rgb
+from stockchart.stocking.pixels import FloatArray
 from stockchart.stocking.styles import (
     Bare,
     Dotted,
@@ -30,11 +30,11 @@ from stockchart.stocking.styles import (
 def lace_wave(
     top: Lace,
     y0: int,
-    dip: NDArray[np.float64] | None,
+    dip: FloatArray | None,
     W: int,
     H: int,
     rng: np.random.Generator,
-) -> tuple[NDArray[np.float64], float, float, float]:
+) -> tuple[FloatArray, float, float, float]:
     """计算蕾丝波浪下沿的每列 y 坐标及波形参数。
 
     `wave_bot` 在 `(y0 + height ± 振幅)` 之间起伏，并计入条带下沿所在行的
@@ -58,26 +58,26 @@ def lace_wave(
     wave_bot = (
         (y0 + top.height)
         + dip_bot
-        + amplitude * np.sin(2 * math.pi * (np.arange(W, dtype=np.float64) + phase) / scallop)
+        + amplitude * np.sin(2 * math.pi * (np.arange(W, dtype=np.float32) + phase) / scallop)
     )
     wave_bot = np.clip(wave_bot, float(y0), float(H - 1))
     return wave_bot, scallop, amplitude, phase
 
 
 def render_top_edge(
-    img: NDArray[np.float64],
+    img: FloatArray,
     top: Bare | Welt | Lace | Fade,
     fabric: Fabric,
     sh: Shading,
-    alpha: NDArray[np.float64],
-    u: NDArray[np.float64],
+    alpha: FloatArray,
+    u: FloatArray,
     y0: int,
     H: int,
     W: int,
     rng: np.random.Generator,
-    dip: NDArray[np.float64] | None = None,
-    wave: tuple[NDArray[np.float64], float, float, float] | None = None,
-) -> NDArray[np.float64]:
+    dip: FloatArray | None = None,
+    wave: tuple[FloatArray, float, float, float] | None = None,
+) -> FloatArray:
     """在图像上原地绘制上沿效果。
 
     Bare 画细边线，Welt 画加厚条带，Lace 画波浪蕾丝；Fade 的渐隐已在织物
@@ -100,21 +100,40 @@ def render_top_edge(
     Returns:
         修改后的图像。
     """
+    if isinstance(top, Fade):
+        return img
+    # 条带和边线只会影响袜口附近；为曲率、扇贝和抖动留足局部余量。
+    margin = math.ceil(sh.wobble) + 5
+    band_height = top.height if isinstance(top, (Welt, Lace)) else 0.0
+    scallop_dip = min(top.scallop * 0.15, top.height * 0.25) if isinstance(top, Lace) else 0.0
+    start = max(0, y0 - margin)
+    stop = min(H, math.ceil(y0 + band_height + sh.curve * W / 2 + scallop_dip + margin))
+    if stop <= start:
+        return img
+    full_img = img
+    img = img[start:stop]
+    alpha = alpha[start:stop]
+    dip = dip[start:stop] if dip is not None else None
+    y0 -= start
+    crop_height = stop - start
+    if wave is not None:
+        wave = (wave[0] - start, wave[1], wave[2], wave[3])
+
     if isinstance(top, Bare):
         img = _draw_edge_line(img, alpha, _edge_base(y0, W, dip), sh, rng, color=(0.1, 0.1, 0.1))
     elif isinstance(top, Welt):
-        img = _draw_welt(img, fabric, alpha, y0, H, W, top, sh, rng, dip)
-    elif isinstance(top, Lace):
+        img = _draw_welt(img, fabric, alpha, y0, crop_height, W, top, sh, rng, dip)
+    else:
         assert wave is not None
-        img = _draw_lace(img, fabric, alpha, y0, H, W, top, sh, rng, dip, wave)
-    return img
+        img = _draw_lace(img, fabric, alpha, y0, crop_height, W, top, sh, rng, dip, wave)
+    return full_img
 
 
 def _edge_base(
     y0: int,
     W: int,
-    dip: NDArray[np.float64] | None,
-) -> NDArray[np.float64]:
+    dip: FloatArray | None,
+) -> FloatArray:
     """计算上沿边线各列的基准 y。
 
     Args:
@@ -131,7 +150,7 @@ def _edge_base(
     return y0 + row
 
 
-def _fabric_main_color(fabric: Fabric) -> NDArray[np.float64]:
+def _fabric_main_color(fabric: Fabric) -> FloatArray:
     """取袜身的主色（归一化 RGB）。
 
     Args:
@@ -153,7 +172,7 @@ def _fabric_main_color(fabric: Fabric) -> NDArray[np.float64]:
     return np.array([0.1, 0.1, 0.1])
 
 
-def _soft_cover(y: NDArray[np.float64], edge: NDArray[np.float64]) -> NDArray[np.float64]:
+def _soft_cover(y: FloatArray, edge: FloatArray) -> FloatArray:
     """计算行坐标相对软边缘的覆盖率。
 
     二值判定会让斜向边界形成 1px 阶梯；按覆盖率取值等价于一次简单的抗锯齿。
@@ -172,7 +191,7 @@ def _smooth_wobble(
     rng: np.random.Generator,
     n: int,
     amplitude: float,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """生成低频起伏的抖动曲线，振幅约为 ±amplitude。
 
     逐列独立取噪声会让边线每列各跳 1–2px，看起来是毛刺；这里对白噪声平滑
@@ -200,13 +219,13 @@ def _smooth_wobble(
 
 
 def _draw_edge_line(
-    img: NDArray[np.float64],
-    alpha: NDArray[np.float64],
-    y_base: NDArray[np.float64],
+    img: FloatArray,
+    alpha: FloatArray,
+    y_base: FloatArray,
     sh: Shading,
     rng: np.random.Generator,
     color: tuple[float, float, float] = (0.1, 0.1, 0.1),
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """沿基准曲线画一条手绘边线。
 
     使用低频抖动与覆盖率软笔触，线宽约 1.5px，避免斜向处的阶梯锯齿。
@@ -223,9 +242,9 @@ def _draw_edge_line(
         修改后的图像。
     """
     H, W = img.shape[0], img.shape[1]
-    color_arr = np.array(color, dtype=np.float64)
+    color_arr = np.array(color, dtype=np.float32)
     wobble = _smooth_wobble(rng, W, sh.wobble)
-    rows = np.arange(H, dtype=np.float64)[:, np.newaxis]
+    rows = np.arange(H, dtype=np.float32)[:, np.newaxis]
     dist = rows - (y_base + wobble)[np.newaxis, :]
     cov = np.clip(1.0 - np.abs(dist) / 1.4, 0.0, 1.0) * (alpha > 0.05)
     t = (0.7 * cov)[..., np.newaxis]
@@ -234,17 +253,17 @@ def _draw_edge_line(
 
 
 def _draw_welt(
-    img: NDArray[np.float64],
+    img: FloatArray,
     fabric: Fabric,
-    alpha: NDArray[np.float64],
+    alpha: FloatArray,
     y0: int,
     H: int,
     W: int,
     top: Welt,
     sh: Shading,
     rng: np.random.Generator,
-    dip: NDArray[np.float64] | None = None,
-) -> NDArray[np.float64]:
+    dip: FloatArray | None = None,
+) -> FloatArray:
     """绘制松紧袜口条带与勒痕。
 
     袜口顶端对齐 y0，条带向下延伸 height 像素并随弧线下弯；颜色取
@@ -273,7 +292,7 @@ def _draw_welt(
     welt_a = top.opacity if top.opacity is not None else 1.0
 
     dip2 = dip if dip is not None else np.zeros((H, W))
-    ys = np.arange(H, dtype=np.float64)[:, np.newaxis]
+    ys = np.arange(H, dtype=np.float32)[:, np.newaxis]
 
     top_arc = y0 + dip2  # 条带上沿（弧线）
     bot_arc = y0 + h + dip2  # 条带下沿（弧线）
@@ -293,18 +312,18 @@ def _draw_welt(
 
 
 def _draw_lace(
-    img: NDArray[np.float64],
+    img: FloatArray,
     fabric: Fabric,
-    alpha: NDArray[np.float64],
+    alpha: FloatArray,
     y0: int,
     H: int,
     W: int,
     top: Lace,
     sh: Shading,
     rng: np.random.Generator,
-    dip: NDArray[np.float64] | None,
-    wave: tuple[NDArray[np.float64], float, float, float],
-) -> NDArray[np.float64]:
+    dip: FloatArray | None,
+    wave: tuple[FloatArray, float, float, float],
+) -> FloatArray:
     """绘制蕾丝边。
 
     半透明带直接覆盖在皮肤上，孔点加深，沿波浪下沿与袜口顶端各画一条边线。
@@ -331,7 +350,7 @@ def _draw_lace(
     wave_bot, scallop, _amplitude, phase = wave
 
     t = top.opacity
-    y_mat = np.arange(H, dtype=np.float64)[:, np.newaxis]  # (H, 1)
+    y_mat = np.arange(H, dtype=np.float32)[:, np.newaxis]  # (H, 1)
 
     # 下沿的亚像素软混合权重
     soft_dist = y_mat - (wave_bot[np.newaxis, :] - 0.5)
@@ -342,7 +361,7 @@ def _draw_lace(
     in_zone = _soft_cover(y_mat, y0 + dip2) * (alpha > 0.05)
 
     # 孔点：波峰处的软圆盘，局部提高蕾丝的透明度（透出皮肤）
-    hole_map = np.zeros((H, W), dtype=np.float64)
+    hole_map = np.zeros((H, W), dtype=np.float32)
     if top.holes:
         dot_r = 2.2
         x_peak = scallop * 0.75 - phase  # sin=-1 处，波峰（带最浅）

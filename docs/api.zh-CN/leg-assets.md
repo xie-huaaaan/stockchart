@@ -61,7 +61,7 @@ class Leg:
     svg: bytes | None = None
 
     def raster_at(self, pixels_per_unit: float) -> np.ndarray:
-        """按目标密度把矢量源直接渲染成位图，并缓存在当前 Leg 上。
+        """按目标密度栅格化矢量源，并在进程内共享只读像素缓存。
 
         Args:
             pixels_per_unit: 目标像素 / 设计像素。

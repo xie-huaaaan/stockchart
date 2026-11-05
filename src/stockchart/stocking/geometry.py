@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import numpy as np
-from numpy.typing import NDArray
+
+from stockchart.stocking.pixels import FloatArray
 
 
-def column_profile(alpha: NDArray[np.float64]) -> NDArray[np.float64]:
+def column_profile(alpha: FloatArray) -> FloatArray:
     """为每个像素计算横向归一化坐标 u（−1 左缘，0 中线，1 右缘）。
 
     用每行的 alpha 覆盖范围动态估计腿宽，保证腿宽变化时（脚踝/大腿）u 坐标
@@ -22,27 +23,22 @@ def column_profile(alpha: NDArray[np.float64]) -> NDArray[np.float64]:
     Returns:
         (H, W) 的 u 坐标数组。
     """
-    H, W = alpha.shape
-    u = np.zeros_like(alpha)
-    xs = np.arange(W, dtype=np.float64)
-    for y in range(H):
-        row = alpha[y]
-        covered = np.where(row > 0.05)[0]
-        if covered.size == 0:
-            continue
-        x_left, x_right = float(covered[0]), float(covered[-1])
-        width = x_right - x_left
-        if width < 1.0:
-            continue
-        u[y] = (xs - (x_left + x_right) * 0.5) / (width * 0.5)
+    _, W = alpha.shape
+    covered = alpha > 0.05
+    left = covered.argmax(axis=1).astype(np.float32)[:, None]
+    right = (W - 1 - covered[:, ::-1].argmax(axis=1)).astype(np.float32)[:, None]
+    width = right - left
+    xs = np.arange(W, dtype=np.float32)
+    u = (xs - (left + right) * 0.5) / np.maximum(width * 0.5, 0.5)
+    u[~covered.any(axis=1) | (width[:, 0] < 1)] = 0.0
     return u
 
 
 def curve_dip(
-    u: NDArray[np.float64],
-    alpha: NDArray[np.float64],
+    u: FloatArray,
+    alpha: FloatArray,
     curve: float,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """计算环形线条的透视下弯量（像素，正值向下）。
 
     圆柱在略微俯视时，横向环绕线呈弧线：腿中线处下垂最多、两侧缘为 0，
@@ -63,10 +59,10 @@ def curve_dip(
 
 
 def surface_abs_x(
-    u: NDArray[np.float64],
-    alpha: NDArray[np.float64],
+    u: FloatArray,
+    alpha: FloatArray,
     perspective: float,
-) -> NDArray[np.float64]:
+) -> FloatArray:
     """把屏幕归一化坐标映射到圆柱表面的横向绝对坐标。
 
     0 保持屏幕坐标（图案均匀），1 使用 arcsin 映射（越靠两侧越密）；

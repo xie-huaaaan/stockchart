@@ -68,7 +68,7 @@ class Leg:
     svg: bytes | None = None
 
     def raster_at(self, pixels_per_unit: float) -> np.ndarray:
-        """Render the vector source into a bitmap at the target density, cached on the current Leg.
+        """Rasterize at the target density and share read-only pixel caches across the process.
 
         Args:
             pixels_per_unit: target pixels / design pixels.
