@@ -39,12 +39,15 @@ MODULES = [
     "stocking/render.py",
     "stocking/styles.py",
     "text/render.py",
-    "topline.py",
+    "topline/api.py",
+    "topline/options.py",
 ]
 
 # 拆分后的子包：这些模块目前只含私有实现，列入清单是为了将来有公开 API 时能被覆盖
 SUBPACKAGE_MODULES = [
     "plot/draw.py",
+    "stocking/presets.py",
+    "topline/plan.py",
     "plot/layout.py",
     "stocking/edge.py",
     "stocking/fabric.py",

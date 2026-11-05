@@ -8,14 +8,6 @@ from __future__ import annotations
 
 from stockchart.plot.api import BarPlot
 from stockchart.plot.scale import Scale
-from stockchart.plot.styles import (
-    check_cycle,
-    check_pairing,
-    cycle_styles,
-    normalize_style_seq,
-    resolve_style,
-    select_legs_for_groups,
-)
 from stockchart.plot.types import (
     AxisStyle,
     BarSide,
@@ -38,10 +30,4 @@ __all__ = [
     "TitleAlign",
     "XLabelPos",
     "XLabelRotation",
-    "check_cycle",
-    "check_pairing",
-    "cycle_styles",
-    "normalize_style_seq",
-    "resolve_style",
-    "select_legs_for_groups",
 ]
