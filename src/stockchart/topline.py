@@ -44,6 +44,7 @@ from stockchart.plot import (
     XLabelPos,
     XLabelRotation,
     _BarRecord,
+    _format_number,
     _LegSpec,
     _normalize_style_seq,
     _select_legs_for_groups,
@@ -169,10 +170,10 @@ def _check_fill_bounds(max_fill: float, min_fill: float) -> None:
 
 
 def _format_value(value: float) -> str:
-    """格式化数值标签。
+    """格式化数值标签（与刻度同一紧凑规则，宽度有界）。
 
-    与刻度不同，数值标签应尽量保留原始精度：整数直接输出，非整数使用
-    Python 的最短往返表示，避免大数被截成 6 位有效数字。
+    数值标签不参与画布布局预留，宽度必须有上界：6 位有效数字，大数/极小数
+    自动科学计数法；避免最短往返表示产生 0.30000000000000004 这类超长串。
 
     Args:
         value: 数据值。
@@ -180,10 +181,7 @@ def _format_value(value: float) -> str:
     Returns:
         数值的可读字符串。
     """
-    number = float(value)
-    if number.is_integer():
-        return str(int(number))
-    return repr(number)
+    return _format_number(value)
 
 
 def _select_legs(

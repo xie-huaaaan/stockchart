@@ -239,7 +239,9 @@ class BarPlot:
         row, auto by default: one row if it fits, otherwise wrapped by
         width. When ncol is given, all columns are equally wide and each
         row is centered as a whole; a short last row may therefore not line
-        up with the columns above. A single label wider than the available
+        up with the columns above. An over-large ncol may overflow the canvas
+        (no automatic shrinking); prefer the default auto value. A single
+        label wider than the available
         row width is wrapped onto multiple lines (at most 3; if it still
         does not fit, the last line is elided); under a given ncol it wraps
         by column width. The height the legend occupies and the wrapped line

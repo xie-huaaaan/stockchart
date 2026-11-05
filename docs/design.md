@@ -326,6 +326,9 @@ later if needed.
   center on the welt row**, not the sole center — the leg assets themselves
   are tilted, so centering on the sole would visibly miss the welt. Stocking
   height is hard to read precisely, and this is common in infographic use.
+  Value labels **do not take part in layout reservation** (they never change
+  the canvas size); their width is bounded by 6-significant-digit formatting
+  (automatic scientific notation for large or tiny numbers).
 - **y-axis grid lines** (L2 `add_y_axis(grid=True)`, L4
   `bar/mirror_bar(grid=True)`): horizontal dashed lines along each tick (light
   warm gray, drawn beneath the legs and stockings to help align readings);
@@ -436,6 +439,37 @@ Five layers; full signatures and semantics in the [API reference](api/index.md):
   grid, names go through `add_y_axis_name`; the x-axis name uses
   `add_x_axis_name`. This way names can be written standalone even on charts
   with no axes (free-form layout).
+
+## Non-Goals and Known Limitations
+
+The following behaviors are **intentionally not supported or improved**; avoid
+them in practice. Ordinary Chinese/English/numeric charts are unaffected.
+
+- **Full cross-segment bidi reordering**: when right-to-left text (e.g. Arabic)
+  mixes with other text and falls into different font segments, segment order
+  is not reordered (RTL *within* a segment is correct). Chart labels are
+  dominated by Chinese, English, and digits; per-segment font control is kept
+  instead of whole-line bidi.
+- **Vertical punctuation forms in CJK vertical axis names**: punctuation in a
+  vertical CJK axis name keeps its horizontal form; input vertical-form
+  characters directly if needed.
+- **Combining marks and emoji modifiers split across fonts**: when a base
+  character and its modifier resolve to different fonts, they are drawn as two
+  segments and may misalign (normal text is unaffected).
+- **Empty-string titles / axis names still reserve layout space**: only when
+  `""` is passed explicitly; omit the parameter instead.
+- **Over-large legend `ncol` may overflow the canvas**: no automatic shrinking;
+  use the default (auto) column count or a reasonable ncol.
+- **Value labels do not take part in layout reservation**: the canvas size is
+  intentionally unaffected; width is bounded by 6-significant-digit
+  formatting, and in extreme cases labels may still overlap neighbours.
+- **`library.render_catalog` still uses PIL's built-in fonts**: the asset
+  catalog image is an internal dev tool and is not unified with the skia text
+  engine.
+
+Packaging note: when building a standalone Windows executable (PyInstaller
+etc.), ship the `icudtl.dat` bundled in the skia-python wheel, otherwise line
+breaking/shaping may fail; running from Python directly is unaffected.
 
 ## Development Order
 

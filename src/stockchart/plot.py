@@ -582,11 +582,28 @@ def _layout_axis_name(name: _AxisNameRecord, available_px: float) -> tuple[list[
     return lines, width
 
 
-def _format_tick(value: float) -> str:
-    """格式化刻度数字。
+def _format_number(value: float) -> str:
+    """把数值格式化为宽度有界的短文本（刻度与数值标签共用）。
 
-    整数值不带小数点；非整数用紧凑的 6 位有效数字表示，避免把 1e-10 之类
-    的小刻度误判成 0。
+    绝对值小于 10^6 的整数不带小数点；其余统一 6 位有效数字，大数/极小数
+    自动切科学计数法（如 1.23457e+06、1e-10）。输出长度上限约 13 字符——
+    数值标签不参与布局预留，必须避免 repr 产生 0.30000000000000004 这类
+    超长串。
+
+    Args:
+        value: 待格式化的有限数值。
+
+    Returns:
+        紧凑的可读字符串。
+    """
+    number = float(value)
+    if number.is_integer() and abs(number) < 1e6:
+        return str(int(number))
+    return f"{number:g}"
+
+
+def _format_tick(value: float) -> str:
+    """格式化刻度数字（与数值标签同一规则，见 `_format_number`）。
 
     Args:
         value: 刻度值。
@@ -594,10 +611,7 @@ def _format_tick(value: float) -> str:
     Returns:
         适合轴标签的短字符串。
     """
-    number = float(value)
-    if number.is_integer():
-        return str(int(number))
-    return f"{number:g}"
+    return _format_number(value)
 
 
 def _skia_image(arr: NDArray[np.uint8]) -> skia.Image:

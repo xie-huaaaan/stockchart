@@ -249,9 +249,11 @@ class TestBarLayout:
         p = bar([12.0, 34.0], value_labels=True, seed=1)
         assert [b.value_label for b in p._bars] == ["12", "34"]
 
-    def test_value_labels_keep_precision(self) -> None:
-        p = bar([1234567.0, 0.123456789], value_labels=True, seed=1)
-        assert [b.value_label for b in p._bars] == ["1234567", "0.123456789"]
+    def test_value_labels_bounded_width(self) -> None:
+        # 数值标签不参与布局，宽度必须有界：6 位有效数字、大数自动科学计数法，
+        # 且不得输出 0.1+0.2 这类最短往返噪声
+        p = bar([1234567.0, 0.123456789, 0.1 + 0.2], value_labels=True, seed=1)
+        assert [b.value_label for b in p._bars] == ["1.23457e+06", "0.123457", "0.3"]
 
     def test_title_and_axis_present(self) -> None:
         p = bar([1.0, 2.0], title="标题", seed=1)

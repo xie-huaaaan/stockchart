@@ -121,7 +121,7 @@ def bar(
             pair. For a single series, "group" takes the left leg of a fresh
             pair for each group.
         value_labels: when True, handwritten value labels above the
-            stocking tops.
+            stocking tops (6 significant digits; not part of layout).
         max_fill: fraction of the asset design height the maximum maps to,
             in (0, 1] (default 0.85).
         min_fill: only enabled when the data contains negatives
@@ -182,7 +182,8 @@ def mirror_bar(
         cycle: same semantics as bar().
         paired: same semantics as bar(); mirrored charts also default to "auto".
         value_labels: when True, handwritten value labels — above the
-            stocking top for upper legs, below it for lower legs.
+            stocking top for upper legs, below it for lower legs (6
+            significant digits; not part of layout).
         max_abs_fill: fraction of the asset design height the largest
             absolute value maps to, in (0, 1] (default 0.85).
         options: same semantics as bar(). height_px controls the bar-area
