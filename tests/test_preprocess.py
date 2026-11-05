@@ -6,8 +6,18 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+import skia
 
-from stockchart import STYLES, Fishnet, Leg, LegLibrary, Plain, StockingStyle, render_stocking
+from stockchart import (
+    STYLES,
+    Fishnet,
+    Leg,
+    LegLibrary,
+    Plain,
+    StockingStyle,
+    render_stocking,
+    vector,
+)
 from stockchart._cache import ByteCache
 from stockchart.stocking import preprocess
 from stockchart.stocking.styles import Lace, Shading, Welt
@@ -57,6 +67,64 @@ def test_separate_libraries_share_readonly_raster() -> None:
     right = LegLibrary().get("leg_02").at_density(2)
     assert left.image is right.image
     assert not left.image.flags.writeable
+
+
+def test_vector_commands_reused_across_densities(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 非内置 SVG 走录制回退；覆盖裁切、透明颜色、通道顺序与多倍率复用。
+    svg = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="40">'
+        b'<defs><clipPath id="leg"><ellipse cx="10" cy="20" rx="8" ry="19"/>'
+        b'</clipPath></defs><g clip-path="url(#leg)">'
+        b'<rect width="20" height="40" fill="#d09070" fill-opacity="0.6"/></g></svg>'
+    )
+    calls = 0
+    record = vector._record_svg
+
+    def counted(source: bytes, width: int, height: int) -> skia.Picture:
+        nonlocal calls
+        calls += 1
+        return record(source, width, height)
+
+    monkeypatch.setattr(vector, "_record_svg", counted)
+    monkeypatch.setattr(vector, "_picture_cache", ByteCache[vector._SvgPicture](1024 * 1024))
+    monkeypatch.setattr(vector, "_raster_cache", ByteCache[np.ndarray](1024 * 1024))
+    for scale in (0.5, 1, 2, 6):
+        width, height = round(20 * scale), round(40 * scale)
+        image = vector.rasterize_svg(svg, width, height)
+        dom = skia.SVGDOM.MakeFromStream(skia.MemoryStream(svg))
+        assert dom is not None
+        dom.setContainerSize(skia.Size(20, 40))
+        surface = skia.Surface(width, height)
+        canvas = surface.getCanvas()
+        canvas.scale(scale, scale)
+        dom.render(canvas)
+        direct = surface.makeImageSnapshot().toarray(colorType=skia.ColorType.kRGBA_8888_ColorType)
+        np.testing.assert_array_equal(image, direct)
+        assert image.flags.c_contiguous
+        assert not image.flags.writeable
+    assert calls == 1
+    changed = vector.rasterize_svg(svg.replace(b"#d09070", b"#809070"), 20, 40)
+    assert calls == 2
+    assert not np.array_equal(changed, vector.rasterize_svg(svg, 20, 40))
+
+
+def test_bundled_vector_falls_back_after_skia_upgrade(monkeypatch: pytest.MonkeyPatch) -> None:
+    leg = LegLibrary().get("leg_01")
+    assert leg.svg is not None
+    manifest = vector._bundled_sources()
+    digest = preprocess._source_key(leg).hex()
+    assert digest in manifest
+    bundled = vector.rasterize_svg(leg.svg, leg.width * 2, leg.height * 2)
+    monkeypatch.setattr(vector.skia, "__version__", "different-skia-version")
+    vector._bundled_sources.cache_clear()
+    try:
+        assert not vector._bundled_sources()
+        monkeypatch.setattr(vector, "_picture_cache", ByteCache[vector._SvgPicture](1024 * 1024))
+        monkeypatch.setattr(vector, "_raster_cache", ByteCache[np.ndarray](8 * 1024 * 1024))
+        rebuilt = vector.rasterize_svg(leg.svg, leg.width * 2, leg.height * 2)
+        np.testing.assert_array_equal(bundled, rebuilt)
+    finally:
+        vector._bundled_sources.cache_clear()
 
 
 def test_ink_boost_covers_top_material_independently_of_body() -> None:

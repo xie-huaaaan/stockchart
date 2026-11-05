@@ -24,7 +24,8 @@ stockchart 是一个创意绘图库：用丝袜被拉起的高度表示数据大
 
 - `src/stockchart/`：库源码；`assets/` 只放 `leg_XX.svg` 与 `legs.json`。`plot/`、`stocking/`、`topline/` 是子包，按职责分模块（数据形状 / 计算 / 绘制），不要把文件重新堆回一个大文件。
 - `tests/`、`docs/`；素材栅格与预处理缓存已在生产代码中跨实例共享，测试不再额外替换栅格化函数。
-- `src/stockchart/_precomputed/` 存放随包分发的内置素材墨线数据，由 `uv run python tools/prepare_asset_data.py` 生成；修改 SVG 或墨线提取算法后重生成，数据沿用素材 ARR 许可。缺失或过期时运行时从素材提取一次并缓存在内存中。
+- `src/stockchart/_precomputed/` 存放随包分发的内置素材墨线数据（NPZ）与矢量绘图指令（SKP），由 `uv run python tools/prepare_asset_data.py` 生成；修改 SVG、墨线提取算法或 Skia 版本后重生成，数据沿用素材 ARR 许可。墨线缺失或过期时从素材提取一次；指令按源摘要与 Skia 版本校验，不匹配时从 SVG 录制一次，均缓存在内存中。
+- `tools/simplify_assets.py 原始SVG目录` 用中等追踪参数重建 SVG 色层并保留裁切路径，源目录须与输出不同，避免反复简化造成累积损失；常规母图生成仍走 `split_master.py`，两者共用追踪参数。
 - `tools/`：开发脚本，不属于公开 API，可依赖 scipy / vtracer（可引入其他库，要求没运行时依赖那么严格）。
 - `dist/`、`out/`：开发素材与评审产物，不打包、运行时不引用。
 

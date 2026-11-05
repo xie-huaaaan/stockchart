@@ -229,4 +229,4 @@ Copyright © 2026 xie-huaaaan。
 
 源代码以 [Mozilla Public License 2.0](LICENSE)（MPL-2.0）发布。你可以在闭源项目中使用 `stockchart`；如果修改了受 MPL 覆盖的源文件，这些文件需要继续以 MPL-2.0 提供。
 
-内置腿部素材（`src/stockchart/assets/leg_*.svg` 与 `legs.json`）及其预处理数据（`src/stockchart/_precomputed/leg_*.npz`）为 **All Rights Reserved（保留所有权利）**，不在 MPL-2.0 覆盖范围内，详见 [素材许可](ASSETS-LICENSE)。素材可用于通过 `stockchart` 渲染图表，你生成的图表归你所有；素材本身除作为未修改的完整软件包的一部分外，不得单独提取或再分发。
+内置腿部素材（`src/stockchart/assets/leg_*.svg` 与 `legs.json`）及其预制墨线与矢量绘图指令（`src/stockchart/_precomputed/leg_*.npz` / `leg_*.skp`）为 **All Rights Reserved（保留所有权利）**，不在 MPL-2.0 覆盖范围内，详见 [素材许可](ASSETS-LICENSE)。素材可用于通过 `stockchart` 渲染图表，你生成的图表归你所有；素材本身除作为未修改的完整软件包的一部分外，不得单独提取或再分发。

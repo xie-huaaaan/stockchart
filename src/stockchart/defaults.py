@@ -18,6 +18,9 @@ DEFAULT_STOCKING_STYLE = "black_sheer"
 DEFAULT_RASTER_CACHE_BYTES = 64 * 1024 * 1024
 """进程共享 SVG 栅格缓存的像素数据预算（字节）。"""
 
+DEFAULT_PICTURE_CACHE_BYTES = 32 * 1024 * 1024
+"""进程共享 SVG 绘图指令缓存的估计内存预算（字节）。"""
+
 DEFAULT_PREPARED_CACHE_BYTES = 64 * 1024 * 1024
 """进程共享腿形预处理缓存的数据预算（字节）。"""
 

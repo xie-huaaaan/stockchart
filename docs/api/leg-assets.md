@@ -6,6 +6,8 @@
 
 26 legs / 13 pairs; every leg is a transparent SVG. IDs and pairings are frozen once published.
 
+Bundled assets also include precomputed vector drawing commands and ink maps to reduce first-use work. Vector commands are checked against the source digest and Skia version; mismatches are rebuilt from SVG and shared within the process under a memory budget. Drawing still rasterizes at the target pixel density rather than scaling a pre-rendered bitmap.
+
 | pair | left leg | right leg | design widths |
 | --- | --- | --- | --- |
 | pair_01 | leg_01 | leg_02 | 169 / 159 |

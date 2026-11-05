@@ -1,6 +1,7 @@
 The Mozilla Public License 2.0 below covers the stockchart source code only.
-The built-in leg artwork and its derived preprocessing data are licensed separately under the terms in the
-ASSETS-LICENSE file in this directory and is not covered by this license.
+The built-in leg artwork and its derived ink maps and vector drawing commands are
+licensed separately under the terms in the ASSETS-LICENSE file in this directory
+and are not covered by this license.
 
 ------------------------------------------------------------------------------
 
