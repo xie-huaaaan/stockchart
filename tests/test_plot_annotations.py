@@ -18,7 +18,8 @@ from stockchart.defaults import (
     DEFAULT_X_LABEL_SIZE,
     DEFAULT_Y_EXTENT,
 )
-from stockchart.plot import _format_tick, _layout_axis_name
+from stockchart.plot.layout import layout_axis_name
+from stockchart.plot.scale import format_tick
 
 INK = np.array((72, 72, 72), dtype=int)
 
@@ -46,9 +47,9 @@ class TestAddYAxis:
         assert m[:, :100].any()
 
     def test_tiny_ticks_do_not_round_to_zero(self) -> None:
-        assert _format_tick(1e-10) == "1e-10"
-        assert _format_tick(0.0) == "0"
-        assert _format_tick(12.0) == "12"
+        assert format_tick(1e-10) == "1e-10"
+        assert format_tick(0.0) == "0"
+        assert format_tick(12.0) == "12"
 
     def test_negative_domain_extends_below(self) -> None:
         up_only = BarPlot(600, extent_down=0)
@@ -395,7 +396,7 @@ class TestAxisNames:
         p = BarPlot(600, extent_up=120).add_y_axis_name("非常长的纵轴名称示例")
         assert p._y_axis_name is not None
         layout = p._layout()
-        columns, block_w = _layout_axis_name(p._y_axis_name, layout.y_name_span)
+        columns, block_w = layout_axis_name(p._y_axis_name, layout.y_name_span)
         assert len(columns) > 1
         assert block_w > p._y_axis_name.size_px
         cell = p._y_axis_name.size_px * DEFAULT_AXIS_NAME_LINE_FACTOR
@@ -405,7 +406,7 @@ class TestAxisNames:
         p = BarPlot(600, extent_up=120).add_y_axis_name("A very long vertical axis name")
         assert p._y_axis_name is not None
         layout = p._layout()
-        lines, block_w = _layout_axis_name(p._y_axis_name, layout.y_name_span)
+        lines, block_w = layout_axis_name(p._y_axis_name, layout.y_name_span)
         assert len(lines) > 1
         assert block_w > p._y_axis_name.size_px
         assert all(

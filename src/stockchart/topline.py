@@ -43,12 +43,10 @@ from stockchart.plot import (
     TitleAlign,
     XLabelPos,
     XLabelRotation,
-    _BarRecord,
-    _format_number,
-    _LegSpec,
-    _normalize_style_seq,
-    _select_legs_for_groups,
 )
+from stockchart.plot.scale import format_number
+from stockchart.plot.styles import normalize_style_seq, select_legs_for_groups
+from stockchart.plot.types import BarRecord, LegSpec
 from stockchart.stocking import StyleSeq
 from stockchart.text import FontSpec, measure_text
 
@@ -182,7 +180,7 @@ def _format_value(value: float) -> str:
     Returns:
         数值的可读字符串。
     """
-    return _format_number(value)
+    return format_number(value)
 
 
 def _select_legs(
@@ -201,11 +199,11 @@ def _select_legs(
     Returns:
         与 rows 同构的 Leg 列表。
     """
-    return _select_legs_for_groups([len(row) for row in rows], paired=paired, seed=seed)
+    return select_legs_for_groups([len(row) for row in rows], paired=paired, seed=seed)
 
 
 def _plan_slots(
-    specs: list[list[list[_LegSpec]]],
+    specs: list[list[list[LegSpec]]],
     *,
     labels: Sequence[str] | None,
     bar_gap: float,
@@ -237,7 +235,7 @@ def _plan_slots(
 
 
 def _assemble(
-    specs: list[list[list[_LegSpec]]],
+    specs: list[list[list[LegSpec]]],
     *,
     labels: Sequence[str] | None,
     title: str | None,
@@ -247,7 +245,7 @@ def _assemble(
     x_label_pos: XLabelPos,
     seed: int | None,
     options: ChartOptions,
-) -> tuple[BarPlot, list[list[list[_BarRecord]]]]:
+) -> tuple[BarPlot, list[list[list[BarRecord]]]]:
     """按槽位建图并摆好腿。
 
     Args:
@@ -487,7 +485,7 @@ def bar(
 
     rng = random.Random(seed)
     legs = _select_legs(rows, paired=paired, seed=rng.getrandbits(32))
-    styles = _normalize_style_seq(style)
+    styles = normalize_style_seq(style)
     # 所有柱共用最矮腿的设计高度作为 100%，排序在截顶保护下仍可直接比较；
     # 内置素材高度均为 720，因此等价于以 720 为参考。
     design_height = float(min(leg.height for row in legs for leg in row))
@@ -522,12 +520,12 @@ def bar(
             scale = Scale((vmin, vmax), (min_fill * design_height, max_fill * design_height))
             ticks = None
 
-    specs: list[list[list[_LegSpec]]] = []
+    specs: list[list[list[LegSpec]]] = []
     for g, row in enumerate(rows):
-        slot: list[list[_LegSpec]] = []
+        slot: list[list[LegSpec]] = []
         for s in range(len(row)):
             idx = _style_index(mode, g=g, s=s, series=len(row))
-            slot.append([_LegSpec(legs[g][s], heights[g][s], "up", styles[idx % len(styles)])])
+            slot.append([LegSpec(legs[g][s], heights[g][s], "up", styles[idx % len(styles)])])
         specs.append(slot)
 
     bar_gap = options.get("bar_gap", DEFAULT_BAR_GAP)
@@ -645,7 +643,7 @@ def mirror_bar(
 
     rng = random.Random(seed)
     legs = _select_legs(rows, paired=paired, seed=rng.getrandbits(32))
-    styles = _normalize_style_seq(style)
+    styles = normalize_style_seq(style)
     # 与 bar() 相同：取最矮腿的设计高度作统一参考，避免矮腿截顶。
     design_height = float(min(leg.height for row in legs for leg in row))
 
@@ -665,19 +663,19 @@ def mirror_bar(
         ticks = None
 
     both = mode == "both"
-    specs: list[list[list[_LegSpec]]] = []
+    specs: list[list[list[LegSpec]]] = []
     for g, row in enumerate(rows):
-        slot: list[list[_LegSpec]] = []
+        slot: list[list[LegSpec]] = []
         for s, v in enumerate(row):
             idx = _style_index(mode_cycle, g=g, s=s, series=len(row))
             st = styles[idx % len(styles)]
             h = abs(v) * ratio
             side: BarSide = "up" if v >= 0 else "down"
             # 数据侧在首位，value_labels 只标数据侧
-            col = [_LegSpec(legs[g][s], h, side, st)]
+            col = [LegSpec(legs[g][s], h, side, st)]
             if both:
                 other: BarSide = "down" if side == "up" else "up"
-                col.append(_LegSpec(legs[g][s], 0.0, other, st))
+                col.append(LegSpec(legs[g][s], 0.0, other, st))
             slot.append(col)
         specs.append(slot)
 

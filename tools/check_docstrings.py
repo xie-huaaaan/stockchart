@@ -31,7 +31,10 @@ MODULES = [
     "data.py",
     "legs.py",
     "library.py",
-    "plot.py",
+    "plot/api.py",
+    "plot/scale.py",
+    "plot/styles.py",
+    "plot/types.py",
     "sketch.py",
     "stocking/render.py",
     "stocking/styles.py",
@@ -41,6 +44,8 @@ MODULES = [
 
 # 拆分后的子包：这些模块目前只含私有实现，列入清单是为了将来有公开 API 时能被覆盖
 SUBPACKAGE_MODULES = [
+    "plot/draw.py",
+    "plot/layout.py",
     "stocking/edge.py",
     "stocking/fabric.py",
     "stocking/geometry.py",
