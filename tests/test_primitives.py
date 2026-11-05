@@ -162,22 +162,14 @@ class TestDrawText:
         assert int(ink_rows(tops).min()) >= 150
         assert int(ink_rows(bottoms).max()) <= 150
 
-    @pytest.mark.parametrize(
-        "anchor",
-        [
-            ("middle", "baseline"),  # 水平取值非法
-            ("left", "center"),  # 垂直取值非法
-            ("top", "top"),  # 两个都非法
-        ],
-    )
-    def test_invalid_anchor_raises(self, anchor: tuple[str, str]) -> None:
-        with pytest.raises(ValueError):
-            draw_text(blank(), "A", 20, 100, size_px=30, anchor=anchor)  # type: ignore[arg-type]
-
-    @pytest.mark.parametrize("size_px", [0, -5])
-    def test_nonpositive_size_raises(self, size_px: float) -> None:
-        with pytest.raises(ValueError):
-            draw_text(blank(), "A", 20, 100, size_px=size_px)
+    def test_invalid_params_raise(self) -> None:
+        """非法锚点与非法字号都要报错。"""
+        for anchor in (("middle", "baseline"), ("left", "center"), ("top", "top")):
+            with pytest.raises(ValueError):
+                draw_text(blank(), "A", 20, 100, size_px=30, anchor=anchor)  # type: ignore[arg-type]
+        for size_px in (0, -5):
+            with pytest.raises(ValueError):
+                draw_text(blank(), "A", 20, 100, size_px=size_px)
 
     def test_empty_font_list_raises(self) -> None:
         with pytest.raises(ValueError):
@@ -267,11 +259,10 @@ class TestSketchAxis:
             c = blank()
             sketch_axis(c, direction=direction, x=80, y=100, length=120)  # type: ignore[arg-type]
             assert ink_mask(c).any()
-
-    def test_down_axis_without_arrow(self) -> None:
-        c = blank()
-        sketch_axis(c, direction="down", x=80, y=20, length=120, arrow=False)
-        assert ink_mask(c).any()
+        # 关掉箭头也要画出干线
+        no_arrow = blank()
+        sketch_axis(no_arrow, direction="down", x=80, y=20, length=120, arrow=False)
+        assert ink_mask(no_arrow).any()
 
     def test_deterministic(self) -> None:
         c1, c2 = blank(), blank()

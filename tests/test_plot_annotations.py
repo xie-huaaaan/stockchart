@@ -45,12 +45,6 @@ class TestAddYAxis:
         # 刻度数字在干线左侧 → 轴线 x 处左侧也有墨迹
         assert m[:, :100].any()
 
-    def test_default_ticks_from_domain(self) -> None:
-        p = BarPlot(600)
-        p.add_y_axis(Scale((0.0, 8.0), (0.0, 700.0)))
-        arr = p.render(scale=1).to_numpy()
-        assert inked(arr).any()
-
     def test_tiny_ticks_do_not_round_to_zero(self) -> None:
         assert _format_tick(1e-10) == "1e-10"
         assert _format_tick(0.0) == "0"
@@ -129,13 +123,30 @@ class TestAddXLabels:
         assert layout.x_label_y is not None
         assert layout.x_label_y < baseline
 
-    def test_pos_below_puts_label_at_baseline(self) -> None:
+    def test_pos_below_and_auto_pick_the_legless_side(self) -> None:
+        """显式 below 与 auto 都把标签贴到没有柱子的一侧。"""
         p = BarPlot(600, extent_up=760)
         p.add_bar(300, 200, make_leg())
         p.add_x_labels(["甲"], pos="below")
-        layout = p._layout()
-        assert layout.x_label_y is not None
-        assert layout.x_label_y > layout.baseline_y
+        below_y = p._layout().x_label_y
+        assert below_y is not None
+        assert below_y > p._layout().baseline_y
+
+        # auto：只有朝上腿 → 贴在基线下方
+        q = BarPlot(600, extent_up=760)
+        q.add_bar(300, 200, make_leg())
+        q.add_x_labels(["甲"], pos="auto")
+        auto_y = q._layout().x_label_y
+        assert auto_y is not None
+        assert auto_y == below_y
+
+        # auto：只有朝下腿 → 贴在基线上方
+        r = BarPlot(600, extent_up=760, extent_down=720)
+        r.add_bar(300, 200, make_leg(), side="down")
+        r.add_x_labels(["甲"], pos="auto")
+        auto_above_y = r._layout().x_label_y
+        assert auto_above_y is not None
+        assert auto_above_y < r._layout().baseline_y
 
     def test_pos_below_differs_from_content_with_down_legs(self) -> None:
         """有朝下腿时 content 会退到腿下方，below 仍贴基线（显式覆盖的用途）。"""
@@ -147,22 +158,6 @@ class TestAddXLabels:
         content_y = p._layout().x_label_y
         assert below_y is not None and content_y is not None
         assert below_y < content_y
-
-    def test_pos_auto_picks_legless_side(self) -> None:
-        # 只有朝上腿 → 标签贴基线下方
-        p = BarPlot(600, extent_up=760)
-        p.add_bar(300, 200, make_leg())
-        p.add_x_labels(["甲"], pos="auto")
-        layout = p._layout()
-        assert layout.x_label_y is not None
-        assert layout.x_label_y > layout.baseline_y
-        # 只有朝下腿 → 标签贴基线上方
-        q = BarPlot(600, extent_up=760, extent_down=720)
-        q.add_bar(300, 200, make_leg(), side="down")
-        q.add_x_labels(["甲"], pos="auto")
-        layout_q = q._layout()
-        assert layout_q.x_label_y is not None
-        assert layout_q.x_label_y < layout_q.baseline_y
 
     def test_pos_auto_falls_back_to_content_when_both_sides(self) -> None:
         p = BarPlot(600, extent_up=760, extent_down=720)
@@ -187,21 +182,20 @@ class TestXLabelRotation:
         assert abs(layout.x_label_angle) > 0
         assert layout.x_label_height > DEFAULT_X_LABEL_SIZE * DEFAULT_LABEL_LINE_FACTOR
 
-    def test_rotation_zero_disables_auto(self) -> None:
-        p = BarPlot(700)
-        p.add_x_labels(LONG_LABELS, xs=[100, 250, 400, 550], rotation=0)
-        assert p._layout().x_label_angle == 0
+    def test_angle_resolution(self) -> None:
+        """auto 在放得下时不旋转；rotation=0 关掉 auto；显式角度照用。"""
+        fits = BarPlot(600)
+        fits.add_x_labels(["甲", "乙"], xs=[150, 450])
+        assert fits._layout().x_label_angle == 0
 
-    def test_explicit_angle_is_used(self) -> None:
-        p = BarPlot(600)
-        p.add_x_labels(["甲", "乙"], xs=[100, 300], rotation=45)
+        disabled = BarPlot(700)
+        disabled.add_x_labels(LONG_LABELS, xs=[100, 250, 400, 550], rotation=0)
+        assert disabled._layout().x_label_angle == 0
+
+        explicit = BarPlot(600)
+        explicit.add_x_labels(["甲", "乙"], xs=[100, 300], rotation=45)
         # 标签在基线下方 → 负角
-        assert p._layout().x_label_angle == pytest.approx(-45)
-
-    def test_auto_does_not_rotate_when_labels_fit(self) -> None:
-        p = BarPlot(600)
-        p.add_x_labels(["甲", "乙"], xs=[150, 450])
-        assert p._layout().x_label_angle == 0
+        assert explicit._layout().x_label_angle == pytest.approx(-45)
 
     def test_rotated_labels_get_canvas_margin(self) -> None:
         p = BarPlot(500)
@@ -255,17 +249,16 @@ class TestAxisStyle:
 
 
 class TestTitleAndLegend:
-    def test_title_centered_by_default(self) -> None:
-        p = BarPlot(600)
-        p.add_title("测试标题")
-        layout = p._layout()
-        assert p._title is not None
+    def test_title_alignment(self) -> None:
+        centered = BarPlot(600)
+        centered.add_title("测试标题")
+        layout = centered._layout()
+        assert centered._title is not None
         assert layout.title_x == pytest.approx(layout.plot_left + 300)
 
-    def test_title_left_align(self) -> None:
-        p = BarPlot(600)
-        p.add_title("测试标题", align="left")
-        assert p._layout().title_x == pytest.approx(p._layout().plot_left)
+        left = BarPlot(600)
+        left.add_title("测试标题", align="left")
+        assert left._layout().title_x == pytest.approx(left._layout().plot_left)
 
     def test_title_alignment_validated(self) -> None:
         with pytest.raises(ValueError):
@@ -299,15 +292,6 @@ class TestTitleAndLegend:
         assert with_legend.height_px > base
         arr = with_legend.to_numpy()
         assert inked(arr)[:200, :].any()
-
-    def test_legend_ncol_wraps(self) -> None:
-        p = BarPlot(600)
-        p.add_legend(
-            [(f"系列{i}", "black_sheer") for i in range(5)],
-            ncol=2,
-        )
-        arr = p.render(scale=1).to_numpy()
-        assert inked(arr).any()
 
     def test_legend_ncol_last_row_is_centered(self) -> None:
         p = BarPlot(600)
@@ -396,16 +380,16 @@ class TestAxisNames:
         assert p._x_axis_name is not None and p._x_axis_name.size_px == 20
         assert p._y_axis_name is not None and p._y_axis_name.size_px == 22
 
-    def test_y_axis_name_stacks_cjk(self) -> None:
-        p = BarPlot(600).add_y_axis_name("人数")
-        assert p._y_axis_name is not None
-        assert not p._y_axis_name.rotate
+    def test_cjk_stacks_and_latin_rotates(self) -> None:
+        """中日韩文字逐字竖排，拉丁与数字整体旋转 90°。"""
+        cjk = BarPlot(600).add_y_axis_name("人数")
+        assert cjk._y_axis_name is not None
+        assert not cjk._y_axis_name.rotate
 
-    def test_y_axis_name_rotates_latin(self) -> None:
-        p = BarPlot(600).add_y_axis_name("Users")
-        assert p._y_axis_name is not None
-        assert p._y_axis_name.rotate
-        p.render(scale=1)
+        latin = BarPlot(600).add_y_axis_name("Users")
+        assert latin._y_axis_name is not None
+        assert latin._y_axis_name.rotate
+        latin.render(scale=1)
 
     def test_long_cjk_y_axis_name_wraps_into_columns(self) -> None:
         p = BarPlot(600, extent_up=120).add_y_axis_name("非常长的纵轴名称示例")

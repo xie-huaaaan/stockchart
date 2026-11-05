@@ -13,7 +13,7 @@ from stockchart import STYLES, BarPlot, Leg
 from stockchart.defaults import DEFAULT_GROUP_GAP
 
 
-def leg_w(w: int, side: str = "left") -> Leg:
+def leg_w(w: int) -> Leg:
     return make_leg(h=720, w=w)
 
 
@@ -58,17 +58,15 @@ class TestAddBars:
             STYLES["white_tights"],
         ]
 
-    def test_explicit_legs_length_mismatch(self) -> None:
-        p = BarPlot(2000)
-        with pytest.raises(ValueError):
-            p.add_bars([100.0, 200.0], legs=[leg_w(150)])
-
     def test_explicit_legs_ignore_paired(self) -> None:
         p = BarPlot(2000)
         p.add_bars([100.0], legs=[leg_w(150)], paired="not-a-strategy")  # type: ignore[arg-type]
         assert len(p._bars) == 1
 
-    def test_empty_heights_raises(self) -> None:
+    def test_invalid_params_raise(self) -> None:
+        p = BarPlot(2000)
+        with pytest.raises(ValueError):
+            p.add_bars([100.0, 200.0], legs=[leg_w(150)])
         with pytest.raises(ValueError):
             BarPlot(2000).add_bars([])
 
@@ -133,11 +131,6 @@ class TestAddGroupedBars:
         p.add_x_labels(["甲", "乙"])
         assert p._x_labels is not None and p._x_labels.xs is None
 
-    def test_group_single_series_takes_left_legs(self) -> None:
-        p = BarPlot(2000, seed=3)
-        p.add_bars([100.0] * 3, paired="group")
-        assert [b.leg.side for b in p._bars] == ["left", "left", "left"]
-
     def test_auto_pairs_across_group_boundary(self) -> None:
         p = BarPlot(4000, seed=2)
         p.add_grouped_bars([[100.0, 100.0, 100.0], [100.0, 100.0, 100.0]])
@@ -155,6 +148,7 @@ class TestAddGroupedBars:
         assert legs[3].pair_id != legs[2].pair_id
 
     def test_explicit_legs_flattened_length(self) -> None:
+        """显式腿按"组 × 列"摊平；数量不符时报错。"""
         p = BarPlot(4000)
         legs = [leg_w(150) for _ in range(4)]
         with pytest.raises(ValueError):
@@ -162,15 +156,11 @@ class TestAddGroupedBars:
         p.add_grouped_bars([[100.0, 100.0], [100.0, 100.0]], legs=legs)
         assert len(p._bars) == 4
 
-    def test_ragged_groups_rejected(self) -> None:
+    def test_invalid_params_raise(self) -> None:
         with pytest.raises(ValueError, match="系列数须一致"):
             BarPlot(4000).add_grouped_bars([[1.0, 2.0], [3.0]])
-
-    def test_empty_group_rejected(self) -> None:
         with pytest.raises(ValueError):
             BarPlot(4000).add_grouped_bars([[1.0], []])
-
-    def test_invalid_cycle_rejected(self) -> None:
         with pytest.raises(ValueError):
             BarPlot(4000).add_grouped_bars([[1.0]], cycle="bad")  # type: ignore[arg-type]
 
@@ -206,17 +196,13 @@ class TestAddPairedBars:
             STYLES["black_tights"],
         ]
 
-    def test_explicit_pairs_length_mismatch(self) -> None:
+    def test_invalid_params_raise(self) -> None:
         p = BarPlot(2000)
-        pair = (leg_w(150, "left"), leg_w(150, "right"))
+        pair = (leg_w(150), leg_w(150))
         with pytest.raises(ValueError):
             p.add_paired_bars([(1.0, 2.0), (3.0, 4.0)], pairs=[pair])
-
-    def test_group_must_have_exactly_two_values(self) -> None:
         with pytest.raises(ValueError, match="恰好 2 个值"):
             BarPlot(2000).add_paired_bars([(1.0, 2.0, 3.0)])  # type: ignore[list-item]
-
-    def test_invalid_cycle_rejected(self) -> None:
         with pytest.raises(ValueError):
             BarPlot(2000).add_paired_bars([(1.0, 2.0)], cycle="bad")  # type: ignore[arg-type]
 

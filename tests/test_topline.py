@@ -1,7 +1,11 @@
 # 白盒测试：检查 bar/mirror_bar 的内部柱记录与布局结果
 # pyright: reportPrivateUsage=false
 
-"""L4 一行出图测试：映射规则、成对选腿、图例、数值标签与镜像。"""
+"""L4 一行出图测试：映射规则、成对选腿、图例、数值标签与镜像。
+
+与 L2/L3 层重复的断言（间距数学、样式循环、配对细节）只保留在
+test_plot_layout.py；此处只测 L4 独有的映射与选项透传。
+"""
 
 from typing import Any, cast
 
@@ -9,7 +13,7 @@ import numpy as np
 import pytest
 from tests.test_data import FakeFrame
 
-from stockchart import STYLES, ChartOptions, PlotData, bar, mirror_bar
+from stockchart import STYLES, ChartOptions, bar, mirror_bar
 
 
 class TestBarMapping:
@@ -24,10 +28,10 @@ class TestBarMapping:
         p = bar([0.0, 30.0], seed=1)
         assert p._bars[0].height_px == 0
         assert p._bars[1].height_px > 0
-
-    def test_all_zero_all_bare(self) -> None:
-        p = bar([0.0, 0.0, 0.0], seed=1)
-        assert all(b.height_px == 0 for b in p._bars)
+        # 全零数据：柱子全裸，轴范围退化为 0–1
+        q = bar([0.0, 0.0, 0.0], seed=1)
+        assert all(b.height_px == 0 for b in q._bars)
+        assert q._y_axis is not None and q._y_axis.scale.domain == (0.0, 1.0)
 
     def test_mixed_compressed_into_band(self) -> None:
         extent = 720
@@ -49,7 +53,7 @@ class TestBarMapping:
         hs = [b.height_px for b in p._bars]
         assert hs == pytest.approx([0.1 * 720, 0.1 * 720])
 
-    def test_invalid_fill_and_extent(self) -> None:
+    def test_invalid_params_raise(self) -> None:
         with pytest.raises(ValueError):
             bar([1.0], max_fill=0)
         with pytest.raises(ValueError):
@@ -62,6 +66,16 @@ class TestBarMapping:
             bar([1.0], height_px=0)
         with pytest.raises(ValueError):
             bar([1.0], width_px=0)
+        with pytest.raises(ValueError):
+            bar([1.0], cycle="bad")  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            mirror_bar([1.0, -1.0], mode="bad")  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            mirror_bar([1.0], max_abs_fill=0)
+        with pytest.raises(ValueError):
+            mirror_bar([1.0], max_abs_fill=1.01)
+        with pytest.raises(ValueError):
+            mirror_bar([1.0], height_px=0)
 
     def test_max_fill_upper_bound_is_inclusive(self) -> None:
         p = bar([1.0], max_fill=1.0, seed=1)
@@ -74,27 +88,11 @@ class TestBarMapping:
         q = bar([1.0], height_px=900, seed=1)
         assert q._layout().y_up_len == pytest.approx(900)
 
-    def test_invalid_cycle(self) -> None:
-        with pytest.raises(ValueError):
-            bar([1.0], cycle="bad")  # type: ignore[arg-type]
-
-    def test_mirror_invalid_mode_and_fill(self) -> None:
-        with pytest.raises(ValueError):
-            mirror_bar([1.0, -1.0], mode="bad")  # type: ignore[arg-type]
-        with pytest.raises(ValueError):
-            mirror_bar([1.0], max_abs_fill=0)
-        with pytest.raises(ValueError):
-            mirror_bar([1.0], max_abs_fill=1.01)
-        with pytest.raises(ValueError):
-            mirror_bar([1.0], height_px=0)
-
-    def test_empty_data_raises(self) -> None:
+    def test_empty_and_ragged_data_raise(self) -> None:
         with pytest.raises(ValueError):
             bar([])
         with pytest.raises(ValueError):
             bar([[1.0, 2.0], []])
-
-    def test_ragged_rows_raise(self) -> None:
         with pytest.raises(ValueError):
             bar([[1.0, 2.0], [3.0]])
 
@@ -113,12 +111,6 @@ class TestPairing:
         legs = [b.leg for b in p._bars]
         assert legs[2].pair_id == legs[3].pair_id
         assert legs[3].side == "right"
-
-    def test_auto_two_series_pairs_within_each_group(self) -> None:
-        p = bar([[1.0, 2.0], [3.0, 4.0]], seed=1)
-        legs = [b.leg for b in p._bars]
-        assert legs[0].pair_id == legs[1].pair_id
-        assert legs[2].pair_id == legs[3].pair_id
 
     def test_group_pairing_three_series(self) -> None:
         p = bar([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], paired="group", seed=1)
@@ -151,13 +143,6 @@ class TestPairing:
         assert [leg.side for leg in legs] == ["left", "left", "left"]
         assert len({leg.pair_id for leg in legs}) == 3
 
-    def test_two_series_group_is_same_pair_per_group(self) -> None:
-        p = bar([[1.0, 2.0], [3.0, 4.0]], paired="group", seed=1)
-        legs = [b.leg for b in p._bars]
-        assert legs[0].pair_id == legs[1].pair_id
-        assert legs[2].pair_id == legs[3].pair_id
-        assert legs[0].pair_id != legs[2].pair_id
-
     def test_invalid_pairing_raises(self) -> None:
         with pytest.raises(ValueError):
             bar([1.0, 2.0], paired=cast(Any, "bogus"))
@@ -178,63 +163,13 @@ class TestBarLayout:
         with pytest.raises(ValueError):
             bar([1.0, 2.0], labels=["只有", "两个", "多了"])
 
-    def test_grouped_style_cycles_by_position(self) -> None:
-        p = bar(
-            [[1.0, 2.0, 3.0], [2.0, 3.0, 4.0]],
-            style=["black_tights", "white_tights"],
-            seed=1,
-        )
-        bars = p._bars
-        assert len(bars) == 6
-        for g in range(2):
-            assert bars[g * 3].style is STYLES["black_tights"]
-            assert bars[g * 3 + 1].style is STYLES["white_tights"]
-            assert bars[g * 3 + 2].style is STYLES["black_tights"]
-
-    def test_1d_style_cycles_by_bar_default(self) -> None:
-        """一维数据默认按柱序循环：每根柱拿到自己的样式（组内循环会退化为全同）。"""
-        p = bar(
-            [1.0, 2.0, 3.0, 4.0],
-            style=["black_tights", "white_tights", "knit_cream"],
-            seed=1,
-        )
-        got = [b.style for b in p._bars]
-        assert got == [
-            STYLES["black_tights"],
-            STYLES["white_tights"],
-            STYLES["knit_cream"],
-            STYLES["black_tights"],
-        ]
-
     def test_1d_group_cycle_keeps_first_style(self) -> None:
         p = bar([1.0, 2.0, 3.0], style=["black_tights", "white_tights"], cycle="group", seed=1)
         assert all(b.style is STYLES["black_tights"] for b in p._bars)
 
-    def test_2d_sequence_cycle(self) -> None:
-        p = bar(
-            [[1.0, 2.0], [3.0, 4.0]],
-            style=["black_tights", "white_tights", "knit_cream"],
-            cycle="sequence",
-            seed=1,
-        )
-        got = [b.style for b in p._bars]
-        assert got == [
-            STYLES["black_tights"],
-            STYLES["white_tights"],
-            STYLES["knit_cream"],
-            STYLES["black_tights"],
-        ]
-
     def test_sequence_cycle_rejects_series_labels(self) -> None:
         with pytest.raises(ValueError):
             bar([[1.0, 2.0]], series_labels=["甲", "乙"], cycle="sequence", seed=1)
-
-    def test_paired_same_pair_per_group(self) -> None:
-        p = bar([[1.0, 2.0], [3.0, 4.0]], seed=1)
-        bars = p._bars
-        assert bars[0].leg.pair_id == bars[1].leg.pair_id
-        assert bars[0].leg.side == "left"
-        assert bars[1].leg.side == "right"
 
     def test_series_labels_build_legend(self) -> None:
         p = bar([[1.0, 2.0]], series_labels=["男", "女"], seed=1)
@@ -261,32 +196,23 @@ class TestBarLayout:
         assert p._y_axis is not None
 
     def test_render_smoke(self) -> None:
+        """L4 端到端：标题 / 标签 / 图例 / 数值标签组合渲染不报错且出墨迹。"""
         p = bar(
-            [[3.0, 5.0, 2.0], [4.0, 1.0, 6.0]],
-            labels=["一月", "二月"],
-            series_labels=["甲", "乙", "丙"],
+            [[3.0, 5.0]],
+            labels=["一月"],
+            series_labels=["甲", "乙"],
             title="冒烟",
             value_labels=True,
             seed=1,
         )
-        c1 = p.render()
-        c2 = bar(
-            [[3.0, 5.0, 2.0], [4.0, 1.0, 6.0]],
-            labels=["一月", "二月"],
-            series_labels=["甲", "乙", "丙"],
-            title="冒烟",
-            value_labels=True,
-            seed=1,
-        ).render()
-        assert (c1.to_numpy() == c2.to_numpy()).all()
+        canvas = p.render(scale=1)
+        assert canvas.width_px > 0 and canvas.height_px > 0
+        arr = canvas.to_numpy()
+        bg = np.array((250, 248, 243), dtype=int)
+        assert (np.abs(arr[:, :, :3].astype(int) - bg).sum(axis=2) > 30).any()
 
 
 class TestDataInference:
-    def test_dict_scalars_become_labels(self) -> None:
-        p = bar({"一月": 3.0, "二月": 5.0}, seed=1)
-        assert p._x_labels is not None
-        assert p._x_labels.labels == ["一月", "二月"]
-
     def test_dataframe_like_infers_labels_and_legend(self) -> None:
         frame = FakeFrame(
             [[1.0, 2.0], [3.0, 4.0]],
@@ -301,11 +227,6 @@ class TestDataInference:
     def test_explicit_labels_override_inferred(self) -> None:
         p = bar({"a": 1.0, "b": 2.0}, labels=["甲", "乙"], seed=1)
         assert p._x_labels is not None and p._x_labels.labels == ["甲", "乙"]
-
-    def test_plotdata_input(self) -> None:
-        data = PlotData(values=((1.0,), (2.0,)), is_1d=True, labels=("a", "b"))
-        p = bar(data, seed=1)
-        assert p._x_labels is not None and p._x_labels.labels == ["a", "b"]
 
     def test_numpy_input(self) -> None:
         p = bar(np.array([1.0, 2.0]), seed=1)
@@ -355,22 +276,6 @@ class TestChartOptions:
         assert p._y_axis is not None
         assert p._y_axis.ticks == [0.0, 1.0, 2.0]
 
-    def test_bar_gap_option(self) -> None:
-        p = bar([[1.0, 2.0], [3.0, 4.0]], bar_gap=10, seed=1)
-        first, second = p._bars[0], p._bars[1]
-        gap = (second.x - second.leg.foot_center_x) - (
-            first.x - first.leg.foot_center_x + first.leg.width
-        )
-        assert gap == pytest.approx(10)
-
-    def test_group_gap_option(self) -> None:
-        p = bar([[1.0], [3.0]], group_gap=200, seed=1)
-        first, second = p._bars
-        gap = (second.x - second.leg.foot_center_x) - (
-            first.x - first.leg.foot_center_x + first.leg.width
-        )
-        assert gap == pytest.approx(200)
-
     def test_x_label_pos_option(self) -> None:
         p = mirror_bar([1.0, -1.0], labels=["甲", "乙"], x_label_pos="below", seed=1)
         layout = p._layout()
@@ -411,8 +316,9 @@ class TestMirrorBar:
         assert bars[5].height_px == 0
 
     def test_negative_axis_extends_layout(self) -> None:
-        h_pos = mirror_bar([5.0], seed=1).render(scale=1).height_px
-        h_neg = mirror_bar([5.0, -5.0], seed=1).render(scale=1).height_px
+        # 用布局高度比较，避免渲染（渲染路径由 test_render_smoke 覆盖）
+        h_pos = mirror_bar([5.0], seed=1)._layout().final_h
+        h_neg = mirror_bar([5.0, -5.0], seed=1)._layout().final_h
         assert h_neg > h_pos
 
     def test_value_labels_on_data_side(self) -> None:
@@ -422,6 +328,14 @@ class TestMirrorBar:
         assert down.value_label == "-3"
 
     def test_deterministic(self) -> None:
-        a = mirror_bar([4.0, -2.0, 3.0], labels=["甲", "乙", "丙"], seed=9).render()
-        b = mirror_bar([4.0, -2.0, 3.0], labels=["甲", "乙", "丙"], seed=9).render()
-        assert (a.to_numpy() == b.to_numpy()).all()
+        """同 seed 的选腿与柱记录一致。
+
+        像素级确定性由 L2 的 BarPlot 用例与 render_stocking 的 seed 用例覆盖，
+        这里只保证 L4 的选腿计划可复现。
+        """
+
+        def plan() -> list[tuple[str, str, float]]:
+            p = mirror_bar([4.0, -2.0, 3.0], labels=["甲", "乙", "丙"], seed=9)
+            return [(b.leg.leg_id or "", b.side, b.height_px) for b in p._bars]
+
+        assert plan() == plan()

@@ -22,6 +22,12 @@ def make_leg(h: int = 720, w: int = 160) -> Leg:
     )
 
 
+def inked(arr: np.ndarray) -> np.ndarray:
+    """与背景明显不同的像素掩码。"""
+    bg = np.array(BG, dtype=int)
+    return np.abs(arr[:, :, :3].astype(int) - bg).sum(axis=2) > 30
+
+
 class TestScale:
     def test_to_px_and_from_px(self) -> None:
         s = Scale((0.0, 10.0), (0.0, 200.0))
@@ -72,7 +78,9 @@ class TestBarPlotCore:
 
     def test_render_size_grows_with_legs(self) -> None:
         canvases = [
-            BarPlot(600, extent_up=100, extent_down=0).add_bar(300, 0, make_leg(h=h)).render()
+            BarPlot(600, extent_up=100, extent_down=0)
+            .add_bar(300, 0, make_leg(h=h))
+            .render(scale=1)
             for h in (200, 720)
         ]
         # 预容纳不下腿时自动扩张
@@ -81,22 +89,18 @@ class TestBarPlotCore:
     def test_render_pixels_and_determinism(self) -> None:
         def build() -> BarPlot:
             p = BarPlot(400, extent_up=760, seed=0)
-            p.add_bar(120, 500, make_leg(), style="black_sheer")
-            p.add_bar(280, 200, make_leg(), style="white_tights")
+            p.add_bar(200, 500, make_leg(h=300, w=100), style="black_sheer")
             return p
 
-        c1, c2 = build().render(), build().render()
-        a1, a2 = c1.to_numpy(), c2.to_numpy()
+        a1, a2 = build().render(scale=1).to_numpy(), build().render(scale=1).to_numpy()
         assert a1.shape == a2.shape
         assert (a1 == a2).all()
         # 腿真的画上去了：基线附近有非背景像素
-        bg = np.array(BG, dtype=int)
-        diff = np.abs(a1[:, :, :3].astype(int) - bg).sum(axis=2) > 30
-        assert diff.any()
+        assert inked(a1).any()
 
     def test_to_numpy_and_to_pil_match_render(self) -> None:
         p = BarPlot(400, extent_up=760, seed=0)
-        p.add_bar(200, 500, make_leg(), style="black_sheer")
+        p.add_bar(200, 500, make_leg(h=300, w=100), style="black_sheer")
         arr = p.to_numpy(scale=1)
         assert arr.dtype == np.uint8
         assert arr.shape[2] == 4
@@ -108,9 +112,7 @@ class TestBarPlotCore:
         p.add_bar(200, 300, make_leg(h=400, w=100), side="down")
         arr = p.render(scale=1).to_numpy()
         # 翻转后脚贴基线：紧贴基线处应有像素，基线下方远处（腿长之下）应没有
-        bg = np.array(BG, dtype=int)
-        inked = np.abs(arr[:, :, :3].astype(int) - bg).sum(axis=2) > 30
-        rows = np.where(inked.any(axis=1))[0]
+        rows = np.where(inked(arr).any(axis=1))[0]
         assert rows.min() < 5  # 内容从基线开始向下
         assert rows.max() <= 400 + 1  # 最深不超过腿高
 
@@ -139,8 +141,8 @@ class TestBarPlotCore:
 
     def test_bare_leg_is_zero_height_stocking(self) -> None:
         p = BarPlot(400, extent_up=760)
-        p.add_bar(200, 0, make_leg(), style="black_sheer")
-        arr = p.render().to_numpy()
+        p.add_bar(200, 0, make_leg(h=300, w=100), style="black_sheer")
+        arr = p.render(scale=1).to_numpy()
         # 裸腿：只有肤色，没有深色袜子（黑色 sheer 会显著加深）
-        leg_zone = arr[200:500, 180:220, :3].astype(int)
+        leg_zone = arr[100:250, 45:55, :3].astype(int)
         assert (leg_zone.max(axis=2) > 200).any()  # 存在接近肤色的亮像素

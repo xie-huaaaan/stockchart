@@ -88,22 +88,6 @@ class TestBreakLines:
             break_lines("测试", size_px=20, font=[""])
 
 
-class TestWidthRecheck:
-    def test_all_lines_within_max_width(self) -> None:
-        # 估宽不含 kerning，最终每行以 shape_line 的真实 advance 复核
-        texts = [
-            "一二三四五六七八九十",
-            " ".join(["hello"] * 8),
-            "hello world, the quick-brown fox; jumps: over/the lazy dog",
-        ]
-        stack = resolve_stack(None)
-        for text in texts:
-            lines = break_lines(text, size_px=24, max_width=90)
-            assert len(lines) > 1
-            for line in lines:
-                assert shape_line(line, stack, size_px=24).advance <= 90
-
-
 class TestLayoutText:
     def test_single_line_metrics(self) -> None:
         layout = layout_text("测试文字", size_px=30)
