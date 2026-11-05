@@ -4,7 +4,7 @@ Status: all layers L0–L4 are implemented and visually reviewed; this file reco
 
 ## Target Look
 
-The original hand-made reference image (a pair of skin-toned legs with a dark-gray stocking; kept out of the repository, now under the gitignored `dist/`): each bar is a skin-toned leg wearing a dark-gray stocking; the stocking is pulled up from the sole to the height corresponding to the data value, and skin shows above it. The library's scope is broader than this image: it is meant to be a creative toolkit of leg assets, of which bar charts (including grouped ones) are just the first application layered on top.
+The original hand-made reference image (skin-toned legs with dark-gray stockings; kept out of the repository, now under the gitignored `dist/`): each bar is a skin-toned leg wearing a dark-gray stocking; the stocking is pulled up from the sole to the height corresponding to the data value, and skin shows above it. The library's scope is broader than this image: it is meant to be a creative toolkit of leg assets, of which bar charts (including grouped ones) are just the first application layered on top.
 
 ## Name
 

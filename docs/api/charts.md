@@ -207,4 +207,18 @@ Parameter checks: `max_fill` / `max_abs_fill` must be in (0, 1], `0 <= min_fill 
 
 ## Centralized defaults
 
-All `DEFAULT_*` constants are collected in `src/stockchart/defaults.py`: `DEFAULT_MAX_FILL` (0.85), `DEFAULT_BAR_GAP` (28), `DEFAULT_GROUP_GAP` (120), `DEFAULT_OUTPUT_SCALE`, the background/ink/text colors, `DEFAULT_AXIS_STYLE` (clean), wobble amplitudes, font sizes (ticks 26 / x labels 30 / title 52 / axis names 30 / legend 28 / value labels 26), `DEFAULT_TITLE_ALIGN` (center), axis-name spacing, and line-height factors (title 1.4 / axis names 1.25 / x labels 1.35 / legend 1.25, multiplied by the font's natural line height to get the line spacing), x-label avoidance angles, legend wrap line counts and row gaps, legend swatch size and spacing, grid line colors, and the default font chain `DEFAULT_FONT_FAMILIES`, among others. Drawing code carries no magic numbers of its own; tuning means changing one place. L2's `BarPlot(extent_up=)` still defaults to `DEFAULT_Y_EXTENT` (792).
+All `DEFAULT_*` constants are collected in `src/stockchart/defaults.py`: `DEFAULT_MAX_FILL` (0.85), `DEFAULT_MIN_FILL` (0.1), `DEFAULT_HEIGHT_HEADROOM_RATIO` (0.1, the column-area headroom ratio), `DEFAULT_Y_EXTENT` (792, the L2 column-area default), `DEFAULT_BAR_GAP` (28), `DEFAULT_GROUP_GAP` (120), `DEFAULT_OUTPUT_SCALE`, the background/ink/text colors, `DEFAULT_AXIS_STYLE` (clean), wobble amplitudes, font sizes (ticks 26 / x labels 30 / title 52 / axis names 30 / legend 28 / value labels 26), `DEFAULT_TITLE_ALIGN` (center), axis-name spacing, and line-height factors (title 1.4 / axis names 1.25 / x labels 1.35 / legend 1.25, multiplied by the font's natural line height to get the line spacing), x-label avoidance angles, legend wrap line counts and row gaps, legend swatch size and spacing, grid line colors, and the default font chain `DEFAULT_FONT_FAMILIES`, among others. Drawing code carries no magic numbers of its own; tuning means changing one place. L2's `BarPlot(extent_up=)` still defaults to `DEFAULT_Y_EXTENT` (792).
+
+## Minimal example
+
+```python
+from stockchart import bar
+
+bar(
+    [320, 450, 510],
+    labels=["Jan", "Feb", "Mar"],
+    title="Monthly active users",
+    value_labels=True,
+    seed=2,
+).save("chart.png")
+```

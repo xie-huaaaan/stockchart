@@ -78,3 +78,14 @@ def add_paired_bars(
 `add_grouped_bars` requires a rectangular `heights_px` table (non-empty, same-length, non-empty groups); `add_paired_bars` requires exactly 2 values per group and exactly 2 legs per explicit pair; `cycle` only accepts "group" / "sequence". When `legs` / `pairs` are passed explicitly, `paired` is not validated.
 
 **Spacing semantics**: `bar_gap` / `group_gap` both mean the gap between the **edges** of adjacent legs (leg widths vary from 144 to 181; spacing by edge looks visually even), not foot-sole-center distance.
+
+## Minimal example
+
+```python
+from stockchart import BarPlot
+
+plot = BarPlot(1200)
+plot.add_grouped_bars([[300, 200], [400, 250]], style=["black_sheer", "white_sheer"])
+plot.add_x_labels(["Jan", "Feb"])
+plot.save("grouped.png")
+```

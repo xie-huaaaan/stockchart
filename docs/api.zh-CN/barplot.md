@@ -72,6 +72,10 @@ class BarPlot:
         seed: int | None = None,
     ) -> None: ...
 
+    @property
+    def width_px(self) -> int:
+        """绘图区宽度（腿与坐标使用的 x 范围），设计像素；不等于最终画布宽度。"""
+
     def add_bar(
         self,
         x: float,
@@ -220,4 +224,20 @@ class BarPlot:
 
     def to_pil(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Image:
         """渲染并直接导出 PIL Image。"""
+
+    def to_numpy(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> np.ndarray:
+        """渲染并直接导出 (H, W, 4) uint8 RGBA 数组。"""
+```
+
+## 最小示例
+
+```python
+from stockchart import BarPlot, Scale
+
+plot = BarPlot(1200)
+plot.add_bars([300, 500, 400], style="black_sheer")
+plot.add_x_labels(["A", "B", "C"])
+plot.add_y_axis(Scale((0, 500), (0, 760)))
+plot.add_title("自由排版")
+plot.save("freeform.png")
 ```

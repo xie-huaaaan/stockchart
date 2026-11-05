@@ -81,6 +81,10 @@ class BarPlot:
         seed: int | None = None,
     ) -> None: ...
 
+    @property
+    def width_px(self) -> int:
+        """Plot-area width (the x range for legs and coordinates) in design pixels; not the final canvas width."""
+
     def add_bar(
         self,
         x: float,
@@ -255,4 +259,20 @@ class BarPlot:
 
     def to_pil(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> Image:
         """Render and export a PIL Image directly."""
+
+    def to_numpy(self, *, scale: float = DEFAULT_OUTPUT_SCALE) -> np.ndarray:
+        """Render and export an (H, W, 4) uint8 RGBA array directly."""
+```
+
+## Minimal example
+
+```python
+from stockchart import BarPlot, Scale
+
+plot = BarPlot(1200)
+plot.add_bars([300, 500, 400], style="black_sheer")
+plot.add_x_labels(["A", "B", "C"])
+plot.add_y_axis(Scale((0, 500), (0, 760)))
+plot.add_title("Free-form layout")
+plot.save("freeform.png")
 ```

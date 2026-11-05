@@ -161,7 +161,7 @@ bar(
 )
 ```
 
-图表语义参数留在函数签名里；`grid`、`axis_style`、`legend_loc`、`legend_ncol`、`x_label_rotation`、`bar_gap`、`group_gap` 等下层选项通过类型化的选项包透传。完整列表见 [`ChartOptions` 表](docs/api.zh-CN/charts.md)。
+图表语义参数留在函数签名里；`grid`、`axis_style`、`legend_loc`、`legend_ncol`、`x_label_rotation`、`bar_gap`、`group_gap`、`font` 等下层选项通过类型化的选项包透传。完整列表见 [`ChartOptions` 表](docs/api.zh-CN/charts.md)。
 
 ## API 分层
 
@@ -203,6 +203,7 @@ array = plot.to_numpy()
 ## 文档
 
 - [API 参考](docs/api.zh-CN/index.md)——每层一页
+- [示例](docs/api.zh-CN/examples.md)——按场景组织的可运行代码
 - [设计说明](docs/design.zh-CN.md)
 
 ## 开发

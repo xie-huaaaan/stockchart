@@ -145,3 +145,15 @@ def load_leg(
         ValueError: foot_center_x is outside the image width.
     """
 ```
+
+## Minimal example
+
+```python
+from stockchart import LegLibrary
+
+library = LegLibrary(seed=0)
+leg = library.get("leg_03")             # a single leg
+left, right = library.pair("pair_02")   # a pair (left, right)
+print(leg.width, leg.height, leg.foot_center_x)
+print(library.leg_ids[:3], library.pair_ids[:3])
+```

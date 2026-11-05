@@ -71,3 +71,14 @@ def add_paired_bars(
 `add_grouped_bars` 的 `heights_px` 须为矩形表（非空、各组等长且非空）；`add_paired_bars` 每组须恰好 2 个值，显式 `pairs` 每项也须恰好 2 条腿；`cycle` 只接受 “group” / “sequence”。`legs` / `pairs` 显式传入时，`paired` 不参与校验。
 
 **间距语义**：`bar_gap` / `group_gap` 均指相邻腿**边缘之间**的空隙（腿宽 145–183 不等，按边缘留白视觉才均匀），不是足底中心距。
+
+## 最小示例
+
+```python
+from stockchart import BarPlot
+
+plot = BarPlot(1200)
+plot.add_grouped_bars([[300, 200], [400, 250]], style=["black_sheer", "white_sheer"])
+plot.add_x_labels(["一月", "二月"])
+plot.save("grouped.png")
+```

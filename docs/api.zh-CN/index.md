@@ -10,6 +10,7 @@ stockchart 的公开 API 分五层（L0–L4），上层只通过下层的公开
 - [L3 — 布局封装](layout.md)：`add_bars` / `add_grouped_bars` / `add_paired_bars`
 - [L4 — 数据输入](data-input.md)：输入形式、`PlotData` / `normalize_data` / `register_data_type`
 - [L4 — bar() 与 mirror_bar()](charts.md)：一行出图与 `ChartOptions` 透传选项
+- [示例](examples.md)：按场景组织的可运行示例
 
 ## 全局约定
 
@@ -58,6 +59,14 @@ class Canvas:
         background: Color = DEFAULT_BACKGROUND,
     ) -> None: ...
 
+    @property
+    def width_px(self) -> int:
+        """画布宽（输出像素）。"""
+
+    @property
+    def height_px(self) -> int:
+        """画布高（输出像素）。"""
+
     def save(self, path: str | Path) -> Path:
         """写出 PNG 文件。"""
 
@@ -68,4 +77,22 @@ class Canvas:
         """导出为 (H, W, 4) uint8 RGBA 数组。"""
 ```
 
-`BarPlot` 也提供 `save` / `to_pil` 直通方法（见 [L2 — 自由柱状图](barplot.md)），保证 L4 一行能出图。
+`BarPlot` 也提供 `save` / `to_pil` / `to_numpy` 直通方法（见 [L2 — 自由柱状图](barplot.md)），保证 L4 一行能出图。
+
+## 类型别名
+
+顶层导出的字面量别名，供类型标注与参数校验复用：
+
+```python
+type AxisStyle = Literal["clean", "handdrawn"]
+"""坐标轴样式：直线，或由 seed 控制的手绘抖动。"""
+
+type Pairing = Literal["auto", "none", "group", "global"]
+"""选腿的配对策略，见 [L3 — 布局封装](layout.md) 与 [L4 — bar() 与 mirror_bar()](charts.md)。"""
+
+type TitleAlign = Literal["center", "left"]
+"""标题对齐方式。"""
+
+type XLabelRotation = float | Literal["auto"]
+"""x 标签旋转：固定角度（0–90 度）或 "auto" 自动避让。"""
+```

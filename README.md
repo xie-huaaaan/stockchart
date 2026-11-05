@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 [![PyPI](https://img.shields.io/pypi/v/stockchart)](https://pypi.org/project/stockchart/) [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/) [![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE) [![Assets: ARR](https://img.shields.io/badge/assets-ARR-orange)](ASSETS-LICENSE)
 
-**A creative plotting library that draws data as stockings pulled up over a pair of legs.**
+**A creative plotting library that draws data as stockings pulled up over a leg.**
 
 ![A grouped stockchart: two series over three months](docs/images/hero.png)
 
@@ -148,7 +148,8 @@ The 19 presets cover sheer stockings, opaque tights, stripes, ribbed knit, fishn
 
 ```python
 bar(
-    data,
+    [[320, 210], [450, 280], [510, 190]],
+    labels=["Jan", "Feb", "Mar"],
     title="Monthly report",  # centered over the plot by default
     xlabel="Month",
     ylabel="Active users",
@@ -159,7 +160,7 @@ bar(
 )
 ```
 
-Chart-level parameters stay in the signature; lower-level options such as `grid`, `axis_style`, `legend_loc`, `legend_ncol`, `x_label_rotation`, `bar_gap`, and `group_gap` are passed through a typed option bag. See the [`ChartOptions` table](docs/api/charts.md).
+Chart-level parameters stay in the signature; lower-level options such as `grid`, `axis_style`, `legend_loc`, `legend_ncol`, `x_label_rotation`, `bar_gap`, `group_gap`, and `font` are passed through a typed option bag. See the [`ChartOptions` table](docs/api/charts.md).
 
 ## API layers
 
@@ -196,11 +197,12 @@ image = plot.to_pil()
 array = plot.to_numpy()
 ```
 
-`scale` controls output pixel density; stocking textures and lighting are regenerated at that density. SVG and PDF output are intentionally not supported.
+`scale` controls output pixel density; stocking textures and lighting are regenerated at that density. SVG and PDF output are intentionally not supported: the stocking fabric is a per-pixel algorithm, so a vector version would need a separate renderer — PNG is the only output format.
 
 ## Documentation
 
 - [API reference](docs/api/index.md) — one page per layer
+- [Examples](docs/api/examples.md) — runnable snippets by scenario
 - [Design notes](docs/design.md)
 
 ## Development
@@ -221,6 +223,8 @@ Issues and pull requests are welcome.
 `0.1.x` is an early public release. The rendering pipeline is stable, but the public API may still change in minor releases.
 
 ## License
+
+Copyright © 2026 xie-huaaaan.
 
 The source code is released under the [Mozilla Public License 2.0](LICENSE) (MPL-2.0). You can use `stockchart` in closed-source projects; if you modify MPL-covered source files, those files must remain available under MPL-2.0.
 

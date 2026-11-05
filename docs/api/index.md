@@ -10,6 +10,7 @@ stockchart's public API is organized in five layers (L0–L4); higher layers wor
 - [L3 — layout helpers](layout.md)
 - [L4 — data input](data-input.md)
 - [L4 — bar() and mirror_bar()](charts.md)
+- [Examples](examples.md): runnable snippets by scenario
 
 ## Global conventions
 
@@ -59,6 +60,14 @@ class Canvas:
         background: Color = DEFAULT_BACKGROUND,
     ) -> None: ...
 
+    @property
+    def width_px(self) -> int:
+        """Canvas width (output pixels)."""
+
+    @property
+    def height_px(self) -> int:
+        """Canvas height (output pixels)."""
+
     def save(self, path: str | Path) -> Path:
         """Write out a PNG file."""
 
@@ -69,4 +78,22 @@ class Canvas:
         """Export as an (H, W, 4) uint8 RGBA array."""
 ```
 
-`BarPlot` also provides `save` / `to_pil` pass-through methods (see L2), so L4 one-liners can produce output directly.
+`BarPlot` also provides `save` / `to_pil` / `to_numpy` pass-through methods (see [L2 — free-form bar plot](barplot.md)), so L4 one-liners can produce output directly.
+
+## Type aliases
+
+Literal aliases exported at the top level, reusable in type annotations and argument checks:
+
+```python
+type AxisStyle = Literal["clean", "handdrawn"]
+"""Axis style: straight lines, or seed-controlled hand-drawn wobble."""
+
+type Pairing = Literal["auto", "none", "group", "global"]
+"""Leg-pairing strategy; see [L3 — layout helpers](layout.md) and [L4 — bar() and mirror_bar()](charts.md)."""
+
+type TitleAlign = Literal["center", "left"]
+"""Title alignment."""
+
+type XLabelRotation = float | Literal["auto"]
+"""x-label rotation: a fixed angle (0-90 degrees) or "auto" avoidance."""
+```

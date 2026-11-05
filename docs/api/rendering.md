@@ -303,3 +303,13 @@ def sketch_axis(
 
 - The signature and semantics of `render_stocking()` are a hard contract: render upward from the tip of the foot, `height_px <= 0` returns a bare leg, beyond leg height covers everything, `seed` is reproducible, and it returns a new Leg whose image density is `scale` (design-coordinate metadata unchanged).
 - The fields of `StockingStyle` and its component types and the preset names are in "Stocking styles" above; the visual algorithms are in [design notes](../design.md), "Stocking rendering". All other layers merely pass this object through.
+
+## Minimal example
+
+```python
+from stockchart import STYLES, LegLibrary, render_stocking
+
+library = LegLibrary(seed=0)
+rendered = render_stocking(library.get("leg_03"), STYLES["black_sheer"], 500, seed=0)
+print(rendered.height, rendered.pixels_per_unit)   # design height and image density
+```

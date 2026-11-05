@@ -61,3 +61,14 @@ def normalize_data(data: object) -> PlotData:
 def register_data_type[T](cls: type[T], handler: Callable[[T], PlotData]) -> None:
     """为自定义数据类型注册归一化函数（等价于 normalize_data.register）。"""
 ```
+
+## 最小示例
+
+```python
+from stockchart import normalize_data
+
+data = normalize_data({"一月": 320, "二月": 450})
+print(data.labels)                      # ("一月", "二月")
+print(data.values)                      # ((320.0,), (450.0,))
+print(normalize_data([[1, 2], [3, 4]]).values)   # ((1.0, 2.0), (3.0, 4.0))
+```

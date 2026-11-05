@@ -272,3 +272,13 @@ def sketch_axis(
 
 - `render_stocking()` 的签名与语义是硬契约：从脚端向上、`height_px <= 0` 返回裸腿、超过腿高全盖、`seed` 可复现、返回图像密度为 `scale` 的新 Leg（设计坐标元数据不变）。
 - `StockingStyle` 及其组成类型的字段、预设名见上文“丝袜样式”；视觉算法见 [设计说明](../design.zh-CN.md)“丝袜渲染”。其余各层只透传该对象。
+
+## 最小示例
+
+```python
+from stockchart import STYLES, LegLibrary, render_stocking
+
+library = LegLibrary(seed=0)
+rendered = render_stocking(library.get("leg_03"), STYLES["black_sheer"], 500, seed=0)
+print(rendered.height, rendered.pixels_per_unit)   # 设计像素高与图像密度
+```

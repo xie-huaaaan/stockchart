@@ -173,4 +173,18 @@ def mirror_bar(
 
 ## 默认值集中定义
 
-所有 `DEFAULT_*` 常量集中放在 `src/stockchart/defaults.py`：`DEFAULT_MAX_FILL`（0.85）、`DEFAULT_BAR_GAP`（28）、`DEFAULT_GROUP_GAP`（120）、`DEFAULT_OUTPUT_SCALE`、背景色、墨色、文字色、`DEFAULT_AXIS_STYLE`（clean）、抖动幅度、字号（刻度 26 / x 标签 30 / 标题 52 / 轴名 30 / 图例 28 / 数值标签 26）、`DEFAULT_TITLE_ALIGN`（center）、轴名间距、行高系数（标题 1.4 / 轴名 1.25 / x 标签 1.35 / 图例 1.25，乘以字体自然行高得到行距）、x 标签避让角度、图例折行行数与行距、图例色块尺寸与间距、网格线颜色、默认字体链 `DEFAULT_FONT_FAMILIES` 等。绘制代码里不自带魔法数字，调参改一处。L2 的 `BarPlot(extent_up=)` 缺省仍是 `DEFAULT_Y_EXTENT`（792）。
+所有 `DEFAULT_*` 常量集中放在 `src/stockchart/defaults.py`：`DEFAULT_MAX_FILL`（0.85）、`DEFAULT_MIN_FILL`（0.1）、`DEFAULT_HEIGHT_HEADROOM_RATIO`（0.1，柱区高度留白比例）、`DEFAULT_Y_EXTENT`（792，L2 柱区高度缺省）、`DEFAULT_BAR_GAP`（28）、`DEFAULT_GROUP_GAP`（120）、`DEFAULT_OUTPUT_SCALE`、背景色、墨色、文字色、`DEFAULT_AXIS_STYLE`（clean）、抖动幅度、字号（刻度 26 / x 标签 30 / 标题 52 / 轴名 30 / 图例 28 / 数值标签 26）、`DEFAULT_TITLE_ALIGN`（center）、轴名间距、行高系数（标题 1.4 / 轴名 1.25 / x 标签 1.35 / 图例 1.25，乘以字体自然行高得到行距）、x 标签避让角度、图例折行行数与行距、图例色块尺寸与间距、网格线颜色、默认字体链 `DEFAULT_FONT_FAMILIES` 等。绘制代码里不自带魔法数字，调参改一处。L2 的 `BarPlot(extent_up=)` 缺省仍是 `DEFAULT_Y_EXTENT`（792）。
+
+## 最小示例
+
+```python
+from stockchart import bar
+
+bar(
+    [320, 450, 510],
+    labels=["一月", "二月", "三月"],
+    title="每月活跃用户",
+    value_labels=True,
+    seed=2,
+).save("chart.png")
+```
