@@ -77,6 +77,24 @@ def test_png_anchor_and_render_result(tmp_path: Path) -> None:
     assert load_leg(path).foot_center_x == 15
 
 
+def test_png_resize_keeps_hidden_colors_out_of_translucent_edges(tmp_path: Path) -> None:
+    path = tmp_path / "transparent_blue.png"
+    pixels = np.full((12, 8, 4), (0, 0, 255, 0), dtype=np.uint8)
+    pixels[2:10, 2:6] = (255, 0, 0, 128)
+    Image.fromarray(pixels).save(path)
+    source = load_leg(path, foot_center_x=4)
+    for scale in (0.5, 2):
+        resized = source.raster_at(scale)
+        visible = resized[..., 3] > 0
+        assert visible.any() and np.any((resized[..., 3] > 0) & (resized[..., 3] < 128))
+        np.testing.assert_array_equal(
+            resized[visible, :3], np.tile([255, 0, 0], (int(visible.sum()), 1))
+        )
+        assert not resized.flags.writeable
+        assert source.raster_at(scale) is resized
+    np.testing.assert_array_equal(source.raster_at(), pixels)
+
+
 def test_mixed_library_selection_and_chart_injection() -> None:
     left, right = DEFAULT_LEG_LIBRARY.pair("pair_01")
     unnamed = replace(left, leg_id=None, pair_id=None, side=None)

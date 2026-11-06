@@ -19,23 +19,11 @@ _decoded_cache = ByteCache[NDArray[np.uint8]](DEFAULT_DECODED_CACHE_BYTES)
 
 
 def _resize_rgba(image: NDArray[np.uint8], width: int, height: int) -> NDArray[np.uint8]:
-    """按预乘 alpha 缩放位图，避免透明边缘出现暗边。"""
-    src = image.astype(np.float32) / np.float32(255.0)
-    alpha = src[..., 3]
-    premultiplied = (src[..., :3] * alpha[..., None]).astype(np.float32, copy=False)
-    resample = Image.Resampling.LANCZOS if width < image.shape[1] else Image.Resampling.BICUBIC
-
-    def resize_float(channel: NDArray[np.float32]) -> NDArray[np.float32]:
-        return np.asarray(
-            Image.fromarray(channel.astype(np.float32), mode="F").resize((width, height), resample),
-            dtype=np.float32,
-        )
-
-    rgb = np.stack([resize_float(premultiplied[..., i]) for i in range(3)], axis=-1)
-    out_alpha = resize_float(alpha.astype(np.float32, copy=False))
-    rgb /= np.maximum(out_alpha[..., None], 1e-6)
-    out = np.dstack([np.clip(rgb, 0.0, 1.0), np.clip(out_alpha, 0.0, 1.0)[..., None]])
-    result = (out * 255.0).round().astype(np.uint8)
+    """用 Pillow 原生 RGBA 重采样，复用其内部预乘 alpha 路径。"""
+    shrinking = width < image.shape[1] or height < image.shape[0]
+    resample = Image.Resampling.LANCZOS if shrinking else Image.Resampling.BICUBIC
+    # Pillow 在 RGBA 非最近邻缩放时内部转为预乘 RGBa，避免透明像素的底色渗入边缘。
+    result = np.asarray(Image.fromarray(image).resize((width, height), resample), dtype=np.uint8)
     result.flags.writeable = False
     return result
 
