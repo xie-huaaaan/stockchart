@@ -11,6 +11,7 @@ import numpy as np
 
 from stockchart.color import color_alpha, color_rgb
 from stockchart.stocking.geometry import surface_abs_x
+from stockchart.stocking.patterns import motif_mask, stripe_pixels
 from stockchart.stocking.pixels import FloatArray
 from stockchart.stocking.shading import alpha_over
 from stockchart.stocking.styles import (
@@ -50,23 +51,58 @@ def render_fabric(
         pattern_offset: 上沿条带高度；图案相位从条带下沿起算。
 
     Returns:
-        (H, W, 4) float64 RGBA 层；袜口以上与腿外均为全透明。
+        (H, W, 4) float32 RGBA 层；仅计算袜区，袜口以上与腿外均为全透明。
     """
+    if y_start >= H:
+        return np.zeros((H, W, 4), dtype=np.float32)
+    # 拉伸仍参考全腿最宽处，避免袜高变化导致同一位置的织物突然变薄或变厚。
+    max_width = max(1.0, float((alpha > 0.05).sum(axis=1).max()))
+    covered, profile = alpha[y_start:], u[y_start:]
+    curvature = dip[y_start:] if dip is not None else None
+    source = src[y_start:]
+    rows = H - y_start
     if isinstance(fabric, Plain):
-        layer = fabric_plain(fabric, src, alpha, u, y_start, H, W)
+        region = fabric_plain(fabric, source, covered, profile, 0, rows, W, max_width=max_width)
     elif isinstance(fabric, Striped):
-        layer = _fabric_striped(fabric, src, alpha, u, y_start, H, W, dip, pattern_offset)
+        region = _fabric_striped(
+            fabric, source, covered, profile, 0, rows, W, curvature, pattern_offset
+        )
     elif isinstance(fabric, Ribbed):
-        layer = _fabric_ribbed(fabric, src, alpha, u, y_start, H, W)
+        region = _fabric_ribbed(fabric, source, covered, profile, 0, rows, W)
     elif isinstance(fabric, Fishnet):
-        layer = _fabric_fishnet(fabric, src, alpha, u, y_start, H, W, rng, dip)
+        region = _fabric_fishnet(
+            fabric,
+            source,
+            covered,
+            profile,
+            0,
+            rows,
+            W,
+            rng,
+            curvature,
+            max_width=max_width,
+            row_origin=y_start,
+        )
     else:
-        layer = _fabric_dotted(fabric, src, alpha, u, y_start, H, W, rng, dip, pattern_offset)
+        region = _fabric_dotted(
+            fabric,
+            source,
+            covered,
+            profile,
+            0,
+            rows,
+            W,
+            rng,
+            curvature,
+            pattern_offset,
+            max_width=max_width,
+        )
 
-    # 渲染区外清零
-    layer[:y_start] = 0.0
-    # 腿以外的像素不覆盖
-    layer[alpha < 0.05] = 0.0
+    region[covered < 0.05] = 0.0
+    if y_start == 0:
+        return region
+    layer = np.zeros((H, W, 4), dtype=np.float32)
+    layer[y_start:] = region
     return layer
 
 
@@ -78,6 +114,8 @@ def fabric_plain(
     y0: int,
     H: int,
     W: int,
+    *,
+    max_width: float | None = None,
 ) -> FloatArray:
     """生成纯色袜纹理：不透明度随圆柱曲率和腿截面宽度变化。
 
@@ -89,6 +127,7 @@ def fabric_plain(
         y0: 袜子区域起始行。
         H: 图像高。
         W: 图像宽。
+        max_width: 全腿最大宽度；区域计算时仍沿用全腿的拉伸参考。
 
     Returns:
         (H, W, 4) RGBA 层。
@@ -109,7 +148,7 @@ def fabric_plain(
     if f.stretch > 0:
         xs = np.where(alpha > 0.05, 1, 0)
         row_w = xs.sum(axis=1, keepdims=True).astype(np.float32)  # (H,1)
-        max_w = np.clip(row_w.max(), 1.0, None)
+        max_w = max_width if max_width is not None else np.clip(row_w.max(), 1.0, None)
         stretch_factor = 1.0 - f.stretch * (row_w / max_w - 0.5)
         stretch_factor = np.clip(stretch_factor, 0.1, 1.0)
         a_map = a_map * stretch_factor
@@ -119,41 +158,6 @@ def fabric_plain(
     layer[..., :3] = rgb
     layer[..., 3] = a_map
     return layer
-
-
-def _stripe_opacity_at_y(fabric: Striped, ys: FloatArray) -> tuple[FloatArray, FloatArray]:
-    """按每点相对条纹周期的位置计算颜色与不透明度。
-
-    条带边界做约 1.2px 的亚像素软化，避免逐列相位取整产生阶梯锯齿。
-
-    Args:
-        fabric: 条纹袜参数。
-        ys: (H, W) 已含相位偏移与下弯量的图案坐标。
-
-    Returns:
-        `(rgb, opacity)`：均为 (H, W, ...) 的 float64 数组。
-    """
-    period = sum(s.width for s in fabric.stripes)
-    phase = (ys - fabric.offset) % period
-    soft = min(1.2, period / 8.0)
-
-    rgb = np.zeros((*ys.shape, 3), dtype=np.float32)
-    opa = np.zeros(ys.shape, dtype=np.float32)
-    w_sum = np.zeros(ys.shape, dtype=np.float32)
-    acc = 0.0
-    for stripe in fabric.stripes:
-        center = acc + stripe.width / 2.0
-        # 到条带中心的距离 → 软化的隶属度（边界处与相邻条带各约 0.5）
-        w = np.clip(0.5 + (stripe.width / 2.0 - np.abs(phase - center)) / soft, 0.0, 1.0)
-        rgb += w[..., np.newaxis] * color_rgb(stripe.color)
-        opa += w * (stripe.opacity * color_alpha(stripe.color))
-        w_sum += w
-        acc += stripe.width
-
-    good = w_sum > 1e-8
-    rgb[good] /= w_sum[good][..., np.newaxis]
-    opa[good] /= w_sum[good]
-    return rgb, opa
 
 
 def _fabric_striped(
@@ -187,9 +191,7 @@ def _fabric_striped(
     ys_pat = np.arange(H, dtype=np.float32).reshape(H, 1) - y0 - pattern_offset
     if dip is not None:
         ys_pat = ys_pat - dip
-    rgb_map, opa_map = _stripe_opacity_at_y(f, ys_pat)
-    layer[..., :3] = rgb_map
-    layer[..., 3] = opa_map
+    layer[:] = stripe_pixels(f, ys_pat)
     layer[:y0] = 0.0
     return layer
 
@@ -280,6 +282,9 @@ def _fabric_fishnet(
     W: int,
     rng: np.random.Generator,
     dip: FloatArray | None = None,
+    *,
+    max_width: float | None = None,
+    row_origin: int = 0,
 ) -> FloatArray:
     """生成网袜纹理：网线不透明、网孔透明，可叠一层底袜。
 
@@ -293,6 +298,8 @@ def _fabric_fishnet(
         W: 图像宽。
         rng: 保留统一签名；当前实现不使用随机散布。
         dip: (H, W) 下弯量；None 表示不弯。
+        max_width: 全腿最大宽度，供底袜拉伸使用。
+        row_origin: 当前区域首行在全腿中的坐标，保持网格纵向相位。
 
     Returns:
         (H, W, 4) RGBA 层。
@@ -300,7 +307,7 @@ def _fabric_fishnet(
     layer = np.zeros((H, W, 4), dtype=np.float32)
 
     abs_x = surface_abs_x(u, alpha, f.perspective)
-    ys = np.arange(H, dtype=np.float32).reshape(H, 1) * np.ones((1, W))
+    ys = np.arange(row_origin, row_origin + H, dtype=np.float32).reshape(H, 1)
     if dip is not None:
         ys = ys - dip
 
@@ -312,7 +319,7 @@ def _fabric_fishnet(
 
     # 底袜
     if f.underlay is not None:
-        under = fabric_plain(f.underlay, src, alpha, u, y0, H, W)
+        under = fabric_plain(f.underlay, src, alpha, u, y0, H, W, max_width=max_width)
         # 先画底袜，再把网线叠上去
         layer = alpha_over(under, layer)
 
@@ -372,23 +379,9 @@ def dot_mask(
         dy = ys - cy
 
     if shape == "dot":
-        dist = np.sqrt(dx**2 + dy**2)
-        mask = (dist < size).astype(np.float32)
-    elif shape == "heart":
-        # 标准心形：用参数方程近似
-        # 归一化坐标，使心形高约为 size*2
-        s = size * 1.2
-        nx, ny = dx / s, -dy / s  # y 轴翻转使心形尖朝下
-        # 心形判别式：(x^2+y^2-1)^3 - x^2*y^3 < 0
-        val = (nx**2 + ny**2 - 1.0) ** 3 - nx**2 * ny**3
-        mask = (val < 0).astype(np.float32)
-    elif shape == "star":
-        # 五角星（极坐标近似）
-        theta = np.arctan2(dy, dx)
-        r = np.sqrt(dx**2 + dy**2)
-        # 五角星：在 5 个角方向 r_outer，5 个凹陷方向 r_inner
-        r_star = size * (0.4 + 0.6 * np.abs(np.cos(2.5 * theta)))
-        mask = (r < r_star).astype(np.float32)
+        mask = (dx**2 + dy**2 < size**2).astype(np.float32)
+    elif shape in ("heart", "star"):
+        mask = motif_mask(dx, dy, size, shape)
     else:
         mask = np.zeros((H, W), dtype=np.float32)
 
@@ -406,6 +399,8 @@ def _fabric_dotted(
     rng: np.random.Generator,
     dip: FloatArray | None = None,
     pattern_offset: float = 0.0,
+    *,
+    max_width: float | None = None,
 ) -> FloatArray:
     """生成印花袜纹理：底袜 + 图案叠加。
 
@@ -422,14 +417,15 @@ def _fabric_dotted(
         rng: 随机源，供散布类图案使用。
         dip: (H, W) 下弯量；None 表示不弯。
         pattern_offset: 上沿条带高度。
+        max_width: 全腿最大宽度，供底袜拉伸使用。
 
     Returns:
         (H, W, 4) RGBA 层。
     """
-    base = fabric_plain(f.base, src, alpha, u, y0, H, W)
+    base = fabric_plain(f.base, src, alpha, u, y0, H, W, max_width=max_width)
 
     abs_x = surface_abs_x(u, alpha, f.perspective)
-    ys = (np.arange(H, dtype=np.float32) - y0 - pattern_offset).reshape(H, 1) * np.ones((1, W))
+    ys = (np.arange(H, dtype=np.float32) - y0 - pattern_offset).reshape(H, 1)
     if dip is not None:
         ys = ys - dip
 

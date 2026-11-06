@@ -144,7 +144,7 @@ def assemble(
     )
     height_px = options.get("height_px")
     if height_px is None:
-        # 腿始终按整腿高度绘制；在最高腿之上再留 10%，避免轴顶与腿口齐平。
+        # 腿始终按整腿高度绘制；在最高腿之上按默认比例留白，避免轴顶与腿口齐平。
         tallest_leg = max(spec.leg.height for slot in specs for column in slot for spec in column)
         height_px = round(tallest_leg + tallest_leg * DEFAULT_HEIGHT_HEADROOM_RATIO)
     elif height_px <= 0:

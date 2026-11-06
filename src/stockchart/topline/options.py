@@ -35,7 +35,7 @@ class ChartOptions(TypedDict, total=False):
         axis_name_size_px: 轴名称字号（设计像素）。
         legend_loc: 图例在顶部或底部。
         legend_ncol: 图例列数；None 表示自动换行。
-        height_px: 基线上方柱区高度；None 表示按最高腿设计高度再加 10% 留白。
+        height_px: 基线上方柱区高度；None 表示按最高腿设计高度再加 6% 留白。
         width_px: 绘图区宽度；None 表示按腿、间距与标签宽度自动计算。
     """
 

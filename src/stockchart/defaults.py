@@ -33,6 +33,15 @@ DEFAULT_INK_CACHE_ENTRIES = 32
 DEFAULT_SWATCH_CACHE_ENTRIES = 128
 """图例织物色块缓存条目数。"""
 
+DEFAULT_PATTERN_CACHE_ENTRIES = 64
+"""共享周期条纹表的最大条目数，不缓存成品腿。"""
+
+DEFAULT_PATTERN_SAMPLES_PER_PIXEL = 8
+"""条纹周期表在每个输出像素内的采样数。"""
+
+DEFAULT_MOTIF_TABLE_SIZE = 256
+"""单位爱心与星形轮廓查表的单边采样数量。"""
+
 # ---------------------------------------------------------------------------
 # 画布
 # ---------------------------------------------------------------------------
@@ -142,7 +151,7 @@ DEFAULT_MAX_FILL = 0.85
 DEFAULT_MIN_FILL = 0.1
 """含负值时值域压缩的下界比例（L4 bar）。"""
 
-DEFAULT_HEIGHT_HEADROOM_RATIO = 0.1
+DEFAULT_HEIGHT_HEADROOM_RATIO = 0.06
 """L4 自动 height_px 在最高腿设计高度之上额外预留的顶部留白比例。"""
 
 DEFAULT_GROUP_GAP = 120

@@ -295,6 +295,10 @@ leg = replace(
 
 Now `leg.height` is 720 while the PNG source remains 1440px high. Rendering at `scale=2` can use that resolution directly, and built-in style lengths retain their original design proportions.
 
+Compared with importing the PNG directly and rendering at `scale=1`, the bare source pixels are identical, but stocking results differ by default: rendering the 720-high asset at 2x doubles coverage height and style lengths, whereas the 1440-high asset at 1x uses the supplied design lengths directly. Even after manually converting every length, details such as ink extraction may differ. Font sizes and gaps in complete charts also use design pixels, so equal final leg-image dimensions do not imply identical charts.
+
+When explicitly changing `Leg.width` / `height`, scale both proportionally and convert the anchor as well. If the design aspect ratio differs from the PNG source, the image is resized independently along each axis and becomes stretched; there is no automatic aspect-ratio preservation, padding, or cropping. Texture and lighting are then computed from the distorted silhouette.
+
 ### Keeping another design height
 
 To retain assets at height `H`, use `H / 720` as a starting point for length adjustments, then refine visually. These parameters use absolute design pixels; their defaults do not change with leg height:

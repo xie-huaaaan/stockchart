@@ -84,7 +84,7 @@ class TestBarMapping:
     def test_height_px_auto_and_override(self) -> None:
         p = bar([1.0], seed=1)
         assert p._bars[0].height_px == pytest.approx(0.85 * 720)
-        assert p._layout().y_up_len == pytest.approx(792)
+        assert p._layout().y_up_len == pytest.approx(763)
         q = bar([1.0], height_px=900, seed=1)
         assert q._layout().y_up_len == pytest.approx(900)
 

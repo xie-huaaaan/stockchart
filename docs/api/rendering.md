@@ -6,6 +6,8 @@
 
 A stocking = fabric kind (`Plain` / `Striped` / `Ribbed` / `Fishnet` / `Dotted`) + top edge (`Bare` / `Welt` / `Lace` / `Fade`) + shading (`Shading`). All three are `dataclass(slots=True, frozen=True, kw_only=True)`; invalid parameters raise `ValueError` at construction. Length units are design pixels and refer to dimensions at the front of the leg (the sides are compressed by cylindrical `perspective`, default 0.8). Colors are `Color`; when an alpha component is present, it is multiplied into the corresponding opacity.
 
+Textures are generated only below the stocking top. Stripe periods and heart/star outlines use shared lookup tables to reduce repeated computation; sampling may slightly change boundary details. Circles and fishnet are still calculated directly, and `seed` still controls scattered placement. Lookup tables do not store finished stocking renders.
+
 ```python
 @dataclass(slots=True, frozen=True, kw_only=True)
 class StockingStyle:

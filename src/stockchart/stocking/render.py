@@ -20,7 +20,7 @@ import numpy as np
 
 from stockchart.legs import LegRender
 from stockchart.stocking.edge import lace_wave, render_top_edge
-from stockchart.stocking.fabric import fabric_plain, render_fabric
+from stockchart.stocking.fabric import render_fabric
 from stockchart.stocking.geometry import curve_dip
 from stockchart.stocking.ink import boost_ink_lines
 from stockchart.stocking.pixels import FloatArray
@@ -150,8 +150,8 @@ def render_stocking(
         if style.fabric.underlay is None:
             fabric_layer[..., 3] = 0.0
         else:
-            underlay = fabric_plain(
-                style.fabric.underlay, src, alpha_mask, col_profile, y_start, H, W
+            underlay = render_fabric(
+                style.fabric.underlay, src, alpha_mask, col_profile, y_start, H, W, rng
             )
             fabric_layer[..., 3] = underlay[..., 3]
             fabric_layer[ys_grid < origin_col[np.newaxis, :]] = 0.0

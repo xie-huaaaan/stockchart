@@ -97,7 +97,7 @@ def bar(
         options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap、
             height_px、width_px 等），见 docs/api.zh-CN/charts.md 的
             ChartOptions 表。height_px 为基线上方柱区高度，缺省按最高腿设计高度
-            再加 10% 留白；显式值小于整腿高度时仍会扩到整腿高。width_px
+            再加 6% 留白；显式值小于整腿高度时仍会扩到整腿高。width_px
             为绘图区宽度，缺省自适应。
 
     Returns:
@@ -255,7 +255,7 @@ def mirror_bar(
             （默认 0.85）。
         library: 自动选腿使用的素材库，默认 DEFAULT_LEG_LIBRARY。
         options: 语义同 bar()。height_px 控制基线上方柱区高度，缺省按最高腿设计高度
-            再加 10% 留白；width_px 控制绘图区宽度，缺省自适应。显式 height_px
+            再加 6% 留白；width_px 控制绘图区宽度，缺省自适应。显式 height_px
             小于整腿高度时仍会扩到整腿高。x_label_pos 默认 "auto"：
             镜像图常有一侧全空，会把标签贴到没有腿的一侧的基线旁（如全负
             数据标签在基线上方）；两侧都有腿（正负混合或 mode="both"）时

@@ -233,7 +233,7 @@ Issues and pull requests are welcome.
 
 ## Status
 
-`0.1.x` is an early public release. The rendering pipeline is stable, but the public API may still change in minor releases.
+`0.x.x` is an early public release and API may still change in minor releases.
 
 ## License
 

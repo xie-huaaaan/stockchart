@@ -6,6 +6,8 @@
 
 袜子 = 袜身种类（`Plain` / `Striped` / `Ribbed` / `Fishnet` / `Dotted`）+ 上沿（`Bare` / `Welt` / `Lace` / `Fade`）+ 光影（`Shading`）。三者都是 `dataclass(slots=True, frozen=True, kw_only=True)`，非法参数在构造时抛 `ValueError`。长度单位均为设计像素，指腿正面处的尺寸（两侧按 `perspective` 做圆柱透视压缩，默认 0.8）。颜色为 `Color`；带 alpha 分量时，alpha 乘到对应的 opacity 上。
 
+纹理仅在袜口以下生成。条纹周期和爱心、星形轮廓使用共享查表以减少重复计算，边界细节可能随采样略有变化；圆点与网眼仍直接计算，随机散布仍由 `seed` 控制。查表不会保存整条穿袜成品。
+
 ```python
 @dataclass(slots=True, frozen=True, kw_only=True)
 class StockingStyle:

@@ -28,7 +28,7 @@ class ChartOptions(TypedDict, total=False):
         legend_loc: whether the legend sits at the top or at the bottom.
         legend_ncol: number of legend columns; None means it wraps automatically.
         height_px: bar area height above the baseline; None means the tallest leg's
-            design height plus 10% headroom.
+            design height plus 6% headroom.
         width_px: plot area width; None means it is computed automatically from the
             legs, the gaps and the label widths.
     """
@@ -67,7 +67,7 @@ class ChartOptions(TypedDict, total=False):
 | `font` | `None` (platform default chain) | `BarPlot(font=)`, the chart-wide text font; e.g. `font=["MiSans", "Microsoft YaHei"]` or a font file path |
 | `legend_loc` | `"top"` | `add_legend(loc=)` |
 | `legend_ncol` | `None` (automatic) | `add_legend(ncol=)` |
-| `height_px` | `None` (tallest full leg + 10% headroom) | `BarPlot(extent_up=)` / y-axis length; a smaller explicit value still expands to the full leg height |
+| `height_px` | `None` (tallest full leg + 6% headroom) | `BarPlot(extent_up=)` / y-axis length; a smaller explicit value still expands to the full leg height |
 | `width_px` | `None` (legs, gaps, labels) | `BarPlot(width_px=)` / x-axis length |
 
 `font` is the chart-wide default font, passed through to `BarPlot(font=)`; it applies to the title, axis names, x labels, legend, tick numbers, and value labels. Its value is a `FontSpec` (family names / font file paths / a candidate list, see L1 rendering primitives); None uses the platform default chain. Unknown keys raise `TypeError` at runtime and list the available options; static typing is checked by the `TypedDict`. Older keywords such as `axis_style` / `grid` / `x_label_pos` are still accepted as before; they simply no longer appear in the function signatures.
@@ -146,7 +146,7 @@ def bar(
             axis_style, legend_loc, bar_gap, height_px, width_px, etc.); see the
             ChartOptions table in docs/api/charts.md. height_px is the bar area
             height above the baseline, by default the tallest leg's design height
-            plus 10% headroom; an explicit value smaller than the full leg height
+            plus 6% headroom; an explicit value smaller than the full leg height
             still expands to the full leg height. width_px is the plot area width,
             adaptive by default.
 
@@ -224,7 +224,7 @@ def mirror_bar(
             value maps to; it must be in (0, 1] (default 0.85).
         library: Library for automatic leg selection; defaults to DEFAULT_LEG_LIBRARY.
         options: same semantics as bar(). height_px controls the bar area height
-            above the baseline, by default the tallest leg's design height plus 10%
+            above the baseline, by default the tallest leg's design height plus 6%
             headroom; width_px controls the plot area width, adaptive by default.
             An explicit height_px smaller than the full leg height still expands to
             the full leg height. x_label_pos defaults to "auto": mirrored charts
@@ -260,7 +260,7 @@ Parameter checks: `max_fill` / `max_abs_fill` must be in (0, 1], `0 <= min_fill 
 
 ## Centralized defaults
 
-All `DEFAULT_*` constants are collected in `src/stockchart/defaults.py`: `DEFAULT_MAX_FILL` (0.85), `DEFAULT_MIN_FILL` (0.1), `DEFAULT_HEIGHT_HEADROOM_RATIO` (0.1, the column-area headroom ratio), `DEFAULT_Y_EXTENT` (792, the L2 column-area default), `DEFAULT_BAR_GAP` (28), `DEFAULT_GROUP_GAP` (120), `DEFAULT_OUTPUT_SCALE`, the background/ink/text colors, `DEFAULT_AXIS_STYLE` (clean), wobble amplitudes, font sizes (ticks 26 / x labels 30 / title 52 / axis names 30 / legend 28 / value labels 26), `DEFAULT_TITLE_ALIGN` (center), axis-name spacing, and line-height factors (title 1.4 / axis names 1.25 / x labels 1.35 / legend 1.25, multiplied by the font's natural line height to get the line spacing), x-label avoidance angles, legend wrap line counts and row gaps, legend swatch size and spacing, grid line colors, and the default font chain `DEFAULT_FONT_FAMILIES`, among others. Drawing code carries no magic numbers of its own; tuning means changing one place. L2's `BarPlot(extent_up=)` still defaults to `DEFAULT_Y_EXTENT` (792).
+All `DEFAULT_*` constants are collected in `src/stockchart/defaults.py`: `DEFAULT_MAX_FILL` (0.85), `DEFAULT_MIN_FILL` (0.1), `DEFAULT_HEIGHT_HEADROOM_RATIO` (0.06, the column-area headroom ratio), `DEFAULT_Y_EXTENT` (792, the L2 column-area default), `DEFAULT_BAR_GAP` (28), `DEFAULT_GROUP_GAP` (120), `DEFAULT_OUTPUT_SCALE`, the background/ink/text colors, `DEFAULT_AXIS_STYLE` (clean), wobble amplitudes, font sizes (ticks 26 / x labels 30 / title 52 / axis names 30 / legend 28 / value labels 26), `DEFAULT_TITLE_ALIGN` (center), axis-name spacing, and line-height factors (title 1.4 / axis names 1.25 / x labels 1.35 / legend 1.25, multiplied by the font's natural line height to get the line spacing), x-label avoidance angles, legend wrap line counts and row gaps, legend swatch size and spacing, grid line colors, and the default font chain `DEFAULT_FONT_FAMILIES`, among others. Drawing code carries no magic numbers of its own; tuning means changing one place. L2's `BarPlot(extent_up=)` still defaults to `DEFAULT_Y_EXTENT` (792).
 
 ## Minimal example
 
