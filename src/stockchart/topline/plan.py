@@ -18,6 +18,7 @@ from stockchart.defaults import (
     DEFAULT_X_LABEL_SIZE,
 )
 from stockchart.legs import Leg
+from stockchart.library import DEFAULT_LEG_LIBRARY, LegLibrary
 from stockchart.plot import BarPlot, Pairing, StyleCycle, XLabelPos
 from stockchart.plot.scale import format_number
 from stockchart.plot.styles import select_legs_for_groups
@@ -51,6 +52,7 @@ def select_legs(
     *,
     paired: Pairing,
     seed: int,
+    library: LegLibrary = DEFAULT_LEG_LIBRARY,
 ) -> list[list[Leg]]:
     """按每组的系列数自动选腿。
 
@@ -58,11 +60,14 @@ def select_legs(
         rows: 二维数据；每行一组。
         paired: 配对策略。
         seed: 选腿随机源。
+        library: 自动选腿使用的素材库。
 
     Returns:
         与 rows 同构的 Leg 列表。
     """
-    return select_legs_for_groups([len(row) for row in rows], paired=paired, seed=seed)
+    return select_legs_for_groups(
+        [len(row) for row in rows], paired=paired, seed=seed, library=library
+    )
 
 
 def plan_slots(
@@ -108,6 +113,7 @@ def assemble(
     x_label_pos: XLabelPos,
     seed: int | None,
     options: ChartOptions,
+    library: LegLibrary = DEFAULT_LEG_LIBRARY,
 ) -> tuple[BarPlot, list[list[list[BarRecord]]]]:
     """按槽位建图并摆好腿。
 
@@ -121,6 +127,7 @@ def assemble(
         x_label_pos: x 标签位置策略。
         seed: BarPlot 与选腿的随机源。
         options: 其余 L2 透传选项，含 height_px / width_px。
+        library: 图表后续 L3 自动选腿使用的素材库。
 
     Returns:
         `(BarPlot, 与 specs 同构的柱记录)`。
@@ -139,7 +146,7 @@ def assemble(
     if height_px is None:
         # 腿始终按整腿高度绘制；在最高腿之上再留 10%，避免轴顶与腿口齐平。
         tallest_leg = max(spec.leg.height for slot in specs for column in slot for spec in column)
-        height_px = tallest_leg + round(tallest_leg * DEFAULT_HEIGHT_HEADROOM_RATIO)
+        height_px = round(tallest_leg + tallest_leg * DEFAULT_HEIGHT_HEADROOM_RATIO)
     elif height_px <= 0:
         raise ValueError(f"height_px 须为正数，得到 {height_px!r}")
     plot = BarPlot(
@@ -150,6 +157,7 @@ def assemble(
         axis_style=options.get("axis_style", DEFAULT_AXIS_STYLE),
         font=options.get("font"),
         seed=seed,
+        library=library,
     )
     records = plot.add_columns(
         specs,

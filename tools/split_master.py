@@ -40,7 +40,7 @@ ASSETS = ROOT / "src" / "stockchart" / "assets"
 WORK = ROOT / "out" / "svg_trace"
 SIG = 64  # 形状匹配用的归一化掩膜尺寸
 BACKGROUND = (250, 248, 243)  # 追踪需要不透明输入，用画纸色垫底
-SVG_SCALE = 4  # SVG 素材的固有倍率（设计像素 × 4）
+SVG_SCALE = 4  # 追踪输入倍率；SVG 输出视口仍使用设计尺寸
 CLIP_BLUE = 242  # 腿形裁切：蓝色通道低于此值才是腿身；纸底/白色软边都会被排除
 ROW_DIR = ROOT / "dist"  # 720p 原始行图（row1~3.png）所在目录
 
@@ -157,7 +157,8 @@ def _compose_svg(color_text: str, clip_d: str, w: int, h: int) -> str:
         raise ValueError("追踪结果没有 path")
     return (
         '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" '
-        f'width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+        f'width="{w / SVG_SCALE:g}" height="{h / SVG_SCALE:g}" '
+        f'viewBox="0 0 {w} {h}">'
         '<defs><clipPath id="legclip" clipPathUnits="userSpaceOnUse">'
         f'<path d="{clip_d}"/></clipPath></defs>'
         '<g clip-path="url(#legclip)">' + "".join(paths) + "</g></svg>"

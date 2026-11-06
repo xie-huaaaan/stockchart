@@ -15,7 +15,7 @@ def add_bars(
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
-    """单序列：统一间距从左到右排开，自动交替选腿。
+    """单序列：统一间距从左到右排开，按配对策略自动选腿。
 
     legs 可显式指定每根柱的素材（长度须与 heights_px 一致，不参与循环，
     此时 paired 忽略）。style 为列表时按柱序循环取用。多次调用 L3 方法
@@ -52,7 +52,7 @@ def add_grouped_bars(
 ) -> BarPlot:
     """按 (组数, 系列数) 的像素高度排布分组柱状图。
 
-    组内用 bar_gap、组间用 group_gap；跨列按左、右、左、右……交替选腿。
+    组内用 bar_gap、组间用 group_gap；普通布局从全部素材选腿，成对布局取完整配对。
 
     Args:
         heights_px: 二维高度表；每行一组，组内每列一个系列。

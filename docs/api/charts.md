@@ -90,6 +90,7 @@ def bar(
     max_fill: float = 0.85,
     min_fill: float = 0.1,
     seed: int | None = None,
+    library: LegLibrary = DEFAULT_LEG_LIBRARY,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
     """All-upright bar chart: automatically performs the data to stocking height mapping, the leg selection and the layout.
@@ -132,7 +133,7 @@ def bar(
             right), series 2 onwards takes the next pair (for a single series,
             each group takes the left leg of a fresh asset pair); "global" takes
             pairs continuously across the whole chart, so a pair may span groups;
-            "none" draws every leg from a different asset pair.
+            "none" selects from all legs, including unpaired assets, avoiding repeats where possible.
         value_labels: when True, the values are handwritten above the stocking
             tops (6 significant digits; scientific notation for magnitudes of 10^6
             and above, or below 10^-4; not part of layout).
@@ -140,6 +141,7 @@ def bar(
             to; it must be in (0, 1] (default 0.85).
         min_fill: only enabled when the data contains negatives (default 0.1);
             see below.
+        library: Library for automatic leg selection; defaults to DEFAULT_LEG_LIBRARY.
         options: optional parameters passed through to lower layers (grid,
             axis_style, legend_loc, bar_gap, height_px, width_px, etc.); see the
             ChartOptions table in docs/api/charts.md. height_px is the bar area
@@ -193,6 +195,7 @@ def mirror_bar(
     value_labels: bool = False,
     max_abs_fill: float = 0.85,
     seed: int | None = None,
+    library: LegLibrary = DEFAULT_LEG_LIBRARY,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
     """Positive/negative mirrored bar chart: positive values draw a leg above the baseline, negative values a flipped leg below it (the foot against the baseline).
@@ -219,6 +222,7 @@ def mirror_bar(
             10^-4; not part of layout).
         max_abs_fill: the fraction of the asset design height the largest absolute
             value maps to; it must be in (0, 1] (default 0.85).
+        library: Library for automatic leg selection; defaults to DEFAULT_LEG_LIBRARY.
         options: same semantics as bar(). height_px controls the bar area height
             above the baseline, by default the tallest leg's design height plus 10%
             headroom; width_px controls the plot area width, adaptive by default.

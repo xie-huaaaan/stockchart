@@ -36,8 +36,7 @@ class TestAddBars:
     def test_auto_legs_alternate_sides(self) -> None:
         p = BarPlot(2000, seed=3)
         p.add_bars([100.0] * 5)
-        sides = [b.leg.side for b in p._bars]
-        assert sides == ["left", "right", "left", "right", "left"]
+        assert len({b.leg.leg_id for b in p._bars}) == 5
 
     def test_global_pairing_pairs_adjacent_bars(self) -> None:
         p = BarPlot(2000, seed=3)

@@ -14,23 +14,18 @@
 from __future__ import annotations
 
 import math
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from stockchart.legs import LegRender
 from stockchart.stocking.edge import lace_wave, render_top_edge
 from stockchart.stocking.fabric import fabric_plain, render_fabric
 from stockchart.stocking.geometry import curve_dip
 from stockchart.stocking.ink import boost_ink_lines
 from stockchart.stocking.pixels import FloatArray
 from stockchart.stocking.preprocess import prepare_leg
-from stockchart.stocking.shading import (
-    apply_lighting,
-    composite,
-    resample_leg,
-    shade_bare_leg,
-)
+from stockchart.stocking.shading import apply_lighting, composite, shade_bare_leg
 from stockchart.stocking.styles import Fade, Fishnet, Lace, StockingStyle, Welt, scale_style
 
 if TYPE_CHECKING:
@@ -40,11 +35,11 @@ if TYPE_CHECKING:
 def render_stocking(
     leg: Leg,
     style: StockingStyle,
-    height_px: int,
+    height_px: float,
     *,
     seed: int | None = None,
     scale: float = 1.0,
-) -> Leg:
+) -> LegRender:
     """给腿穿丝袜：从脚端向上覆盖 height_px 像素。
 
     Args:
@@ -57,13 +52,10 @@ def render_stocking(
         scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
             光影都是该分辨率的真细节，不是把成品放大；内置矢量素材按该倍率
             重新栅格化，外部位图素材先按比例重采样。
-            返回的 Leg 图像为「设计尺寸 × scale」像素（`pixels_per_unit == scale`），
-            `width` / `height` / `foot_center_x` 等元数据仍是设计像素，
-            图层按 1:1 贴图即得到 scale 倍输出。
+            返回的 LegRender 图像为「设计尺寸 × scale」像素。
 
     Returns:
-        新的 Leg：图像按 scale 倍密度重绘（`pixels_per_unit == scale`），
-        设计像素元数据与原素材一致。
+        独立的 LegRender：含原素材、目标倍率和输出像素。
 
     Raises:
         ValueError: scale 不是正的有限数。
@@ -71,32 +63,31 @@ def render_stocking(
     if not math.isfinite(scale) or scale <= 0:
         raise ValueError(f"scale 须为正数，得到 {scale}")
 
-    # 直接在输出密度生成纹理，避免额外超采样和整条腿的降采样。
-    leg = resample_leg(leg, scale)
+    rendered = LegRender(leg, leg.raster_at(scale), scale)
     if height_px <= 0 and style.shading.skin <= 0:
-        return leg
+        return rendered
 
-    density = leg.pixels_per_unit
+    density = rendered.scale
     if density != 1.0:
         style = scale_style(style, density)
-        height_px = round(height_px * density)
+    pixel_height = round(height_px * density)
 
     if height_px <= 0:
         # 裸腿也要参与皮肤光影，否则同一张图里裸腿比穿袜腿少一层受光
-        return shade_bare_leg(leg, style)
+        return shade_bare_leg(rendered, style)
 
-    H, W = leg.image.shape[:2]
-    height_px = min(height_px, H)
+    H, W = rendered.image.shape[:2]
+    covered_height = min(pixel_height, H)
     rng = np.random.default_rng(seed)
 
-    prepared = prepare_leg(leg)
+    prepared = prepare_leg(rendered)
     src = prepared.src
 
     # 腿的 alpha mask（0/1 float）
     alpha_mask = src[..., 3]  # (H, W)
 
     # 渲染区域：图像底部 height_px 行（脚在底部）
-    y_start = H - height_px  # 袜口顶端所在行（含）
+    y_start = H - covered_height  # 袜口顶端所在行（含）
 
     # 每行腿的宽度剖面：用于圆柱透视压缩
     col_profile = prepared.u
@@ -188,9 +179,9 @@ def render_stocking(
     result = apply_lighting(result, style.shading, col_profile, prepared.rim, w_sock)
 
     # 膝盖褶皱等素材内部墨线增强：以"织物压痕"的方式补画到袜子上
-    result = boost_ink_lines(result, leg, style.shading, fabric_layer)
+    result = boost_ink_lines(result, rendered, style.shading, fabric_layer)
 
     out = (np.clip(result, 0.0, 1.0) * 255.0).astype(np.uint8)
     # 织物与光影只改变 RGB，轮廓覆盖率直接保留素材像素，避免浮点量化漂移。
-    out[..., 3] = leg.image[..., 3]
-    return replace(leg, image=out)
+    out[..., 3] = rendered.image[..., 3]
+    return LegRender(leg, out, scale)

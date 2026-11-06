@@ -95,6 +95,7 @@ class BarPlot:
         seed: random source; it affects the default bar textures, the
             baseline, and the hand-drawn wobble, omitting it gives a fresh
             random result each time.
+        library: Library for automatic L3 selection; explicit legs/pairs take precedence.
 
     When a leg is taller than extent_up / extent_down, the bar area expands
     upward/downward automatically; the axes, the title, the labels, and the
@@ -118,6 +119,7 @@ class BarPlot:
         axis_style: Literal["clean", "handdrawn"] = "clean",
         font: FontSpec | None = None,
         seed: int | None = None,
+        library: LegLibrary = DEFAULT_LEG_LIBRARY,
     ) -> None: ...
 
     @property

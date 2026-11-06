@@ -24,227 +24,228 @@ Bundled assets also include precomputed vector drawing commands and ink maps to 
 | pair_12 | leg_23 | leg_24 | 181 / 145 |
 | pair_13 | leg_25 | leg_26 | 145 / 150 |
 
+Built-in and external assets share the same Leg, rasterization, and cache pipeline. DEFAULT_LEG_LIBRARY is the built-in default; LegLibrary([...]) may mix external and selected built-in legs. Sources must be prepared in the intended orientation; no flipping, cropping, or size normalization occurs. PNG design dimensions equal its image dimensions. SVG uses absolute pixel dimensions or falls back to viewBox, deriving a missing dimension from its aspect ratio. Percentage dimensions without a usable absolute size or valid viewBox are rejected. An omitted anchor is estimated from the bottom 20 design pixels of alpha; a transparent bottom uses the horizontal center.
+
+Welt, stripe, and mesh lengths use fixed design pixels rather than scaling with source height. External assets retain their provider’s license; bundled assets and derived data retain their ARR license.
+
+Legs without pairing metadata remain available through `legs` and ordinary selection. `paired="none"` selects from all legs; `"group"` / `"global"` use complete left-right pairs and raise `ValueError` when none exist. For multiple series, `"auto"` means `"global"`; use `paired="none"` explicitly when the library contains only unpaired assets.
+
 ```python
 @dataclass(slots=True, frozen=True)
 class Leg:
-    """One leg asset: placement metadata plus a vector source (or RGBA pixels).
+    """A leg asset: immutable source bytes and geometry in design pixels.
 
-    Width, height, foot center and the other metadata always use **design pixels**
-    (the coordinate system where a leg is 720 tall). Built-in assets carry an
-    `svg` vector source: `image` is only a layout preview at design size, and
-    the real rendering re-rasterizes the SVG at the target scale via
-    `render_stocking(scale=)`; external PNG assets have no vector source, so
-    their `image` is the original bitmap.
+    All geometry uses design pixels. The provider prepares the source orientation;
+    the foot must be at the bottom. No orientation detection or normalization is performed.
 
-    Attributes:
-        image: (H, W, 4) uint8 RGBA; the foot sits at the bottom of the image
-            and the asset is upright. Built-in assets are at design size; external
-            assets keep their original PNG size.
-        width: width in design pixels.
-        height: height in design pixels.
-        foot_center_x: x of the foot-sole center in the design coordinate system;
-            the anchor used when placing the leg.
-        pixels_per_unit: `image` pixels per design pixel. 1 for built-in assets
-            (layout preview) and 1 for external assets.
-        leg_id: built-in asset id (e.g. "leg_03"); None for external assets.
-        pair_id: the id of the pair it belongs to (e.g. "pair_02"); None for
-            external assets.
-        side: "left" / "right"; None for external assets.
-        svg: the transparent SVG source of a built-in asset; None for external
-            assets. Rasterized at the target scale when rendering.
+    Args:
+        source: Original PNG or SVG bytes.
+        source_type: Source format.
+        width: Width in design pixels.
+        height: Height in design pixels.
+        foot_center_x: Foot anchor x in design pixels.
+        leg_id: Optional identifier within a library.
+        pair_id: Optional pair identifier; participates in pairing only with side.
+        side: Optional left or right side.
 
     Raises:
-        ValueError: width or height is not positive, pixels_per_unit is not
-            positive, foot_center_x is out of range, or image is not a uint8 RGBA
-            array matching the design size and density.
+        ValueError: Empty source, invalid format, nonpositive size, or invalid foot anchor.
+
+    Attributes:
+        source: Original PNG or SVG bytes.
+        source_type: Source format.
+        width: Width in design pixels.
+        height: Height in design pixels.
+        foot_center_x: Foot anchor x in design pixels.
+        leg_id: Optional leg identifier.
+        pair_id: Optional pair identifier.
+        side: Optional left or right side.
     """
 
-    image: np.ndarray
-    width: int
-    height: int
-    foot_center_x: int
-    pixels_per_unit: float = 1.0
+    source: bytes
+    source_type: Literal["png", "svg"]
+    width: float
+    height: float
+    foot_center_x: float
     leg_id: str | None = None
     pair_id: str | None = None
     side: Literal["left", "right"] | None = None
-    svg: bytes | None = None
 
-    def raster_at(self, pixels_per_unit: float) -> np.ndarray:
-        """Rasterize at the target density and share read-only pixel caches across the process.
-
-        Args:
-            pixels_per_unit: target pixels / design pixels.
-
-        Returns:
-            (height × pixels_per_unit, width × pixels_per_unit, 4) uint8 RGBA.
-
-        Raises:
-            ValueError: pixels_per_unit is not a positive finite number, or the asset
-                has no vector source.
-        """
-
-    def at_density(self, pixels_per_unit: float) -> Leg:
-        """Return a Leg directly drawable at the given density, reusing a cached bitmap.
+    def raster_at(self, scale: float = 1.0) -> NDArray[np.uint8]:
+        """Rasterize the asset at the target scale, reusing shared process caches.
 
         Args:
-            pixels_per_unit: target pixels / design pixels.
+            scale: Output pixels per design pixel.
 
         Returns:
-            A new Leg: `image` is at the target density and `pixels_per_unit` is
-                updated to match; the design metadata and the SVG source stay
-                unchanged.
+            A read-only (round(height × scale), round(width × scale), 4) uint8 RGBA array.
 
         Raises:
-            ValueError: pixels_per_unit is not a positive finite number, or the asset
-                has no vector source.
+            ValueError: scale is not positive and finite, or the source cannot be decoded.
         """
+        ...
+```
+
+```python
+@dataclass(slots=True, frozen=True)
+class LegRender:
+    """Raster output of a leg at a particular scale.
+
+    Attributes:
+        source: The immutable source asset.
+        image: RGBA uint8 pixels at the target scale.
+        scale: Output pixels per design pixel.
+    """
+
+    source: Leg
+    image: NDArray[np.uint8]
+    scale: float
 ```
 
 ```python
 class LegLibrary:
-    """Library of built-in leg assets (26 legs / 13 pairs).
-
-    All Leg objects are lazily loaded and cached on first access; repeated calls
-    to get/pair do not re-read from disk. seed only affects the automatic
-    leg-selection order, not the assets themselves.
+    """An immutable collection of built-in or external assets, rasterized on demand.
 
     Args:
-        seed: random source for subsequent automatic leg selection; omit for a
-            fresh random run each time.
+        legs: Asset sequence; None uses built-in assets. May include legs from the default library.
+        seed: Default selection seed; method-level seeds take precedence. No RNG state is retained.
 
     Raises:
-        ValueError: the packaged legs.json is missing or fails validation.
+        ValueError: Empty custom library, duplicate identifiers or sides within a pair,
+            or invalid built-in metadata.
     """
 
-    def __init__(self, *, seed: int | None = None) -> None: ...
+    def __init__(self, legs: Sequence[Leg] | None = None, *, seed: int | None = None) -> None: ...
+
+    @property
+    def legs(self) -> tuple[Leg, ...]:
+        """Return all legs in library order, including unnamed and unpaired assets.
+
+        Returns:
+            An immutable Leg tuple. Built-in sources are read on first access, without creating previews.
+        """
+        ...
 
     @property
     def leg_ids(self) -> tuple[str, ...]:
-        """All leg ids.
-
-        Returns:
-            A tuple of leg_id in ascending id order.
-        """
+        """Return sorted nonempty leg identifiers without loading asset sources."""
+        ...
 
     @property
     def pair_ids(self) -> tuple[str, ...]:
-        """All pair ids.
-
-        Returns:
-            A tuple of pair_id in ascending id order.
-        """
+        """Return sorted complete-pair identifiers without loading asset sources."""
+        ...
 
     def get(self, leg_id: str) -> Leg:
-        """Fetch one leg by id (e.g. leg_03).
+        """Fetch a leg by identifier.
 
         Args:
-            leg_id: built-in leg id, of the form "leg_NN".
+            leg_id: An existing identifier in the library.
 
         Returns:
-            The matching Leg instance (lazily loaded).
+            Repeated access within one library returns the same Leg instance.
 
         Raises:
-            KeyError: the id does not exist.
+            KeyError: The identifier does not exist.
         """
+        ...
 
     def pair(self, pair_id: str) -> tuple[Leg, Leg]:
-        """Fetch a pair of legs, returning (left leg, right leg).
+        """Fetch (left leg, right leg) by pair identifier.
 
         Args:
-            pair_id: pair id, of the form "pair_NN".
+            pair_id: A complete-pair identifier.
 
         Returns:
-            (left leg, right leg).
+            The corresponding left and right legs.
 
         Raises:
-            KeyError: the pair id does not exist.
+            KeyError: The pair does not exist or is incomplete.
         """
+        ...
 
-    def alternate(self, n: int, *, paired: bool = False) -> list[Leg]:
-        """Select n legs in left, right, left, right ... order.
-
-        Once the asset pairs exceed 13, selection keeps reusing already-used assets.
+    def alternate(self, n: int, *, paired: bool = False, seed: int | None = None) -> list[Leg]:
+        """Select n legs, expanding complete pairs in left-right order when paired.
 
         Args:
-            n: number of legs wanted.
-            paired: with False (default) every leg comes from a different asset pair;
-                with True two adjacent legs form a pair (left, right), the asset pairs
-                are pseudo-random by seed and avoid repeats where possible. When n is
-                odd the last pair contributes only its left leg.
+            n: Number of legs.
+            paired: False shuffles all legs; True uses only complete pairs, taking the left leg for an odd final item.
+            seed: Seed for this selection, independent of earlier calls; None uses the library default or fresh randomness.
 
         Returns:
-            A list of n Leg items; even indices (0-based) hold left legs and odd
-            indices hold right legs.
+            A list that avoids repeats while possible and cycles when more legs are requested.
 
         Raises:
-            ValueError: n is negative.
+            ValueError: n is negative, or paired selection has no complete pair.
         """
+        ...
 
-    def sample_pairs(self, n: int) -> list[tuple[Leg, Leg]]:
-        """Select n complete asset pairs (for paired layouts); same selection rules as alternate.
+    def sample_pairs(self, n: int, *, seed: int | None = None) -> list[tuple[Leg, Leg]]:
+        """Select n complete pairs using the seed for this call.
 
         Args:
-            n: number of pairs wanted.
+            n: Number of pairs.
+            seed: Seed for this selection; None uses the library default or fresh randomness.
 
         Returns:
-            A list of n (left leg, right leg) tuples.
+            A list of (left, right) tuples, avoiding repeats while possible and cycling when necessary.
 
         Raises:
-            ValueError: n is negative.
+            ValueError: n is negative, or n is positive but no complete pairs exist.
         """
+        ...
 
-    def preview(self, *, scale: float = 0.5) -> PIL.Image.Image:
-        """Build a catalog image of all built-in assets, for browsing and asset selection.
-
-        Laid out grouped by pair (4 pairs per row), labeled with pair_id, leg_id and
-        the left/right foot.
-        This is a browsing tool, not on the rendering hot path; the first call loads
-        all leg assets.
+    def preview(self, *, scale: float = 0.5) -> Image.Image:
+        """Build a catalog with complete pairs together and unpaired legs shown separately.
 
         Args:
-            scale: the scale of the preview image relative to the design size; must
-                be positive.
+            scale: Preview scale relative to design size; must be positive and finite.
 
         Returns:
-            An RGB-mode PIL Image.
+            An RGB PIL image labeled with identifiers, pairings, and sides.
 
         Raises:
-            ValueError: scale is not a positive finite number.
+            ValueError: scale is not positive and finite.
         """
+        ...
 ```
 
 ```python
 def load_leg(
-    png: str | Path,
+    path: str | Path,
     *,
-    foot_center_x: int | None = None,
+    foot_center_x: float | None = None,
+    leg_id: str | None = None,
+    pair_id: str | None = None,
+    side: Literal["left", "right"] | None = None,
 ) -> Leg:
-    """Load a custom leg asset from a PNG, usable like the built-in assets (the id fields are None).
+    """Load an external PNG or SVG asset.
 
     Args:
-        png: path to a PNG with an alpha channel; the foot must sit at the bottom
-            of the image (the same orientation as the built-in assets).
-        foot_center_x: x coordinate of the foot-sole center. By default it is
-            estimated automatically from the alpha centroid of the bottom rows.
+        path: Path to a PNG or SVG file.
+        foot_center_x: Foot anchor in design pixels; estimated from the bottom alpha centroid when omitted.
+        leg_id: Optional identifier within a library.
+        pair_id: Optional pair identifier.
+        side: Optional left or right side; participates in pairing only with pair_id.
 
     Returns:
-        A Leg instance for the custom asset, passable directly to the interfaces
-        of every layer.
+        An immutable Leg source using the common asset model.
 
     Raises:
-        OSError: the file cannot be opened or is not a recognizable image.
-        ValueError: foot_center_x is outside the image width.
+        OSError: The file cannot be read.
+        ValueError: Invalid source format, dimensions, or anchor.
     """
+    ...
 ```
 
 ## Minimal example
 
 ```python
-from stockchart import LegLibrary
+from stockchart import DEFAULT_LEG_LIBRARY, LegLibrary, STYLES, load_leg, render_stocking
 
-library = LegLibrary(seed=0)
-leg = library.get("leg_03")  # a single leg
-left, right = library.pair("pair_02")  # a pair (left, right)
-print(leg.width, leg.height, leg.foot_center_x)
-print(library.leg_ids[:3], library.pair_ids[:3])
+leg = DEFAULT_LEG_LIBRARY.get("leg_03")
+custom = load_leg("custom.svg", leg_id="custom")
+library = LegLibrary([leg, custom])
+rendered = render_stocking(custom, STYLES["black_sheer"], 200, scale=2, seed=0)
+print(rendered.source.height, rendered.image.shape, rendered.scale)
 ```

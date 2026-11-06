@@ -87,6 +87,7 @@ def bar(
     max_fill: float = 0.85,
     min_fill: float = 0.1,
     seed: int | None = None,
+    library: LegLibrary = DEFAULT_LEG_LIBRARY,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
     """全朝上的柱状图：自动完成数据到丝袜高度的映射、选腿与布局。
@@ -116,12 +117,13 @@ def bar(
         paired: 选腿的配对策略。"auto"（默认）单系列用 "none"、多系列用
             "global"；"group" 每组独立取完整对：系列 0、1 同一对（左、右），
             系列 2 起继续取下一对（单系列即每组取新素材对的左腿）；
-            "global" 整张图连续取对，配对可以跨组；"none" 每条腿来自不同
-            素材对。
+            "global" 整张图连续取对，配对可以跨组；"none" 从全部腿中优先
+            不重复选取，包括未配对素材。
         value_labels: True 时在袜口上方手写数值（6 位有效数字；绝对值 ≥ 10⁶
             或 < 10⁻⁴ 时用科学计数法；不参与布局预留）。
         max_fill: 最大值映射到素材设计高度的比例，须在 (0, 1]（默认 0.85）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
+        library: 自动选腿使用的素材库，默认 DEFAULT_LEG_LIBRARY。
         options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap、
             height_px、width_px 等），见 docs/api.zh-CN/charts.md 的
             ChartOptions 表。height_px 为基线上方柱区高度，缺省按最高腿设计高度
@@ -165,6 +167,7 @@ def mirror_bar(
     value_labels: bool = False,
     max_abs_fill: float = 0.85,
     seed: int | None = None,
+    library: LegLibrary = DEFAULT_LEG_LIBRARY,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
     """正负镜像柱状图：正值画基线上方腿，负值画下方翻转腿（脚贴基线）。
@@ -187,6 +190,7 @@ def mirror_bar(
             （6 位有效数字；绝对值 ≥ 10⁶ 或 < 10⁻⁴ 时用科学计数法；不参与布局预留）。
         max_abs_fill: 最大绝对值映射到素材设计高度的比例，须在 (0, 1]
             （默认 0.85）。
+        library: 自动选腿使用的素材库，默认 DEFAULT_LEG_LIBRARY。
         options: 语义同 bar()。height_px 控制基线上方柱区高度，缺省按最高腿设计高度
             再加 10% 留白；width_px 控制绘图区宽度，缺省自适应。显式 height_px
             小于整腿高度时仍会扩到整腿高。x_label_pos 默认 "auto"：

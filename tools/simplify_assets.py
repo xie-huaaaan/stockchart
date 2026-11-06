@@ -30,7 +30,8 @@ def simplify(source: Path, destination: Path) -> dict[str, object]:
     """在 SVG 固有分辨率追踪颜色层，输出保留原 clipPath 的透明 SVG。"""
     svg = source.read_bytes()
     root = ET.fromstring(svg)
-    width, height = int(root.attrib["width"]), int(root.attrib["height"])
+    view_box = root.attrib["viewBox"].split()
+    width, height = round(float(view_box[2])), round(float(view_box[3]))
     clip = root.find("svg:defs/svg:clipPath/svg:path", NS)
     if clip is None:
         raise ValueError(f"{source.name} 缺少腿形裁切路径")

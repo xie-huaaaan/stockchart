@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from stockchart.legs import Leg
-from stockchart.library import LegLibrary
+from stockchart.library import DEFAULT_LEG_LIBRARY, LegLibrary
 from stockchart.plot.types import Pairing, StyleCycle
 from stockchart.stocking import STYLES, StockingStyle, StyleLike, StyleSeq
 
@@ -40,11 +40,13 @@ def check_cycle(cycle: StyleCycle) -> None:
         raise ValueError(f"cycle 须为 'group' 或 'sequence'，得到 {cycle!r}")
 
 
-def select_legs_for_groups(sizes: Sequence[int], *, paired: Pairing, seed: int) -> list[list[Leg]]:
+def select_legs_for_groups(
+    sizes: Sequence[int], *, paired: Pairing, seed: int, library: LegLibrary | None = None
+) -> list[list[Leg]]:
     """按每组腿数自动选腿。
 
-    "auto"（默认）单系列用 "none"、多系列用 "global"；"none" 时每条腿来自
-    不同素材对；"group" 时每组独立取完整对，奇数系列数舍去最后一对多出的
+    "auto"（默认）单系列用 "none"、多系列用 "global"；"none" 时从全部腿中
+    优先不重复选取；"group" 时每组独立取完整对，奇数系列数舍去最后一对多出的
     右腿（单系列即每组取新素材对的左腿）；"global" 时整张图连续取对，配对
     可以跨组。
 
@@ -52,6 +54,7 @@ def select_legs_for_groups(sizes: Sequence[int], *, paired: Pairing, seed: int) 
         sizes: 每组需要的腿数；每项须为正。
         paired: 配对策略。
         seed: 选腿随机源；同一 seed 结果可复现。
+        library: 自动选腿的素材库，默认使用内置库。
 
     Returns:
         与 sizes 同构的 Leg 列表。
@@ -62,13 +65,13 @@ def select_legs_for_groups(sizes: Sequence[int], *, paired: Pairing, seed: int) 
     check_pairing(paired)
     if not sizes or any(size <= 0 for size in sizes):
         raise ValueError("每组腿数须为正数")
-    lib = LegLibrary(seed=seed)
+    lib = library if library is not None else DEFAULT_LEG_LIBRARY
     if paired == "auto":
         paired = "global" if max(sizes) >= 2 else "none"
 
     if paired == "group":
         pairs_per_group = [(size + 1) // 2 for size in sizes]
-        pairs = lib.sample_pairs(sum(pairs_per_group))
+        pairs = lib.sample_pairs(sum(pairs_per_group), seed=seed)
         result: list[list[Leg]] = []
         cursor = 0
         for size, count in zip(sizes, pairs_per_group, strict=True):
@@ -77,7 +80,7 @@ def select_legs_for_groups(sizes: Sequence[int], *, paired: Pairing, seed: int) 
             result.append([leg for pair in group_pairs for leg in pair][:size])
         return result
 
-    flat = lib.alternate(sum(sizes), paired=paired == "global")
+    flat = lib.alternate(sum(sizes), paired=paired == "global", seed=seed)
     result = []
     cursor = 0
     for size in sizes:

@@ -93,11 +93,11 @@ type StyleSeq = StyleLike | Sequence[StyleLike]
 def render_stocking(
     leg: Leg,
     style: StockingStyle,
-    height_px: int,
+    height_px: float,
     *,
     seed: int | None = None,
     scale: float = 1.0,
-) -> Leg:
+) -> LegRender:
     """给腿穿丝袜：从脚端向上覆盖 height_px 像素。
 
     Args:
@@ -110,13 +110,10 @@ def render_stocking(
         scale: 输出倍率。>1 时在 scale 倍像素空间里生成——袜身纹理、上沿、
             光影都是该分辨率的真细节，不是把成品放大；内置矢量素材按该倍率
             重新栅格化，外部位图素材先按比例重采样。
-            返回的 Leg 图像为「设计尺寸 × scale」像素（`pixels_per_unit == scale`），
-            `width` / `height` / `foot_center_x` 等元数据仍是设计像素，
-            图层按 1:1 贴图即得到 scale 倍输出。
+            返回的 LegRender 图像为「设计尺寸 × scale」像素。
 
     Returns:
-        新的 Leg：图像按 scale 倍密度重绘（`pixels_per_unit == scale`），
-        设计像素元数据与原素材一致。
+        独立的 LegRender：含原素材、目标倍率和输出像素。
 
     Raises:
         ValueError: scale 不是正的有限数。
@@ -323,5 +320,5 @@ from stockchart import STYLES, LegLibrary, render_stocking
 
 library = LegLibrary(seed=0)
 rendered = render_stocking(library.get("leg_03"), STYLES["black_sheer"], 500, seed=0)
-print(rendered.height, rendered.pixels_per_unit)  # 设计像素高与图像密度
+print(rendered.source.height, rendered.scale)  # 设计像素高与图像密度
 ```

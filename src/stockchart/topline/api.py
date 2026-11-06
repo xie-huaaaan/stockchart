@@ -19,6 +19,7 @@ from stockchart.defaults import (
     DEFAULT_MIN_FILL,
     DEFAULT_STOCKING_STYLE,
 )
+from stockchart.library import DEFAULT_LEG_LIBRARY, LegLibrary
 from stockchart.plot import BarPlot, BarSide, Pairing, Scale
 from stockchart.plot.styles import normalize_style_seq
 from stockchart.plot.types import LegSpec
@@ -56,6 +57,7 @@ def bar(
     max_fill: float = DEFAULT_MAX_FILL,
     min_fill: float = DEFAULT_MIN_FILL,
     seed: int | None = None,
+    library: LegLibrary = DEFAULT_LEG_LIBRARY,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
     """全朝上的柱状图：自动完成数据到丝袜高度的映射、选腿与布局。
@@ -85,12 +87,13 @@ def bar(
         paired: 选腿的配对策略。"auto"（默认）单系列用 "none"、多系列用
             "global"；"group" 每组独立取完整对：系列 0、1 同一对（左、右），
             系列 2 起继续取下一对（单系列即每组取新素材对的左腿）；
-            "global" 整张图连续取对，配对可以跨组；"none" 每条腿来自不同
-            素材对。
+            "global" 整张图连续取对，配对可以跨组；"none" 从全部腿中优先
+            不重复选取，包括未配对素材。
         value_labels: True 时在袜口上方手写数值（6 位有效数字；绝对值 ≥ 10⁶
             或 < 10⁻⁴ 时用科学计数法；不参与布局预留）。
         max_fill: 最大值映射到素材设计高度的比例，须在 (0, 1]（默认 0.85）。
         min_fill: 仅当数据含负值时启用（默认 0.1），见下。
+        library: 自动选腿使用的素材库，默认 DEFAULT_LEG_LIBRARY。
         options: 透传给下层的可选项（grid、axis_style、legend_loc、bar_gap、
             height_px、width_px 等），见 docs/api.zh-CN/charts.md 的
             ChartOptions 表。height_px 为基线上方柱区高度，缺省按最高腿设计高度
@@ -136,7 +139,7 @@ def bar(
         raise ValueError("series_labels 需要固定的系列样式，请用 cycle='group'")
 
     rng = random.Random(seed)
-    legs = select_legs(rows, paired=paired, seed=rng.getrandbits(32))
+    legs = select_legs(rows, paired=paired, seed=rng.getrandbits(32), library=library)
     styles = normalize_style_seq(style)
     # 所有柱共用最矮腿的设计高度作为 100%，排序在截顶保护下仍可直接比较；
     # 内置素材高度均为 720，因此等价于以 720 为参考。
@@ -192,6 +195,7 @@ def bar(
         x_label_pos=options.get("x_label_pos", "content"),
         seed=seed,
         options=options,
+        library=library,
     )
     if value_labels:
         for g, row in enumerate(rows):
@@ -226,6 +230,7 @@ def mirror_bar(
     value_labels: bool = False,
     max_abs_fill: float = DEFAULT_MAX_FILL,
     seed: int | None = None,
+    library: LegLibrary = DEFAULT_LEG_LIBRARY,
     **options: Unpack[ChartOptions],
 ) -> BarPlot:
     """正负镜像柱状图：正值画基线上方腿，负值画下方翻转腿（脚贴基线）。
@@ -248,6 +253,7 @@ def mirror_bar(
             （6 位有效数字；绝对值 ≥ 10⁶ 或 < 10⁻⁴ 时用科学计数法；不参与布局预留）。
         max_abs_fill: 最大绝对值映射到素材设计高度的比例，须在 (0, 1]
             （默认 0.85）。
+        library: 自动选腿使用的素材库，默认 DEFAULT_LEG_LIBRARY。
         options: 语义同 bar()。height_px 控制基线上方柱区高度，缺省按最高腿设计高度
             再加 10% 留白；width_px 控制绘图区宽度，缺省自适应。显式 height_px
             小于整腿高度时仍会扩到整腿高。x_label_pos 默认 "auto"：
@@ -294,7 +300,7 @@ def mirror_bar(
         raise ValueError("series_labels 需要固定的系列样式，请用 cycle='group'")
 
     rng = random.Random(seed)
-    legs = select_legs(rows, paired=paired, seed=rng.getrandbits(32))
+    legs = select_legs(rows, paired=paired, seed=rng.getrandbits(32), library=library)
     styles = normalize_style_seq(style)
     # 与 bar() 相同：取最矮腿的设计高度作统一参考，避免矮腿截顶。
     design_height = float(min(leg.height for row in legs for leg in row))
@@ -345,6 +351,7 @@ def mirror_bar(
         x_label_pos=options.get("x_label_pos", "auto"),
         seed=seed,
         options=options,
+        library=library,
     )
     if value_labels:
         for g, row in enumerate(rows):

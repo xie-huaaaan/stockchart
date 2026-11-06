@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from hashlib import sha256
 from importlib.resources import files
 from io import BytesIO
 
@@ -14,7 +13,7 @@ from PIL import Image, ImageFilter
 
 from stockchart._cache import ByteCache
 from stockchart.defaults import DEFAULT_INK_CACHE_ENTRIES, DEFAULT_PREPARED_CACHE_BYTES
-from stockchart.legs import Leg
+from stockchart.legs import Leg, LegRender
 from stockchart.stocking.geometry import column_profile
 
 INK_DATA_VERSION = 1
@@ -55,14 +54,18 @@ class InkPixels:
 
 _geometry_cache = ByteCache[PreparedLeg](DEFAULT_PREPARED_CACHE_BYTES)
 _ink_cache = ByteCache[InkPixels](DEFAULT_PREPARED_CACHE_BYTES)
+_source_ink_cache = ByteCache[tuple[NDArray[np.uint8], NDArray[np.uint8]]](
+    DEFAULT_PREPARED_CACHE_BYTES
+)
 
 
-def _source_key(leg: Leg) -> bytes:
-    """按实际矢量源或位图像素标识素材，避免编号相同但内容不同的误命中。"""
-    return sha256(leg.svg if leg.svg is not None else leg.image.tobytes()).digest()
+def _source_key(leg: Leg | LegRender) -> bytes:
+    """按不可变素材源标识素材，避免编号相同但内容不同的误命中。"""
+    source = leg.source if isinstance(leg, LegRender) else leg
+    return source._source_digest()  # pyright: ignore[reportPrivateUsage]
 
 
-def prepare_leg(leg: Leg) -> PreparedLeg:
+def prepare_leg(leg: LegRender) -> PreparedLeg:
     """准备当前输出密度的素材数据，跨素材库实例复用且不依赖袜子样式。"""
     key = (_source_key(leg), leg.image.shape)
     cached = _geometry_cache.get(key)
@@ -128,17 +131,30 @@ def _bundled_ink(leg_id: str, digest: bytes) -> tuple[NDArray[np.uint8], NDArray
         return data["ink"], data["depth"]
 
 
-def ink_pixels(leg: Leg) -> InkPixels:
+def _source_ink(source: Leg) -> tuple[NDArray[np.uint8], NDArray[np.uint8]]:
+    """在固定源密度提取一次墨线，跨输出倍率复用。"""
+    digest = _source_key(source)
+    key = (digest, source.width, source.height, INK_DATA_VERSION)
+    cached = _source_ink_cache.get(key)
+    if cached is not None:
+        return cached
+    packed = _bundled_ink(source.leg_id, digest) if source.leg_id else None
+    if packed is None:
+        density = INK_DATA_DENSITY if source.source_type == "svg" else 1.0
+        packed = extract_ink(source.raster_at(density), density)
+    for array in packed:
+        array.flags.writeable = False
+    return _source_ink_cache.put(key, packed, sum(array.nbytes for array in packed))
+
+
+def ink_pixels(leg: LegRender) -> InkPixels:
     """返回目标密度下的稀疏墨线，只保留增强阶段实际需要的像素。"""
     digest = _source_key(leg)
     key = (digest, leg.image.shape)
     cached = _ink_cache.get(key)
     if cached is not None:
         return cached
-    maps = _bundled_ink(leg.leg_id, digest) if leg.svg is not None and leg.leg_id else None
-    if maps is None:
-        maps = extract_ink(leg.image, leg.pixels_per_unit)
-    ink, depth = maps
+    ink, depth = _source_ink(leg.source)
     height, width = leg.image.shape[:2]
     if ink.shape != (height, width):
         ink = np.array(Image.fromarray(ink).resize((width, height), Image.Resampling.BILINEAR))

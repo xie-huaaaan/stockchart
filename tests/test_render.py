@@ -6,6 +6,7 @@
 """
 
 from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -45,8 +46,11 @@ def make_synthetic_leg(height: int = 200, width: int = 80) -> "stockchart.Leg":
         img[y, x0:x1, :3] = [253, 234, 228]
         img[y, x0:x1, 3] = 255
 
+    buffer = BytesIO()
+    Image.fromarray(img).save(buffer, format="PNG")
     return Leg(
-        image=img,
+        source=buffer.getvalue(),
+        source_type="png",
         width=width,
         height=height,
         foot_center_x=cx,
@@ -81,7 +85,7 @@ class TestLegLibrary:
     def test_alternate_pattern_and_length(self) -> None:
         legs = LegLibrary(seed=42).alternate(6)
         assert len(legs) == 6
-        assert [leg.side for leg in legs] == ["left", "right", "left", "right", "left", "right"]
+        assert len({leg.leg_id for leg in legs}) == 6
 
     def test_alternate_paired_uses_same_pair(self) -> None:
         legs = LegLibrary(seed=7).alternate(6, paired=True)
@@ -92,7 +96,7 @@ class TestLegLibrary:
 
     def test_alternate_without_pairs_uses_different_pairs(self) -> None:
         legs = LegLibrary(seed=7).alternate(6)
-        assert len({leg.pair_id for leg in legs}) == 6
+        assert len({leg.leg_id for leg in legs}) == 6
 
     def test_sample_pairs(self) -> None:
         pairs = LegLibrary(seed=42).sample_pairs(3)
@@ -135,42 +139,16 @@ class TestLegLibrary:
 
 
 class TestVectorAssets:
-    """内置素材只存透明 SVG，渲染时按目标密度栅格化。"""
-
-    def test_builtin_leg_has_svg_source(self) -> None:
+    def test_builtin_source_and_density_cache(self) -> None:
         leg = LegLibrary().get("leg_01")
-        assert leg.svg is not None
-        assert leg.pixels_per_unit == 1.0
-        assert leg.image.shape == (leg.height, leg.width, 4)
-
-    def test_raster_at_target_density_is_cached(self) -> None:
-        leg = LegLibrary().get("leg_01")
-        img = leg.raster_at(2)
-        assert img.shape == (leg.height * 2, leg.width * 2, 4)
-        assert img[:, :, 3].min() == 0
-        assert img[:, :, 3].max() > 250
-        assert leg.raster_at(2) is img
-
-        hi = leg.at_density(2)
-        assert hi.pixels_per_unit == 2
-        assert hi.image is img
-        assert hi.svg is leg.svg
-
-    def test_render_stocking_on_vector_leg(self) -> None:
-        """矢量素材栅格化后可直接交给 render_stocking，尺寸与设计坐标一致。"""
-        leg = LegLibrary().get("leg_01")
+        assert leg.source_type == "svg"
+        image = leg.raster_at(2)
+        assert image.shape == (1440, 338, 4)
+        assert leg.raster_at(2) is image
+        assert not image.flags.writeable
         out = render_stocking(leg, STYLES["black_sheer"], 200, seed=1)
-        assert out.image.shape == (leg.height, leg.width, 4)
-        assert out.pixels_per_unit == 1.0
-
-    def test_external_leg_has_no_vector_source(self, tmp_path: Path) -> None:
-        leg = make_synthetic_leg(720, 160)
-        png_path = tmp_path / "leg.png"
-        Image.fromarray(leg.image).save(png_path)
-        loaded = load_leg(png_path)
-        assert loaded.svg is None
-        with pytest.raises(ValueError):
-            loaded.raster_at(2)
+        assert out.source is leg and out.scale == 1
+        assert out.image.shape == leg.raster_at().shape
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +160,7 @@ class TestLoadLeg:
     def test_from_png(self, tmp_path: Path) -> None:
         leg = make_synthetic_leg(300, 100)
         png_path = tmp_path / "test_leg.png"
-        Image.fromarray(leg.image).save(png_path)
+        Image.fromarray(leg.raster_at()).save(png_path)
 
         loaded = load_leg(png_path)
         assert loaded.width == 100
@@ -203,13 +181,10 @@ class TestLoadLeg:
 
 class TestLegValidation:
     def test_invalid_params_raise(self) -> None:
-        img = np.zeros((10, 10, 4), dtype=np.uint8)
-        with pytest.raises(ValueError):
-            stockchart.Leg(image=img, width=20, height=20, foot_center_x=5)
-        with pytest.raises(ValueError):
-            stockchart.Leg(image=img, width=10, height=10, foot_center_x=10)
-        with pytest.raises(ValueError):
-            stockchart.Leg(image=img, width=10, height=10, foot_center_x=5, pixels_per_unit=0)
+        base = make_synthetic_leg()
+        for fields in ({"width": 0}, {"height": float("nan")}, {"foot_center_x": 1000}):
+            with pytest.raises(ValueError):
+                replace(base, **fields)
 
 
 class TestStockingStyleValidation:
@@ -255,23 +230,23 @@ class TestSkinShading:
         leg = make_synthetic_leg(720, 160)
         style = replace(STYLES["black_sheer"], shading=Shading(skin=0.0))
         out = render_stocking(leg, style, 400, seed=1)
-        top = leg.height - 400
+        top = round(leg.height) - 400
         # 袜口以上 20px 之外应与素材完全一致
-        assert (out.image[: top - 20] == leg.image[: top - 20]).all()
+        assert (out.image[: top - 20] == leg.raster_at()[: top - 20]).all()
 
     def test_skin_shades_bare_leg(self) -> None:
         leg = make_synthetic_leg(720, 160)
         style = replace(STYLES["black_sheer"], shading=Shading(skin=0.5))
         out = render_stocking(leg, style, 0, seed=1)
-        diff = np.abs(out.image.astype(int) - leg.image.astype(int))[:, :, :3]
+        diff = np.abs(out.image.astype(int) - leg.raster_at().astype(int))[:, :, :3]
         # 验证受光的方向，避免依赖采样方法对边缘极值的影响。
-        delta = out.image[..., :3].astype(int) - leg.image[..., :3].astype(int)
-        covered = leg.image[..., 3] > 0
+        delta = out.image[..., :3].astype(int) - leg.raster_at()[..., :3].astype(int)
+        covered = leg.raster_at()[..., 3] > 0
         assert delta[covered].min() < 0
         assert delta[covered].max() > 0
         # 左侧缘（边缘阴影）与高光带（u≈-0.35）都要变
-        assert diff[:, leg.width // 2 - 32].max() > 0
-        assert diff[:, leg.width // 2 - 11].max() > 0
+        assert diff[:, round(leg.width) // 2 - 32].max() > 0
+        assert diff[:, round(leg.width) // 2 - 11].max() > 0
 
 
 # ---------------------------------------------------------------------------
@@ -287,9 +262,9 @@ class TestRenderScale:
         out = render_stocking(leg, STYLES["black_sheer"], 100, seed=1, scale=2)
         # 图像按倍率加密，设计坐标（供上层布局使用）保持不变
         assert out.image.shape[:2] == (400, 160)
-        assert out.pixels_per_unit == 2
-        assert (out.height, out.width) == (200, 80)
-        assert out.foot_center_x == leg.foot_center_x
+        assert out.scale == 2
+        assert (out.source.height, out.source.width) == (200, 80)
+        assert out.source.foot_center_x == leg.foot_center_x
 
     def test_bad_scale_and_density(self) -> None:
         leg = make_synthetic_leg(200, 80)
@@ -298,30 +273,20 @@ class TestRenderScale:
         with pytest.raises(ValueError):
             render_stocking(leg, STYLES["black_sheer"], 100, scale=float("nan"))
         with pytest.raises(ValueError):
-            leg.at_density(0)
+            leg.raster_at(0)
 
     def test_scale2_matches_scale1_when_downsampled(self) -> None:
         leg = make_synthetic_leg(200, 80)
         a = render_stocking(leg, STYLES["stripe_blue_white"], 150, seed=1).image
         b = render_stocking(leg, STYLES["stripe_blue_white"], 150, seed=1, scale=2).image
         small = np.asarray(
-            Image.fromarray(b).resize((leg.width, leg.height), Image.Resampling.LANCZOS)
+            Image.fromarray(b).resize(
+                (round(leg.width), round(leg.height)), Image.Resampling.LANCZOS
+            )
         ).astype(int)
         diff = np.abs(small[:, :, :3] - a.astype(int)[:, :, :3])
         # 高频条纹在降采样时会有少量差异，整体应高度一致
         assert diff.mean() < 12
-
-    def test_dense_asset_is_downsampled_not_upscaled(self) -> None:
-        """2 倍密素材在 1 倍输出下应降采样，设计坐标不变。"""
-        base = make_synthetic_leg(200, 80)
-        hi_img = np.asarray(Image.fromarray(base.image).resize((base.width * 2, base.height * 2)))
-        hi = replace(base, image=hi_img, pixels_per_unit=2.0)
-        out = render_stocking(hi, STYLES["black_sheer"], 100, seed=1)
-        assert out.image.shape[:2] == (200, 80)
-        assert out.pixels_per_unit == 1.0
-        # 2 倍输出则直接用素材本身，不再放大
-        out2 = render_stocking(hi, STYLES["black_sheer"], 100, seed=1, scale=2)
-        assert out2.image.shape[:2] == (400, 160)
 
 
 # ---------------------------------------------------------------------------
@@ -368,12 +333,12 @@ class TestRenderStocking:
     def test_nonpositive_height_returns_original(self, leg: "stockchart.Leg") -> None:
         # skin=0 时裸腿原样返回；skin>0 会打皮肤光影（见 TestSkinShading）
         style = replace(STYLES["black_sheer"], shading=Shading(skin=0.0))
-        np.testing.assert_array_equal(render_stocking(leg, style, 0).image, leg.image)
-        np.testing.assert_array_equal(render_stocking(leg, style, -10).image, leg.image)
+        np.testing.assert_array_equal(render_stocking(leg, style, 0).image, leg.raster_at())
+        np.testing.assert_array_equal(render_stocking(leg, style, -10).image, leg.raster_at())
 
     def test_output_shape_preserved(self, leg: "stockchart.Leg") -> None:
         result = render_stocking(leg, STYLES["black_sheer"], 100, seed=0)
-        assert result.image.shape == leg.image.shape
+        assert result.image.shape == leg.raster_at().shape
         assert result.image.dtype == np.uint8
 
     def test_perspective_changes_pattern(self, leg: "stockchart.Leg") -> None:
@@ -401,9 +366,9 @@ class TestRenderStocking:
         height_px = 100
         result = render_stocking(leg, STYLES["black_tights"], height_px, seed=0)
         # 腿中心列，袜子区域与原图应有差异
-        cx = leg.foot_center_x
-        orig_mid = leg.image[leg.height - 10, cx, :3].astype(int)
-        result_mid = result.image[leg.height - 10, cx, :3].astype(int)
+        cx = round(leg.foot_center_x)
+        orig_mid = leg.raster_at()[round(leg.height) - 10, cx, :3].astype(int)
+        result_mid = result.image[round(leg.height) - 10, cx, :3].astype(int)
         assert not np.array_equal(orig_mid, result_mid)
 
     @pytest.mark.parametrize(
@@ -427,16 +392,18 @@ class TestRenderStocking:
     def test_full_cover_clips_to_leg_height(self, leg: "stockchart.Leg") -> None:
         """height_px >= leg.height 时整腿覆盖，不越界。"""
         result = render_stocking(leg, STYLES["black_sheer"], leg.height + 100, seed=0)
-        assert result.image.shape == leg.image.shape
+        assert result.image.shape == leg.raster_at().shape
 
     @pytest.mark.parametrize("height_px", [0, 100, 300])
     def test_alpha_channel_unchanged(self, leg: "stockchart.Leg", height_px: int) -> None:
         """裸腿、局部穿袜与全覆盖都保留素材的半透明轮廓。"""
-        image = leg.image.copy()
+        image = leg.raster_at().copy()
         rng = np.random.default_rng(42)
         image[..., 3] = np.where(
             image[..., 3] > 0, rng.integers(1, 256, size=image.shape[:2], dtype=np.uint8), 0
         )
-        translucent = replace(leg, image=image)
+        buffer = BytesIO()
+        Image.fromarray(image).save(buffer, format="PNG")
+        translucent = replace(leg, source=buffer.getvalue())
         result = render_stocking(translucent, STYLES["black_tights"], height_px, seed=0)
         np.testing.assert_array_equal(result.image[..., 3], image[..., 3])

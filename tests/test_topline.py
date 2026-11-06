@@ -103,8 +103,7 @@ class TestPairing:
     def test_auto_single_series_uses_none(self) -> None:
         p = bar([1.0, 2.0, 3.0], seed=1)
         legs = [b.leg for b in p._bars]
-        assert len({leg.pair_id for leg in legs}) == 3
-        assert [leg.side for leg in legs] == ["left", "right", "left"]
+        assert len({leg.leg_id for leg in legs}) == 3
 
     def test_auto_multi_series_uses_global(self) -> None:
         p = bar([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], seed=1)
@@ -134,8 +133,7 @@ class TestPairing:
     def test_none_pairing_uses_distinct_pairs(self) -> None:
         p = bar([1.0, 2.0, 3.0], paired="none", seed=1)
         legs = [b.leg for b in p._bars]
-        assert len({leg.pair_id for leg in legs}) == 3
-        assert [leg.side for leg in legs] == ["left", "right", "left"]
+        assert len({leg.leg_id for leg in legs}) == 3
 
     def test_single_series_group_takes_left_leg_of_fresh_pairs(self) -> None:
         p = bar([1.0, 2.0, 3.0], paired="group", seed=1)

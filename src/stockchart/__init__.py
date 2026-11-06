@@ -14,8 +14,8 @@ from stockchart.data import (
     normalize_data,
     register_data_type,
 )
-from stockchart.legs import Leg
-from stockchart.library import LegLibrary, load_leg
+from stockchart.legs import Leg, LegRender
+from stockchart.library import DEFAULT_LEG_LIBRARY, LegLibrary, load_leg
 from stockchart.plot import (
     AxisStyle,
     BarPlot,
@@ -54,6 +54,7 @@ from stockchart.text import (
 from stockchart.topline import ChartOptions, bar, mirror_bar
 
 __all__ = [
+    "DEFAULT_LEG_LIBRARY",
     "STYLES",
     "AxisStyle",
     "BarPlot",
@@ -69,6 +70,7 @@ __all__ = [
     "Lace",
     "Leg",
     "LegLibrary",
+    "LegRender",
     "Pairing",
     "Plain",
     "PlotData",

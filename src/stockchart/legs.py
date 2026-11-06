@@ -1,113 +1,137 @@
-"""L0 素材层：腿部素材的数据结构。
-
-Leg 同时保存设计像素元数据、布局预览位图与可选矢量源；元数据决定布局，
-位图/矢量决定绘制分辨率。素材的编号、配对与加载校验在 library.py。
-"""
+"""L0 素材层：腿部素材源、设计元数据与一次渲染结果。"""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field
+from hashlib import sha256
 from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
-from stockchart.vector import rasterize_svg
+type LegSourceType = Literal["png", "svg"]
+
+
+@dataclass(slots=True)
+class _LegState:
+    """素材专属的小型派生状态；不持有大型像素数组。"""
+
+    digest: bytes | None = None
 
 
 @dataclass(slots=True, frozen=True)
 class Leg:
-    """一条腿部素材：定位元数据 + 矢量源（或 RGBA 像素）。
+    """一条腿部素材：不可变源字节与设计像素元数据。
 
-    宽高、足底中心等元数据一律使用**设计像素**（腿高 720 的坐标系）。内置素材
-    带 `svg` 矢量源：`image` 只是设计尺寸的布局预览，真正渲染时由
-    `render_stocking(scale=)` 按目标倍率重新栅格化；外部 PNG 素材没有矢量源，
-    `image` 就是原始位图。
+    所有几何值均使用设计像素。来源方向由素材提供者保证：脚应位于底部，
+    素材应已按预期方向准备好。
 
-    Attributes:
-        image: (H, W, 4) uint8 RGBA；脚在图像底端、素材正放。内置素材为设计
-            尺寸，外部素材为 PNG 原尺寸。
+    Args:
+        source: PNG 或 SVG 原始字节。
+        source_type: 素材格式。
         width: 设计像素宽。
         height: 设计像素高。
-        foot_center_x: 足底中心在设计坐标系里的 x，放置对齐的锚点。
-        pixels_per_unit: `image` 像素 / 设计像素。内置素材为 1（布局预览），
-            外部素材为 1。
-        leg_id: 内置素材编号（如 "leg_03"）；外部素材为 None。
-        pair_id: 所属配对编号（如 "pair_02"）；外部素材为 None。
-        side: "left" / "right"；外部素材为 None。
-        svg: 内置透明 SVG 源；外部素材为 None。渲染时按目标倍率栅格化。
+        foot_center_x: 足底中心的设计坐标 x。
+        leg_id: 可选的库内腿标识。
+        pair_id: 可选的配对标识；只有同时提供 side 才参与配对。
+        side: 可选的左右侧。
 
     Raises:
-        ValueError: 宽高非正、pixels_per_unit 非正、foot_center_x 越界，
-            或 image 不是与设计尺寸/密度匹配的 uint8 RGBA。
+        ValueError: 源为空、格式无效、尺寸非正或足底锚点越界。
+
+    Attributes:
+        source: 原始 PNG 或 SVG 字节。
+        source_type: 素材格式。
+        width: 设计像素宽。
+        height: 设计像素高。
+        foot_center_x: 足底中心的设计坐标 x。
+        leg_id: 可选的腿标识。
+        pair_id: 可选的配对标识。
+        side: 可选的左右侧。
     """
 
-    image: NDArray[np.uint8]
-    width: int
-    height: int
-    foot_center_x: int
-    pixels_per_unit: float = 1.0
+    source: bytes
+    source_type: LegSourceType
+    width: float
+    height: float
+    foot_center_x: float
     leg_id: str | None = None
     pair_id: str | None = None
     side: Literal["left", "right"] | None = None
-    svg: bytes | None = None
+    _state: _LegState = field(default_factory=_LegState, init=False, repr=False, compare=False)
+
+    def _source_digest(self) -> bytes:
+        """计算一次源摘要；源和元数据冻结后可安全复用。"""
+        if self._state.digest is None:
+            self._state.digest = sha256(self.source).digest()
+        return self._state.digest
 
     def __post_init__(self) -> None:
-        if self.width <= 0 or self.height <= 0:
-            raise ValueError(f"Leg 的宽高须为正数，得到 {self.width}×{self.height}")
-        if not math.isfinite(self.pixels_per_unit) or self.pixels_per_unit <= 0:
-            raise ValueError(f"Leg.pixels_per_unit 须为正数，得到 {self.pixels_per_unit!r}")
-        if not 0 <= self.foot_center_x < self.width:
+        if type(self.source) is not bytes:
+            raise ValueError("Leg.source 须为不可变 bytes")
+        if not self.source:
+            raise ValueError("Leg.source 不能为空")
+        if self.source_type not in ("png", "svg"):
+            raise ValueError(f"source_type 须为 'png' 或 'svg'，得到 {self.source_type!r}")
+        if (
+            not math.isfinite(self.width)
+            or not math.isfinite(self.height)
+            or self.width <= 0
+            or self.height <= 0
+        ):
+            raise ValueError(f"Leg 宽高须为正的有限数，得到 {self.width}×{self.height}")
+        if not math.isfinite(self.foot_center_x) or not 0 <= self.foot_center_x < self.width:
             raise ValueError(f"Leg.foot_center_x 须在 [0, {self.width})，得到 {self.foot_center_x}")
-        image = self.image
-        expected_h = max(1, round(self.height * self.pixels_per_unit))
-        expected_w = max(1, round(self.width * self.pixels_per_unit))
-        if image.ndim != 3 or image.shape[2] != 4 or image.dtype != np.uint8:
-            raise ValueError(f"Leg.image 须为 uint8 RGBA，得到 {image.shape} / {image.dtype}")
-        if image.shape[:2] != (expected_h, expected_w):
-            got_h, got_w = image.shape[:2]
-            raise ValueError(f"Leg.image 尺寸须为 {expected_h}×{expected_w}，得到 {got_h}×{got_w}")
+        if self.side not in (None, "left", "right"):
+            raise ValueError(f"side 须为 'left' 或 'right'，得到 {self.side!r}")
 
-    def raster_at(self, pixels_per_unit: float) -> NDArray[np.uint8]:
-        """按目标密度栅格化矢量源，并在进程内共享只读像素缓存。
+    def raster_at(self, scale: float = 1.0) -> NDArray[np.uint8]:
+        """将素材按目标输出倍率栅格化，并复用进程内共享缓存。
 
         Args:
-            pixels_per_unit: 目标像素 / 设计像素。
+            scale: 输出像素 / 设计像素。
 
         Returns:
-            (height × pixels_per_unit, width × pixels_per_unit, 4) uint8 RGBA。
+            (round(height × scale), round(width × scale), 4) uint8 RGBA 只读数组。
 
         Raises:
-            ValueError: pixels_per_unit 不是正的有限数，或素材没有矢量源。
+            ValueError: scale 不是正的有限数，或素材源无法解码。
         """
-        if not math.isfinite(pixels_per_unit) or pixels_per_unit <= 0:
-            raise ValueError(f"pixels_per_unit 须为正数，得到 {pixels_per_unit!r}")
-        if self.svg is None:
-            raise ValueError("该素材没有矢量源")
-        w = max(1, round(self.width * pixels_per_unit))
-        h = max(1, round(self.height * pixels_per_unit))
-        return rasterize_svg(self.svg, w, h)
+        from stockchart._raster import rasterize_source
 
-    def at_density(self, pixels_per_unit: float) -> Leg:
-        """返回指定密度下可直接绘制的 Leg，已有缓存位图时复用。
-
-        Args:
-            pixels_per_unit: 目标像素 / 设计像素。
-
-        Returns:
-            新的 Leg：`image` 为目标密度、`pixels_per_unit` 同步更新；设计
-            元数据与 SVG 源保持不变。
-
-        Raises:
-            ValueError: pixels_per_unit 不是正的有限数，或素材没有矢量源。
-        """
-        if not math.isfinite(pixels_per_unit) or pixels_per_unit <= 0:
-            raise ValueError(f"pixels_per_unit 须为正数，得到 {pixels_per_unit!r}")
-        if abs(self.pixels_per_unit - pixels_per_unit) < 1e-9:
-            return self
-        return replace(
-            self,
-            image=self.raster_at(pixels_per_unit),
-            pixels_per_unit=pixels_per_unit,
+        return rasterize_source(
+            self.source,
+            self.source_type,
+            self.width,
+            self.height,
+            scale,
+            digest=self._source_digest(),
         )
+
+
+@dataclass(slots=True, frozen=True)
+class LegRender:
+    """一条腿在指定倍率下的栅格化绘制结果。
+
+    Attributes:
+        source: 生成该图像的不可变素材。
+        image: 目标倍率下的 uint8 RGBA 像素。
+        scale: 输出像素 / 设计像素。
+    """
+
+    source: Leg
+    image: NDArray[np.uint8]
+    scale: float
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.scale) or self.scale <= 0:
+            raise ValueError(f"LegRender.scale 须为正的有限数，得到 {self.scale!r}")
+        if self.image.ndim != 3 or self.image.shape[2] != 4 or self.image.dtype != np.uint8:
+            raise ValueError("LegRender.image 须为 uint8 RGBA")
+        expected = (
+            max(1, round(self.source.height * self.scale)),
+            max(1, round(self.source.width * self.scale)),
+        )
+        if self.image.shape[:2] != expected:
+            raise ValueError(f"LegRender.image 尺寸须为 {expected[1]}×{expected[0]}")

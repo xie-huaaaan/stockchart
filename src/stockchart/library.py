@@ -1,8 +1,4 @@
-"""L0 素材层：内置素材库与外部素材加载。
-
-`LegLibrary` 读取打包的 legs.json 与透明 SVG，懒加载并缓存 Leg；`load_leg`
-把外部 PNG 包装成同样的 Leg。编号、配对与元数据完整性在这里校验。
-"""
+"""L0 素材库与 PNG/SVG 外部素材加载。"""
 
 from __future__ import annotations
 
@@ -10,9 +6,12 @@ import json
 import math
 import random
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from importlib.resources import files
+from io import BytesIO
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal, cast
 
 import numpy as np
@@ -21,71 +20,77 @@ from PIL import Image, ImageDraw, ImageFont
 
 from stockchart.defaults import DEFAULT_BACKGROUND
 from stockchart.legs import Leg
-from stockchart.vector import rasterize_svg
-
-# ---------------------------------------------------------------------------
-# load_leg：从外部 PNG 加载自定义腿素材
-# ---------------------------------------------------------------------------
-
-
-def load_leg(
-    png: str | Path,
-    *,
-    foot_center_x: int | None = None,
-) -> Leg:
-    """从 PNG 加载自定义腿素材，用法与内置素材一致（编号字段为 None）。
-
-    Args:
-        png: 带透明通道的 PNG 路径；要求脚位于图像底端（与内置素材同方向）。
-        foot_center_x: 足底中心 x 坐标。缺省按底部若干行的 alpha 质心自动估计。
-
-    Returns:
-        自定义素材的 Leg 实例，可直接传入各层接口。
-
-    Raises:
-        OSError: 文件无法打开或不是可识别的图片。
-        ValueError: foot_center_x 不在图像宽度范围内。
-    """
-    with Image.open(png) as source:
-        img = np.asarray(source.convert("RGBA"))
-    H, W = img.shape[:2]
-    if foot_center_x is not None and not 0 <= foot_center_x < W:
-        raise ValueError(f"foot_center_x 须在 [0, {W})，得到 {foot_center_x}")
-
-    est_cx = _estimate_foot_center(img)
-    return Leg(
-        image=img,
-        width=W,
-        height=H,
-        foot_center_x=foot_center_x if foot_center_x is not None else est_cx,
-    )
-
-
-def _estimate_foot_center(img: NDArray[np.uint8]) -> int:
-    """按底部若干行的 alpha 质心估计足底中心 x。
-
-    Args:
-        img: (H, W, 4) RGBA 素材。
-
-    Returns:
-        估计的足底中心列；底部完全透明时返回图像水平中心。
-    """
-    H, W = img.shape[:2]
-    foot_rows = min(20, H)
-    bot = img[H - foot_rows :, :, 3].astype(float)
-    col_sum = bot.sum(0)
-    if col_sum.sum() < 1:
-        return W // 2
-    xs = np.arange(W, dtype=float)
-    return round(float((col_sum * xs).sum() / col_sum.sum()))
-
-
-# ---------------------------------------------------------------------------
-# 元数据校验
-# ---------------------------------------------------------------------------
+from stockchart.vector import svg_dimensions
 
 _LEG_ID = re.compile(r"^leg_\d{2,}$")
 _PAIR_ID = re.compile(r"^pair_\d{2,}$")
+
+
+def _estimate_foot_center(image: NDArray[np.uint8], width: float, height: float) -> float:
+    """按底部最多 20 个设计像素的 alpha 质心估算足底中心。"""
+    rows = min(image.shape[0], max(1, round(20 * image.shape[0] / height)))
+    alpha = image[-rows:, :, 3].astype(np.float64)
+    columns = alpha.sum(axis=0)
+    if columns.sum() <= 0:
+        return width / 2
+    xs = np.arange(image.shape[1], dtype=np.float64) * width / image.shape[1]
+    return float((columns * xs).sum() / columns.sum())
+
+
+def load_leg(
+    path: str | Path,
+    *,
+    foot_center_x: float | None = None,
+    leg_id: str | None = None,
+    pair_id: str | None = None,
+    side: Literal["left", "right"] | None = None,
+) -> Leg:
+    """从 PNG 或 SVG 加载一条外部素材。
+
+    Args:
+        path: PNG 或 SVG 文件路径。
+        foot_center_x: 足底中心设计坐标；省略时按底部 alpha 质心估算。
+        leg_id: 可选的库内标识。
+        pair_id: 可选的配对标识。
+        side: 可选的左右侧；需与 pair_id 同时提供才参与配对。
+
+    Returns:
+        统一的不可变 `Leg` 素材源。
+
+    Raises:
+        OSError: 文件无法读取。
+        ValueError: 格式、尺寸或锚点无效。
+    """
+    file_path = Path(path)
+    suffix = file_path.suffix.lower()
+    source = file_path.read_bytes()
+    if suffix == ".svg":
+        width, height = svg_dimensions(source)
+        source_type: Literal["png", "svg"] = "svg"
+    elif suffix == ".png":
+        with Image.open(BytesIO(source)) as opened:
+            if opened.format != "PNG":
+                raise ValueError("PNG 路径须包含 PNG 素材")
+            width, height = map(float, opened.size)
+        source_type = "png"
+    else:
+        raise ValueError(f"仅支持 PNG 或 SVG，得到 {file_path.suffix!r}")
+    leg = Leg(
+        source=source,
+        source_type=source_type,
+        width=width,
+        height=height,
+        foot_center_x=width / 2 if foot_center_x is None else foot_center_x,
+        leg_id=leg_id,
+        pair_id=pair_id,
+        side=side,
+    )
+    if foot_center_x is None:
+        anchor = _estimate_foot_center(leg.raster_at(), width, height)
+        leg = replace(leg, foot_center_x=anchor)
+    return leg
+
+
 _META_KEYS = frozenset({"leg_id", "pair_id", "side", "width", "height", "foot_center_x"})
 
 
@@ -242,270 +247,249 @@ def _parse_metadata(raw: bytes) -> tuple[_LegMeta, ...]:
     return tuple(sorted(metas, key=lambda meta: meta.leg_id))
 
 
-# ---------------------------------------------------------------------------
-# LegLibrary：内置素材库
-# ---------------------------------------------------------------------------
+class _LibraryState:
+    """库拥有的懒加载对象，不持有目标倍率的大型像素缓存。"""
+
+    __slots__ = ("loaded",)
+
+    def __init__(self) -> None:
+        self.loaded: dict[str, Leg] = {}
 
 
+@dataclass(slots=True, frozen=True, init=False, repr=False)
 class LegLibrary:
-    """内置腿部素材库（26 条腿 / 13 对）。
-
-    所有 Leg 对象在首次访问时懒加载并缓存；反复调用 get/pair 不会重复读磁盘。
-    seed 只影响自动选腿顺序，不影响素材本身。
+    """由内置或外部素材组成的不可变腿库，像素按需生成。
 
     Args:
-        seed: 后续自动选腿的随机源；不传则每次运行随机。
+        legs: 素材序列；None 使用内置库，可混入默认库中的 Leg。
+        seed: 选腿方法的默认种子；方法级 seed 优先，不记录随机状态。
 
     Raises:
-        ValueError: 打包的 legs.json 缺失或校验失败。
+        ValueError: 自定义库为空、腿标识重复、同一配对的左右侧重复，
+            或内置元数据无效。
     """
 
-    def __init__(self, *, seed: int | None = None) -> None:
-        self._rng = random.Random(seed)
-        self._meta = _parse_metadata(files("stockchart.assets").joinpath("legs.json").read_bytes())
-        self._by_id = {meta.leg_id: meta for meta in self._meta}
-        self._cache: dict[str, Leg] = {}
+    _entries: tuple[Leg | _LegMeta, ...]
+    _by_id: Mapping[str, Leg | _LegMeta]
+    _pairs: Mapping[str, tuple[Leg | _LegMeta, Leg | _LegMeta]]
+    _state: _LibraryState
+    _seed: int | None
 
-        pair_sides: dict[str, dict[str, str]] = {}
-        for meta in self._meta:
-            pair_sides.setdefault(meta.pair_id, {})[meta.side] = meta.leg_id
-        self._pair_map: dict[str, tuple[str, str]] = {
-            pair_id: (sides["left"], sides["right"]) for pair_id, sides in pair_sides.items()
+    def __init__(self, legs: Sequence[Leg] | None = None, *, seed: int | None = None) -> None:
+        entries: tuple[Leg | _LegMeta, ...] = (
+            _parse_metadata(files("stockchart.assets").joinpath("legs.json").read_bytes())
+            if legs is None
+            else tuple(legs)
+        )
+        if not entries:
+            raise ValueError("LegLibrary 至少需要一条腿")
+        by_id: dict[str, Leg | _LegMeta] = {}
+        grouped: dict[str, dict[str, Leg | _LegMeta]] = {}
+        for leg in entries:
+            if leg.leg_id is not None:
+                if leg.leg_id in by_id:
+                    raise ValueError(f"leg_id 重复：{leg.leg_id}")
+                by_id[leg.leg_id] = leg
+            if leg.pair_id is not None and leg.side is not None:
+                sides = grouped.setdefault(leg.pair_id, {})
+                if leg.side in sides:
+                    raise ValueError(f"{leg.pair_id} 重复 {leg.side} 腿")
+                sides[leg.side] = leg
+        pairs = {
+            pair_id: (sides["left"], sides["right"])
+            for pair_id, sides in sorted(grouped.items())
+            if "left" in sides and "right" in sides
         }
-        self._pair_ids = tuple(sorted(self._pair_map))
+        object.__setattr__(self, "_entries", entries)
+        object.__setattr__(self, "_by_id", MappingProxyType(by_id))
+        object.__setattr__(self, "_pairs", MappingProxyType(pairs))
+        object.__setattr__(self, "_state", _LibraryState())
+        object.__setattr__(self, "_seed", seed)
+
+    @property
+    def legs(self) -> tuple[Leg, ...]:
+        """按库内顺序返回全部腿，包括无标识或未配对素材。
+
+        Returns:
+            只读 Leg 元组；内置腿的源文件在首次访问时读取，不生成预览。
+        """
+        return tuple(self._load(entry) for entry in self._entries)
 
     @property
     def leg_ids(self) -> tuple[str, ...]:
-        """全部腿编号。
-
-        Returns:
-            按编号升序排列的 leg_id 元组。
-        """
-        return tuple(meta.leg_id for meta in self._meta)
+        """返回按编号排序的非空腿标识，不加载素材源。"""
+        return tuple(sorted(self._by_id))
 
     @property
     def pair_ids(self) -> tuple[str, ...]:
-        """全部配对编号。
-
-        Returns:
-            按编号升序排列的 pair_id 元组。
-        """
-        return self._pair_ids
+        """返回按编号排序的完整配对标识，不加载素材源。"""
+        return tuple(self._pairs)
 
     def __repr__(self) -> str:
-        """返回包含腿数与对数的简写形式。"""
-        return f"LegLibrary({len(self._meta)} legs / {len(self._pair_ids)} pairs)"
+        """返回腿数和完整配对数。"""
+        return f"LegLibrary({len(self._entries)} legs / {len(self._pairs)} pairs)"
 
-    # ------------------------------------------------------------------
-    # 公开接口
-    # ------------------------------------------------------------------
+    def _load(self, entry: Leg | _LegMeta) -> Leg:
+        """懒加载内置源；外部 Leg 直接复用，混合库保持对象身份。"""
+        if isinstance(entry, Leg):
+            return entry
+        cached = self._state.loaded.get(entry.leg_id)
+        if cached is not None:
+            return cached
+        source = files("stockchart.assets").joinpath(f"{entry.leg_id}.svg").read_bytes()
+        leg = Leg(
+            source,
+            "svg",
+            entry.width,
+            entry.height,
+            entry.foot_center_x,
+            entry.leg_id,
+            entry.pair_id,
+            entry.side,
+        )
+        self._state.loaded[entry.leg_id] = leg
+        return leg
 
     def get(self, leg_id: str) -> Leg:
-        """按编号取一条腿（如 leg_03）。
+        """按标识取一条腿。
 
         Args:
-            leg_id: 内置腿编号，格式为 "leg_NN"。
+            leg_id: 库中已有的腿标识。
 
         Returns:
-            对应的 Leg 实例（懒加载）。
+            同一库内反复访问返回同一个 Leg。
 
         Raises:
-            KeyError: 编号不存在。
+            KeyError: 标识不存在。
         """
-        meta = self._by_id.get(leg_id)
-        if meta is None:
-            first, last = self._meta[0].leg_id, self._meta[-1].leg_id
-            raise KeyError(f"未知腿编号 {leg_id!r}，合法范围 {first} … {last}")
-        return self._load_leg(meta)
+        try:
+            return self._load(self._by_id[leg_id])
+        except KeyError:
+            raise KeyError(f"未知腿编号 {leg_id!r}") from None
 
     def pair(self, pair_id: str) -> tuple[Leg, Leg]:
-        """取一对腿，返回 (左腿, 右腿)。
+        """按配对标识取 (左腿, 右腿)。
 
         Args:
-            pair_id: 配对编号，格式为 "pair_NN"。
+            pair_id: 完整配对标识。
 
         Returns:
-            (左腿, 右腿)。
+            对应的左腿、右腿。
 
         Raises:
-            KeyError: 配对编号不存在。
+            KeyError: 配对不存在或不完整。
         """
-        ids = self._pair_map.get(pair_id)
-        if ids is None:
-            raise KeyError(
-                f"未知配对编号 {pair_id!r}，合法范围 {self._pair_ids[0]} … {self._pair_ids[-1]}"
-            )
-        return self._load_leg(self._by_id[ids[0]]), self._load_leg(self._by_id[ids[1]])
+        try:
+            left, right = self._pairs[pair_id]
+        except KeyError:
+            raise KeyError(f"未知或不完整配对 {pair_id!r}") from None
+        return self._load(left), self._load(right)
 
-    def alternate(self, n: int, *, paired: bool = False) -> list[Leg]:
-        """按左、右、左、右……的顺序选出 n 条腿。
-
-        素材对超过 13 对后从已用素材继续复用。
+    def alternate(self, n: int, *, paired: bool = False, seed: int | None = None) -> list[Leg]:
+        """选取 n 条腿；成对时按左、右顺序展开完整配对。
 
         Args:
-            n: 需要的腿数。
-            paired: False（默认）时每条腿来自不同素材对；True 时相邻两条腿
-                组成一对（左、右），素材对之间按 seed 伪随机且优先不重复。
-                n 为奇数时最后一对只取左腿。
+            n: 所需腿数。
+            paired: False 从全部腿中打乱选取；True 仅使用完整配对，奇数末项取左腿。
+            seed: 本次选择的随机种子，不受此前调用影响；None 使用库默认种子或每次随机。
 
         Returns:
-            长度为 n 的 Leg 列表，偶数下标为左腿，奇数下标为右腿（0-based）。
+            优先不重复、数量不足时循环复用的 Leg 列表。
 
         Raises:
-            ValueError: n 为负数。
+            ValueError: n 为负数，或成对选取时没有完整配对。
         """
         if n < 0:
             raise ValueError(f"n 不能为负数，得到 {n}")
-        pair_ids = self._shuffled_pair_ids()
-        result: list[Leg] = []
-        for i in range(n):
-            pair_index = i // 2 if paired else i
-            pair_id = pair_ids[pair_index % len(pair_ids)]
-            left, right = self.pair(pair_id)
-            result.append(left if i % 2 == 0 else right)
-        return result
+        if n == 0:
+            return []
+        if paired:
+            pairs = self.sample_pairs((n + 1) // 2, seed=seed)
+            return [leg for pair in pairs for leg in pair][:n]
+        entries = list(self._entries)
+        random.Random(self._seed if seed is None else seed).shuffle(entries)
+        return [self._load(entries[i % len(entries)]) for i in range(n)]
 
-    def sample_pairs(self, n: int) -> list[tuple[Leg, Leg]]:
-        """选出 n 对完整素材（成对布局用），选取规则同 alternate。
+    def sample_pairs(self, n: int, *, seed: int | None = None) -> list[tuple[Leg, Leg]]:
+        """按本次 seed 选取 n 个完整左右配对。
 
         Args:
-            n: 需要的对数。
+            n: 所需配对数。
+            seed: 本次选择的随机种子；None 使用库默认种子或每次随机。
 
         Returns:
-            长度为 n 的 (左腿, 右腿) 列表。
+            优先不重复、数量不足时循环复用的 (左腿, 右腿) 列表。
 
         Raises:
-            ValueError: n 为负数。
+            ValueError: n 为负数，或 n 大于零而库中没有完整配对。
         """
         if n < 0:
             raise ValueError(f"n 不能为负数，得到 {n}")
-        pair_ids = self._shuffled_pair_ids()
-        return [self.pair(pair_ids[i % len(pair_ids)]) for i in range(n)]
+        if not self._pairs and n:
+            raise ValueError("库中没有完整的左右配对")
+        ids = list(self._pairs)
+        random.Random(self._seed if seed is None else seed).shuffle(ids)
+        return [self.pair(ids[i % len(ids)]) for i in range(n)]
 
     def preview(self, *, scale: float = 0.5) -> Image.Image:
-        """生成全部内置素材的目录图，供浏览和选型。
-
-        按配对分组排列（每行 4 对），标注 pair_id、leg_id 与左右脚。
-        这是浏览工具，不在渲染热路径；首次调用会加载全部腿素材。
+        """生成全部素材的目录图，完整配对相邻，未配对腿单独展示。
 
         Args:
-            scale: 预览图相对设计尺寸的倍率，须为正数。
+            scale: 相对设计尺寸的预览倍率，须为正的有限数。
 
         Returns:
-            RGB 模式的 PIL Image。
+            标注库内标识、配对与左右侧的 RGB 模式 PIL Image。
 
         Raises:
             ValueError: scale 不是正的有限数。
         """
         if not math.isfinite(scale) or scale <= 0:
             raise ValueError(f"scale 须为正数，得到 {scale}")
+        groups = [(pair_id, list(self.pair(pair_id))) for pair_id in self.pair_ids]
+        paired = {id(leg) for _, group in groups for leg in group}
+        groups += [("unpaired", [leg]) for leg in self.legs if id(leg) not in paired]
+        images = {id(leg): Image.fromarray(leg.raster_at(scale)) for leg in self.legs}
+        font, title_font = ImageFont.load_default(size=16), ImageFont.load_default(size=22)
+        margin, gap, leg_gap, row_gap = 24, 30, 8, 34
+        label_h = 22
+        rows = [groups[i : i + 4] for i in range(0, len(groups), 4)]
+        leg_h = max(image.height for image in images.values())
 
-        imgs: dict[str, Image.Image] = {
-            meta.leg_id: Image.fromarray(self._load_leg(meta).at_density(scale).image)
-            for meta in self._meta
-        }
-        font = ImageFont.load_default(size=16)
-        title_font = ImageFont.load_default(size=22)
-        margin, pair_gap, leg_gap, row_gap = 24, 30, 8, 34
-        pair_label_h, leg_label_h, pairs_per_row = 22, 22, 4
+        def group_width(group: list[Leg]) -> int:
+            """计算一组腿的实际预览宽度。"""
+            return sum(images[id(leg)].width for leg in group) + leg_gap * (len(group) - 1)
 
-        pairs = [(pair_id, self._pair_map[pair_id]) for pair_id in self._pair_ids]
-        rows = [pairs[i : i + pairs_per_row] for i in range(0, len(pairs), pairs_per_row)]
-
-        leg_h = max(img.height for img in imgs.values())
-        row_widths: list[int] = []
-        for row in rows:
-            width = sum(
-                imgs[left_id].width + leg_gap + imgs[right_id].width
-                for _, (left_id, right_id) in row
-            )
-            width += pair_gap * (len(row) - 1)
-            row_widths.append(width)
-
-        title = f"stockchart leg library - {len(self._meta)} legs / {len(self._pair_ids)} pairs"
+        row_widths = [
+            sum(group_width(group) for _, group in row) + gap * (len(row) - 1) for row in rows
+        ]
+        title = f"stockchart leg library - {len(self._entries)} legs / {len(self._pairs)} pairs"
         title_box = title_font.getbbox(title)
-        title_w = round(title_box[2] - title_box[0])
-        title_h = round(title_box[3] - title_box[1])
-
-        width = max(max(row_widths, default=0), title_w) + 2 * margin
-        height = margin + title_h + row_gap
-        height += len(rows) * (pair_label_h + leg_h + leg_label_h + row_gap)
-        height += margin - row_gap
-
-        canvas = Image.new("RGB", (width, height), DEFAULT_BACKGROUND)
+        title_w, title_h = round(title_box[2] - title_box[0]), round(title_box[3] - title_box[1])
+        canvas = Image.new(
+            "RGB",
+            (
+                max(max(row_widths), title_w) + 2 * margin,
+                2 * margin + title_h + len(rows) * (2 * label_h + leg_h + row_gap),
+            ),
+            DEFAULT_BACKGROUND,
+        )
         draw = ImageDraw.Draw(canvas)
         draw.text((margin, margin), title, fill=(58, 58, 58), font=title_font)
-
         y = margin + title_h + row_gap
         for row in rows:
             x = margin
-            for pair_id, (left_id, right_id) in row:
-                left, right = imgs[left_id], imgs[right_id]
-                pair_w = left.width + leg_gap + right.width
+            for pair_id, group in row:
                 draw.text((x, y), pair_id, fill=(150, 110, 110), font=font)
-                leg_y = y + pair_label_h
-                canvas.paste(left, (x, leg_y), left)
-                canvas.paste(right, (x + left.width + leg_gap, leg_y), right)
-                for leg_id, side, offset in (
-                    (left_id, "L", 0),
-                    (right_id, "R", left.width + leg_gap),
-                ):
-                    label = f"{leg_id} {side}"
-                    label_box = font.getbbox(label)
-                    label_w = round(label_box[2] - label_box[0])
-                    leg_w = imgs[leg_id].width
-                    draw.text(
-                        (x + offset + (leg_w - label_w) // 2, leg_y + leg_h + 4),
-                        label,
-                        fill=(70, 70, 70),
-                        font=font,
-                    )
-                x += pair_w + pair_gap
-            y += pair_label_h + leg_h + leg_label_h + row_gap
-
+                for leg in group:
+                    image = images[id(leg)]
+                    canvas.paste(image, (x, y + label_h + leg_h - image.height), image)
+                    label = f"{leg.leg_id or 'unnamed'} {leg.side or ''}"
+                    draw.text((x, y + label_h + leg_h + 4), label, fill=(70, 70, 70), font=font)
+                    x += image.width + leg_gap
+                x += gap - leg_gap
+            y += 2 * label_h + leg_h + row_gap
         return canvas
 
-    # ------------------------------------------------------------------
-    # 内部辅助
-    # ------------------------------------------------------------------
 
-    def _load_leg(self, meta: _LegMeta) -> Leg:
-        """懒加载单条腿的 SVG，栅格化设计尺寸预览并缓存。
-
-        Args:
-            meta: 该腿的元数据。
-
-        Returns:
-            已填充 image、svg 与编号信息的 Leg；同一对象后续直接复用。
-        """
-        cached = self._cache.get(meta.leg_id)
-        if cached is not None:
-            return cached
-
-        pkg = files("stockchart.assets")
-        svg = pkg.joinpath(f"{meta.leg_id}.svg").read_bytes()
-        image = rasterize_svg(svg, meta.width, meta.height)
-        leg = Leg(
-            image=image,
-            width=meta.width,
-            height=meta.height,
-            foot_center_x=meta.foot_center_x,
-            leg_id=meta.leg_id,
-            pair_id=meta.pair_id,
-            side=meta.side,
-            svg=svg,
-        )
-        self._cache[meta.leg_id] = leg
-        return leg
-
-    def _shuffled_pair_ids(self) -> list[str]:
-        """返回随机打乱顺序的配对编号。
-
-        使用实例 RNG，因此会推进选腿的随机状态。
-
-        Returns:
-            配对编号列表，顺序由当前 seed 决定。
-        """
-        ids = list(self._pair_ids)
-        self._rng.shuffle(ids)
-        return ids
+DEFAULT_LEG_LIBRARY = LegLibrary()
+"""随包内置素材的默认库；创建时仅读取元数据。"""

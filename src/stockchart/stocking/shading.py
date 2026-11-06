@@ -6,19 +6,16 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy.typing import NDArray
-from PIL import Image
 
 from stockchart.color import color_alpha, color_rgb
 from stockchart.stocking.pixels import FloatArray
 from stockchart.stocking.styles import Shading, StockingStyle
 
 if TYPE_CHECKING:
-    from stockchart.legs import Leg
+    from stockchart.legs import LegRender
 
 
 def alpha_over(dst: FloatArray, src_: FloatArray) -> FloatArray:
@@ -123,76 +120,7 @@ def apply_lighting(
     return img
 
 
-def _resize_rgba(
-    image: NDArray[np.uint8],
-    width: int,
-    height: int,
-    *,
-    resample: Image.Resampling,
-) -> NDArray[np.uint8]:
-    """按预乘 alpha 缩放 RGBA。
-
-    先乘 alpha 再插值，避免透明区的黑色被拉进边缘形成暗边；通道以浮点
-    缩放，避免预乘后先量化到 8 位造成低透明度区域的色带。
-
-    Args:
-        image: (H, W, 4) uint8 RGBA。
-        width: 目标宽。
-        height: 目标高。
-        resample: PIL 重采样算法。
-
-    Returns:
-        (height, width, 4) uint8 RGBA。
-    """
-
-    def resize_float(channel: FloatArray) -> FloatArray:
-        """把单通道浮点图缩放为目标尺寸。"""
-        img = Image.fromarray(channel.astype(np.float32), mode="F")
-        return np.asarray(img.resize((width, height), resample), dtype=np.float32)
-
-    src = image.astype(np.float32) / 255.0
-    alpha = src[..., 3]
-    premultiplied = src[..., :3] * alpha[..., np.newaxis]
-    rgb = np.stack([resize_float(premultiplied[..., i]) for i in range(3)], axis=-1)
-    a = resize_float(alpha)
-    rgb /= np.maximum(a[..., np.newaxis], 1e-6)
-    out = np.dstack([np.clip(rgb, 0.0, 1.0), np.clip(a, 0.0, 1.0)[..., np.newaxis]])
-    return (out * 255).round().astype(np.uint8)
-
-
-def resample_leg(leg: Leg, density: float) -> Leg:
-    """把腿图重采样到指定密度，元数据仍是设计像素。
-
-    内置矢量素材按目标密度重新栅格化；外部位图素材比目标更密时降采样，
-    否则升采样。位图使用预乘 alpha 插值，避免透明边缘出现暗边。
-
-    Args:
-        leg: 原始腿素材。
-        density: 目标像素 / 设计像素。
-
-    Returns:
-        图像为目标密度、`pixels_per_unit == density` 的新 Leg。
-    """
-    if leg.svg is not None:
-        return leg.at_density(density)
-    if abs(leg.pixels_per_unit - density) < 1e-9:
-        return leg
-    h_img, w_img = leg.image.shape[:2]
-    h2 = max(1, round(h_img * density / leg.pixels_per_unit))
-    w2 = max(1, round(w_img * density / leg.pixels_per_unit))
-
-    # 降采样用 Lanczos（保细节），升采样用双三次（避免振铃）
-    resample = (
-        Image.Resampling.LANCZOS if density < leg.pixels_per_unit else Image.Resampling.BICUBIC
-    )
-    return replace(
-        leg,
-        image=_resize_rgba(leg.image, w2, h2, resample=resample),
-        pixels_per_unit=density,
-    )
-
-
-def shade_bare_leg(leg: Leg, style: StockingStyle) -> Leg:
+def shade_bare_leg(leg: LegRender, style: StockingStyle) -> LegRender:
     """给裸腿整体打上皮肤光影（不画袜子）。
 
     Args:
@@ -202,6 +130,7 @@ def shade_bare_leg(leg: Leg, style: StockingStyle) -> Leg:
     Returns:
         光照后的 Leg。
     """
+    from stockchart.legs import LegRender
     from stockchart.stocking.preprocess import prepare_leg
 
     prepared = prepare_leg(leg)
@@ -214,4 +143,4 @@ def shade_bare_leg(leg: Leg, style: StockingStyle) -> Leg:
     )
     image = (np.clip(out, 0.0, 1.0) * 255.0).astype(np.uint8)
     image[..., 3] = leg.image[..., 3]
-    return replace(leg, image=image)
+    return LegRender(leg.source, image, leg.scale)

@@ -33,7 +33,7 @@ from stockchart.defaults import (
     DEFAULT_Y_EXTENT,
 )
 from stockchart.legs import Leg
-from stockchart.library import LegLibrary
+from stockchart.library import DEFAULT_LEG_LIBRARY, LegLibrary
 from stockchart.plot.draw import draw_all
 from stockchart.plot.layout import compute_layout, legend_layout
 from stockchart.plot.scale import Scale, nice_ticks
@@ -114,6 +114,7 @@ class BarPlot:
         font: 全图默认字体（家族名、字体文件路径或候选列表）；各 add_*
             方法与数值标签不另指定 font 时使用，None 用平台默认链。
         seed: 随机源；影响默认的柱纹理、基线与手绘抖动，不传则每次随机。
+        library: L3 自动选腿使用的素材库；显式 legs/pairs 优先。
 
     腿高于 extent_up / extent_down 时，柱区会自动向上/向下扩张；轴、标题、
     标签与图例另占空间，不计入这两个值。
@@ -135,6 +136,7 @@ class BarPlot:
         axis_style: AxisStyle = DEFAULT_AXIS_STYLE,
         font: FontSpec | None = None,
         seed: int | None = None,
+        library: LegLibrary = DEFAULT_LEG_LIBRARY,
     ) -> None:
         if width_px <= 0:
             raise ValueError(f"width_px 须为正数，得到 {width_px}")
@@ -148,6 +150,7 @@ class BarPlot:
         self._background = background
         self._axis_style: AxisStyle = axis_style
         self._font = font
+        self._library = library
         self._rng = random.Random(seed)
         self._bars: list[BarRecord] = []
         self._group_centers: list[float] = []
@@ -533,7 +536,7 @@ class BarPlot:
         legs: Sequence[Leg] | None = None,
         seed: int | None = None,
     ) -> BarPlot:
-        """单序列：统一间距从左到右排开，自动交替选腿。
+        """单序列：统一间距从左到右排开，按配对策略自动选腿。
 
         legs 可显式指定每根柱的素材（长度须与 heights_px 一致，不参与循环，
         此时 paired 忽略）。style 为列表时按柱序循环取用。多次调用 L3 方法
@@ -561,7 +564,9 @@ class BarPlot:
             check_pairing(paired)
             seed_value = self._rng.getrandbits(32) if seed is None else seed
             sizes = [1] * len(heights)
-            rows = select_legs_for_groups(sizes, paired=paired, seed=seed_value)
+            rows = select_legs_for_groups(
+                sizes, paired=paired, seed=seed_value, library=self._library
+            )
             legs = [leg for row in rows for leg in row]
         elif len(legs) != len(heights):
             raise ValueError(f"legs 与 heights_px 长度不一致：{len(legs)} != {len(heights)}")
@@ -584,7 +589,7 @@ class BarPlot:
     ) -> BarPlot:
         """按 (组数, 系列数) 的像素高度排布分组柱状图。
 
-        组内用 bar_gap、组间用 group_gap；跨列按左、右、左、右……交替选腿。
+        组内用 bar_gap、组间用 group_gap；普通布局从全部素材选腿，成对布局取完整配对。
 
         Args:
             heights_px: 二维高度表；每行一组，组内每列一个系列。
@@ -619,7 +624,10 @@ class BarPlot:
             check_pairing(paired)
             seed_value = self._rng.getrandbits(32) if seed is None else seed
             rows = select_legs_for_groups(
-                [len(group) for group in groups], paired=paired, seed=seed_value
+                [len(group) for group in groups],
+                paired=paired,
+                seed=seed_value,
+                library=self._library,
             )
             legs = [leg for row in rows for leg in row]
         elif len(legs) != total:
@@ -673,8 +681,8 @@ class BarPlot:
             raise ValueError("add_paired_bars 每组须恰好 2 个值")
         check_cycle(cycle)
         if pairs is None:
-            lib = LegLibrary(seed=self._rng.getrandbits(32) if seed is None else seed)
-            pair_list = lib.sample_pairs(len(groups))
+            pair_seed = self._rng.getrandbits(32) if seed is None else seed
+            pair_list = self._library.sample_pairs(len(groups), seed=pair_seed)
         else:
             if len(pairs) != len(groups):
                 raise ValueError(f"pairs 与组数不一致：{len(pairs)} != {len(groups)}")

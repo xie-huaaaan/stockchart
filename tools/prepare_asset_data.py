@@ -13,25 +13,21 @@ import skia
 
 from stockchart import LegLibrary
 from stockchart.stocking.preprocess import INK_DATA_DENSITY, INK_DATA_VERSION, extract_ink
-from stockchart.vector import _SVG_SIZE, _record_svg
+from stockchart.vector import _record_svg, svg_dimensions
 
 OUT = Path(__file__).resolve().parent.parent / "src" / "stockchart" / "_precomputed"
 
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    library = LegLibrary(seed=0)
+    library = LegLibrary()
     total = 0
     sources: dict[str, str] = {}
     for leg_id in library.leg_ids:
         leg = library.get(leg_id)
-        assert leg.svg is not None
-        digest = sha256(leg.svg).hexdigest()
-        # SVG 固有尺寸是设计尺寸的四倍，不用布局预览的分辨率录制。
-        dimensions = _SVG_SIZE.search(leg.svg)
-        assert dimensions is not None
-        width, height = round(float(dimensions.group(1))), round(float(dimensions.group(2)))
-        picture = _record_svg(leg.svg, width, height)
+        digest = sha256(leg.source).hexdigest()
+        width, height = svg_dimensions(leg.source)
+        picture = _record_svg(leg.source, width, height)
         picture_path = OUT / f"{leg_id}.skp"
         picture_path.write_bytes(bytes(picture.serialize()))
         sources[digest] = leg_id

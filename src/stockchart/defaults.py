@@ -16,7 +16,10 @@ DEFAULT_STOCKING_STYLE = "black_sheer"
 """各层接口 style 参数的默认预设名。"""
 
 DEFAULT_RASTER_CACHE_BYTES = 64 * 1024 * 1024
-"""进程共享 SVG 栅格缓存的像素数据预算（字节）。"""
+"""进程共享目标尺寸栅格缓存的像素数据预算（字节）。"""
+
+DEFAULT_DECODED_CACHE_BYTES = 16 * 1024 * 1024
+"""进程共享 PNG 源像素解码缓存的预算（字节）。"""
 
 DEFAULT_PICTURE_CACHE_BYTES = 32 * 1024 * 1024
 """进程共享 SVG 绘图指令缓存的估计内存预算（字节）。"""

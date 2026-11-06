@@ -24,207 +24,228 @@
 | pair_12 | leg_23 | leg_24 | 181 / 145 |
 | pair_13 | leg_25 | leg_26 | 145 / 150 |
 
+内置与外部素材共用 `Leg`、目标倍率栅格化与缓存链路。`DEFAULT_LEG_LIBRARY` 是默认内置库；`LegLibrary([...])` 可混合外部腿和部分内置腿。导入素材须已按预期方向准备好，不做翻转、裁切或尺寸归一化。PNG 的设计尺寸等于图片大小；SVG 使用绝对像素宽高，缺少时使用 `viewBox`（仅缺一边时按其宽高比补足）。无可解析绝对尺寸或有效 `viewBox` 的百分比尺寸会报错。锚点省略时按底部最多 20 个设计像素的 alpha 质心估算，底部透明时取水平中心。
+
+样式中的袜口、条纹、网眼等长度均为固定设计像素，不随素材高度归一化。外部素材的许可由提供者负责；内置素材及其派生数据沿用 ARR 许可。
+
+未填写配对字段的腿仍可通过 `legs` 访问并参与普通选腿。`paired="none"` 从全部腿中选择；`"group"` / `"global"` 只取完整左右配对，没有完整配对时抛 `ValueError`。`"auto"` 在多系列时等同 `"global"`，因此仅含未配对素材的库绘制多系列图时应显式传 `paired="none"`。
+
 ```python
 @dataclass(slots=True, frozen=True)
 class Leg:
-    """一条腿部素材：定位元数据 + 矢量源（或 RGBA 像素）。
+    """一条腿部素材：不可变源字节与设计像素元数据。
 
-    宽高、足底中心等元数据一律使用**设计像素**（腿高 720 的坐标系）。内置素材
-    带 `svg` 矢量源：`image` 只是设计尺寸的布局预览，真正渲染时由
-    `render_stocking(scale=)` 按目标倍率重新栅格化；外部 PNG 素材没有矢量源，
-    `image` 就是原始位图。
+    所有几何值均使用设计像素。来源方向由素材提供者保证：脚应位于底部，
+    素材应已按预期方向准备好。
 
-    Attributes:
-        image: (H, W, 4) uint8 RGBA；脚在图像底端、素材正放。内置素材为设计
-            尺寸，外部素材为 PNG 原尺寸。
+    Args:
+        source: PNG 或 SVG 原始字节。
+        source_type: 素材格式。
         width: 设计像素宽。
         height: 设计像素高。
-        foot_center_x: 足底中心在设计坐标系里的 x，放置对齐的锚点。
-        pixels_per_unit: `image` 像素 / 设计像素。内置素材为 1（布局预览），
-            外部素材为 1。
-        leg_id: 内置素材编号（如 "leg_03"）；外部素材为 None。
-        pair_id: 所属配对编号（如 "pair_02"）；外部素材为 None。
-        side: "left" / "right"；外部素材为 None。
-        svg: 内置透明 SVG 源；外部素材为 None。渲染时按目标倍率栅格化。
+        foot_center_x: 足底中心的设计坐标 x。
+        leg_id: 可选的库内腿标识。
+        pair_id: 可选的配对标识；只有同时提供 side 才参与配对。
+        side: 可选的左右侧。
 
     Raises:
-        ValueError: 宽高非正、pixels_per_unit 非正、foot_center_x 越界，
-            或 image 不是与设计尺寸/密度匹配的 uint8 RGBA。
+        ValueError: 源为空、格式无效、尺寸非正或足底锚点越界。
+
+    Attributes:
+        source: 原始 PNG 或 SVG 字节。
+        source_type: 素材格式。
+        width: 设计像素宽。
+        height: 设计像素高。
+        foot_center_x: 足底中心的设计坐标 x。
+        leg_id: 可选的腿标识。
+        pair_id: 可选的配对标识。
+        side: 可选的左右侧。
     """
 
-    image: np.ndarray
-    width: int
-    height: int
-    foot_center_x: int
-    pixels_per_unit: float = 1.0
+    source: bytes
+    source_type: Literal["png", "svg"]
+    width: float
+    height: float
+    foot_center_x: float
     leg_id: str | None = None
     pair_id: str | None = None
     side: Literal["left", "right"] | None = None
-    svg: bytes | None = None
 
-    def raster_at(self, pixels_per_unit: float) -> np.ndarray:
-        """按目标密度栅格化矢量源，并在进程内共享只读像素缓存。
-
-        Args:
-            pixels_per_unit: 目标像素 / 设计像素。
-
-        Returns:
-            (height × pixels_per_unit, width × pixels_per_unit, 4) uint8 RGBA。
-
-        Raises:
-            ValueError: pixels_per_unit 不是正的有限数，或素材没有矢量源。
-        """
-
-    def at_density(self, pixels_per_unit: float) -> Leg:
-        """返回指定密度下可直接绘制的 Leg，已有缓存位图时复用。
+    def raster_at(self, scale: float = 1.0) -> NDArray[np.uint8]:
+        """将素材按目标输出倍率栅格化，并复用进程内共享缓存。
 
         Args:
-            pixels_per_unit: 目标像素 / 设计像素。
+            scale: 输出像素 / 设计像素。
 
         Returns:
-            新的 Leg：`image` 为目标密度、`pixels_per_unit` 同步更新；设计
-            元数据与 SVG 源保持不变。
+            (round(height × scale), round(width × scale), 4) uint8 RGBA 只读数组。
 
         Raises:
-            ValueError: pixels_per_unit 不是正的有限数，或素材没有矢量源。
+            ValueError: scale 不是正的有限数，或素材源无法解码。
         """
+        ...
+```
+
+```python
+@dataclass(slots=True, frozen=True)
+class LegRender:
+    """一条腿在指定倍率下的栅格化绘制结果。
+
+    Attributes:
+        source: 生成该图像的不可变素材。
+        image: 目标倍率下的 uint8 RGBA 像素。
+        scale: 输出像素 / 设计像素。
+    """
+
+    source: Leg
+    image: NDArray[np.uint8]
+    scale: float
 ```
 
 ```python
 class LegLibrary:
-    """内置腿部素材库（26 条腿 / 13 对）。
-
-    所有 Leg 对象在首次访问时懒加载并缓存；反复调用 get/pair 不会重复读磁盘。
-    seed 只影响自动选腿顺序，不影响素材本身。
+    """由内置或外部素材组成的不可变腿库，像素按需生成。
 
     Args:
-        seed: 后续自动选腿的随机源；不传则每次运行随机。
+        legs: 素材序列；None 使用内置库，可混入默认库中的 Leg。
+        seed: 选腿方法的默认种子；方法级 seed 优先，不记录随机状态。
 
     Raises:
-        ValueError: 打包的 legs.json 缺失或校验失败。
+        ValueError: 自定义库为空、腿标识重复、同一配对的左右侧重复，
+            或内置元数据无效。
     """
 
-    def __init__(self, *, seed: int | None = None) -> None: ...
+    def __init__(self, legs: Sequence[Leg] | None = None, *, seed: int | None = None) -> None: ...
+
+    @property
+    def legs(self) -> tuple[Leg, ...]:
+        """按库内顺序返回全部腿，包括无标识或未配对素材。
+
+        Returns:
+            只读 Leg 元组；内置腿的源文件在首次访问时读取，不生成预览。
+        """
+        ...
 
     @property
     def leg_ids(self) -> tuple[str, ...]:
-        """全部腿编号。
-
-        Returns:
-            按编号升序排列的 leg_id 元组。
-        """
+        """返回按编号排序的非空腿标识，不加载素材源。"""
+        ...
 
     @property
     def pair_ids(self) -> tuple[str, ...]:
-        """全部配对编号。
-
-        Returns:
-            按编号升序排列的 pair_id 元组。
-        """
+        """返回按编号排序的完整配对标识，不加载素材源。"""
+        ...
 
     def get(self, leg_id: str) -> Leg:
-        """按编号取一条腿（如 leg_03）。
+        """按标识取一条腿。
 
         Args:
-            leg_id: 内置腿编号，格式为 "leg_NN"。
+            leg_id: 库中已有的腿标识。
 
         Returns:
-            对应的 Leg 实例（懒加载）。
+            同一库内反复访问返回同一个 Leg。
 
         Raises:
-            KeyError: 编号不存在。
+            KeyError: 标识不存在。
         """
+        ...
 
     def pair(self, pair_id: str) -> tuple[Leg, Leg]:
-        """取一对腿，返回 (左腿, 右腿)。
+        """按配对标识取 (左腿, 右腿)。
 
         Args:
-            pair_id: 配对编号，格式为 "pair_NN"。
+            pair_id: 完整配对标识。
 
         Returns:
-            (左腿, 右腿)。
+            对应的左腿、右腿。
 
         Raises:
-            KeyError: 配对编号不存在。
+            KeyError: 配对不存在或不完整。
         """
+        ...
 
-    def alternate(self, n: int, *, paired: bool = False) -> list[Leg]:
-        """按左、右、左、右……的顺序选出 n 条腿。
-
-        素材对超过 13 对后从已用素材继续复用。
+    def alternate(self, n: int, *, paired: bool = False, seed: int | None = None) -> list[Leg]:
+        """选取 n 条腿；成对时按左、右顺序展开完整配对。
 
         Args:
-            n: 需要的腿数。
-            paired: False（默认）时每条腿来自不同素材对；True 时相邻两条腿
-                组成一对（左、右），素材对之间按 seed 伪随机且优先不重复。
-                n 为奇数时最后一对只取左腿。
+            n: 所需腿数。
+            paired: False 从全部腿中打乱选取；True 仅使用完整配对，奇数末项取左腿。
+            seed: 本次选择的随机种子，不受此前调用影响；None 使用库默认种子或每次随机。
 
         Returns:
-            长度为 n 的 Leg 列表，偶数下标为左腿，奇数下标为右腿（0-based）。
+            优先不重复、数量不足时循环复用的 Leg 列表。
 
         Raises:
-            ValueError: n 为负数。
+            ValueError: n 为负数，或成对选取时没有完整配对。
         """
+        ...
 
-    def sample_pairs(self, n: int) -> list[tuple[Leg, Leg]]:
-        """选出 n 对完整素材（成对布局用），选取规则同 alternate。
+    def sample_pairs(self, n: int, *, seed: int | None = None) -> list[tuple[Leg, Leg]]:
+        """按本次 seed 选取 n 个完整左右配对。
 
         Args:
-            n: 需要的对数。
+            n: 所需配对数。
+            seed: 本次选择的随机种子；None 使用库默认种子或每次随机。
 
         Returns:
-            长度为 n 的 (左腿, 右腿) 列表。
+            优先不重复、数量不足时循环复用的 (左腿, 右腿) 列表。
 
         Raises:
-            ValueError: n 为负数。
+            ValueError: n 为负数，或 n 大于零而库中没有完整配对。
         """
+        ...
 
-    def preview(self, *, scale: float = 0.5) -> PIL.Image.Image:
-        """生成全部内置素材的目录图，供浏览和选型。
-
-        按配对分组排列（每行 4 对），标注 pair_id、leg_id 与左右脚。
-        这是浏览工具，不在渲染热路径；首次调用会加载全部腿素材。
+    def preview(self, *, scale: float = 0.5) -> Image.Image:
+        """生成全部素材的目录图，完整配对相邻，未配对腿单独展示。
 
         Args:
-            scale: 预览图相对设计尺寸的倍率，须为正数。
+            scale: 相对设计尺寸的预览倍率，须为正的有限数。
 
         Returns:
-            RGB 模式的 PIL Image。
+            标注库内标识、配对与左右侧的 RGB 模式 PIL Image。
 
         Raises:
             ValueError: scale 不是正的有限数。
         """
+        ...
 ```
 
 ```python
 def load_leg(
-    png: str | Path,
+    path: str | Path,
     *,
-    foot_center_x: int | None = None,
+    foot_center_x: float | None = None,
+    leg_id: str | None = None,
+    pair_id: str | None = None,
+    side: Literal["left", "right"] | None = None,
 ) -> Leg:
-    """从 PNG 加载自定义腿素材，用法与内置素材一致（编号字段为 None）。
+    """从 PNG 或 SVG 加载一条外部素材。
 
     Args:
-        png: 带透明通道的 PNG 路径；要求脚位于图像底端（与内置素材同方向）。
-        foot_center_x: 足底中心 x 坐标。缺省按底部若干行的 alpha 质心自动估计。
+        path: PNG 或 SVG 文件路径。
+        foot_center_x: 足底中心设计坐标；省略时按底部 alpha 质心估算。
+        leg_id: 可选的库内标识。
+        pair_id: 可选的配对标识。
+        side: 可选的左右侧；需与 pair_id 同时提供才参与配对。
 
     Returns:
-        自定义素材的 Leg 实例，可直接传入各层接口。
+        统一的不可变 `Leg` 素材源。
 
     Raises:
-        OSError: 文件无法打开或不是可识别的图片。
-        ValueError: foot_center_x 不在图像宽度范围内。
+        OSError: 文件无法读取。
+        ValueError: 格式、尺寸或锚点无效。
     """
+    ...
 ```
 
 ## 最小示例
 
 ```python
-from stockchart import LegLibrary
+from stockchart import DEFAULT_LEG_LIBRARY, LegLibrary, STYLES, load_leg, render_stocking
 
-library = LegLibrary(seed=0)
-leg = library.get("leg_03")  # 单条腿
-left, right = library.pair("pair_02")  # 一对腿（左、右）
-print(leg.width, leg.height, leg.foot_center_x)
-print(library.leg_ids[:3], library.pair_ids[:3])
+leg = DEFAULT_LEG_LIBRARY.get("leg_03")
+custom = load_leg("custom.svg", leg_id="custom")
+library = LegLibrary([leg, custom])
+rendered = render_stocking(custom, STYLES["black_sheer"], 200, scale=2, seed=0)
+print(rendered.source.height, rendered.image.shape, rendered.scale)
 ```

@@ -63,7 +63,7 @@ def _skia_image(arr: NDArray[np.uint8]) -> skia.Image:
     return skia.Image.fromarray(np.ascontiguousarray(arr[:, :, [2, 1, 0, 3]]))
 
 
-def _sock_top_center_x(leg: Leg, height_px: float) -> float:
+def _sock_top_center_x(leg: Leg, height_px: float, scale: float = 1.0) -> float:
     """取袜口那一行腿轮廓的水平中心，供数值标签对齐。
 
     腿素材是倾斜的，足底中心与袜口中心不在同一竖线上；按足底中心居中写
@@ -72,17 +72,19 @@ def _sock_top_center_x(leg: Leg, height_px: float) -> float:
     Args:
         leg: 腿素材。
         height_px: 丝袜高度（设计像素）；<= 0 表示裸腿。
+        scale: 当前输出倍率；与绘制腿图共用目标密度栅格缓存。
 
     Returns:
         袜口中心在绘图区坐标中的 x（设计像素）。
     """
     h = round(height_px)
     row = 0 if h <= 0 else max(0, min(leg.height - h, leg.height - 1))
-    row_img = min(round(row * leg.pixels_per_unit), leg.image.shape[0] - 1)
-    cols = np.where(leg.image[row_img, :, 3] > 0)[0]
+    image = leg.raster_at(scale)
+    row_img = min(round(row * scale), image.shape[0] - 1)
+    cols = np.where(image[row_img, :, 3] > 0)[0]
     if len(cols) == 0:
         return float(leg.foot_center_x)
-    return float((cols[0] + cols[-1]) / 2 / leg.pixels_per_unit)
+    return float((cols[0] + cols[-1]) / (2 * scale))
 
 
 def _draw_grid(canvas: Canvas, layout: PlotLayout, inp: RenderInput) -> None:
@@ -430,7 +432,7 @@ def _draw_x_labels(canvas: Canvas, layout: PlotLayout, inp: RenderInput) -> None
         )
 
 
-def _draw_value_labels(canvas: Canvas, layout: PlotLayout, inp: RenderInput) -> None:
+def _draw_value_labels(canvas: Canvas, layout: PlotLayout, inp: RenderInput, scale: float) -> None:
     """绘制 L4 写入的数值标签。
 
     标签对齐袜口中心而非足底中心，因为倾斜的腿两者不在同一竖线上。
@@ -439,6 +441,7 @@ def _draw_value_labels(canvas: Canvas, layout: PlotLayout, inp: RenderInput) -> 
         canvas: 目标画布。
         layout: 布局结果。
         inp: 渲染输入（布局与绘制共用的状态）。
+        scale: 当前输出倍率，用于复用腿的栅格像素。
     """
     # 数值标签不参与布局：极端 max_fill / 超长文本可能压到标题或图例；暂不处理。
     for bar in inp.bars:
@@ -457,7 +460,7 @@ def _draw_value_labels(canvas: Canvas, layout: PlotLayout, inp: RenderInput) -> 
             layout.plot_left
             + bar.x
             - bar.leg.foot_center_x
-            + _sock_top_center_x(bar.leg, visible_h)
+            + _sock_top_center_x(bar.leg, visible_h, scale)
         )
         draw_text(
             canvas,
@@ -490,4 +493,4 @@ def draw_all(canvas: Canvas, layout: PlotLayout, inp: RenderInput, *, scale: flo
     _draw_title(canvas, layout, inp)
     _draw_legend(canvas, layout, inp, scale=scale)
     _draw_x_labels(canvas, layout, inp)
-    _draw_value_labels(canvas, layout, inp)
+    _draw_value_labels(canvas, layout, inp, scale)

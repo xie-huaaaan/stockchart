@@ -93,11 +93,11 @@ L2's `add_bar` accepts only a single `StyleLike`; the bulk methods of L3/L4 acce
 def render_stocking(
     leg: Leg,
     style: StockingStyle,
-    height_px: int,
+    height_px: float,
     *,
     seed: int | None = None,
     scale: float = 1.0,
-) -> Leg:
+) -> LegRender:
     """Dress a leg in a stocking: cover upward from the tip of the foot by height_px pixels.
 
     Args:
@@ -115,15 +115,10 @@ def render_stocking(
             finished image; built-in vector assets are re-rasterized at that
             scale, and external bitmap assets are resampled proportionally
             first.
-            The returned Leg's image is "design size x scale" pixels
-            (`pixels_per_unit == scale`); metadata such as `width`, `height`,
-            and `foot_center_x` stays in design pixels, and compositing layers
-            1:1 yields scale-x output.
+            The LegRender image has design dimensions multiplied by scale.
 
     Returns:
-        A new Leg: the image is redrawn at scale-x density
-        (`pixels_per_unit == scale`), and the design-pixel metadata matches the
-        original asset.
+        A separate LegRender holding the source asset, output pixels, and target scale.
 
     Raises:
         ValueError: `scale` is not a positive finite number.
@@ -350,5 +345,5 @@ from stockchart import STYLES, LegLibrary, render_stocking
 
 library = LegLibrary(seed=0)
 rendered = render_stocking(library.get("leg_03"), STYLES["black_sheer"], 500, seed=0)
-print(rendered.height, rendered.pixels_per_unit)  # design height and image density
+print(rendered.source.height, rendered.scale)  # design height and image density
 ```

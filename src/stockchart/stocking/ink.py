@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from stockchart.color import color_rgb
-from stockchart.legs import Leg
+from stockchart.legs import LegRender
 from stockchart.stocking.pixels import FloatArray
 from stockchart.stocking.preprocess import ink_pixels
 from stockchart.stocking.styles import Shading
@@ -13,7 +13,7 @@ from stockchart.stocking.styles import Shading
 
 def boost_ink_lines(
     img: FloatArray,
-    leg: Leg,
+    leg: LegRender,
     sh: Shading,
     material: FloatArray,
 ) -> FloatArray:

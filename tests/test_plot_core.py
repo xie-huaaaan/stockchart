@@ -1,7 +1,10 @@
 """L2 基础测试：Scale 比例尺与 BarPlot 核心（add_bar / render）。"""
 
+from io import BytesIO
+
 import numpy as np
 import pytest
+from PIL import Image
 
 from stockchart import BarPlot, Leg, LegLibrary, Scale
 
@@ -14,8 +17,11 @@ def make_leg(h: int = 720, w: int = 160) -> Leg:
     img = np.zeros((h, w, 4), dtype=np.uint8)
     img[..., :3] = (253, 234, 228)
     img[..., 3] = 255
+    buffer = BytesIO()
+    Image.fromarray(img).save(buffer, format="PNG")
     return Leg(
-        image=img,
+        source=buffer.getvalue(),
+        source_type="png",
         width=w,
         height=h,
         foot_center_x=w // 2,

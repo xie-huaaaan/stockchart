@@ -108,20 +108,20 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 
 ## 素材与输出（设计像素 vs 图像密度）
 
-- **设计像素是布局坐标系**：`Leg` 的 `width/height/foot_center_x` 一律写设计像素（腿高 720），间距、字号、`height_px` / `width_px` 全在这个单位下。调用方从不传设计尺寸，也不该改它——它属于素材，由 `LegLibrary` 提供。
-- **图像密度是另一回事**：`Leg.pixels_per_unit` 表示“`image` 像素 / 设计像素”。内置素材的 `image` 只是设计尺寸的布局预览（1）；`render_stocking(scale=k)` 把渲染空间放大到 k 像素/设计单位时，会按 k 重新栅格化 SVG，并直接按该密度生成袜身纹理、上沿与光影，返回的 Leg 元数据仍是设计像素。额外的内部超采样已移除，避免为有限的抗锯齿收益重复处理整条腿。
+- **设计像素是布局坐标系**：`Leg.width`、`height` 与 `foot_center_x` 使用素材的设计尺寸（内置高度 720）；图表间距、字号与丝袜覆盖高度均使用设计像素，Canvas 与绘图原语使用输出像素。样式长度保持绝对设计像素，不随素材高度归一化。
+- **素材与渲染结果分离**：冻结的 `Leg` 保存源字节和设计几何，不生成布局预览；`render_stocking(scale=k)` 返回仅含 `source`、`image`、`scale` 的 `LegRender`。SVG 按目标倍率栅格化，PNG 按预乘 alpha 插值重采样；袜身与上沿按该密度直接生成。源摘要缓存归 Leg，库负责索引、配对和懒加载，像素、绘图指令与预处理数据使用进程内有界共享缓存。
 - **内置素材只存透明 SVG**：`tools/split_master.py` 从用户用 Upscayl 做的 13 对超分母图（`dist/all_up_1.png`）切分：按 alpha 连通域切出每条腿，用归一化 alpha 掩膜的 IoU 与库内编号做一对一匹配；每条腿先拉伸到**设计尺寸 × 4**，再用 vtracer 追踪成彩色 SVG。vtracer 需要不透明输入，输出会先铺一块满画布底色，因此还要用腿身可见轮廓（蓝色通道低于纸底）生成 `<clipPath>`，把背景裁掉——SVG 本身因此是透明的，可作为唯一素材存进库。
 - **中等简化色层**：追踪参数为 6 位颜色精度、16 像素碎片阈值、16 层色差和 4 像素曲线长度阈值，减少细碎色块与路径。原始母图缺失时，`tools/simplify_assets.py` 可由未简化 SVG 的 4x 栅格重建色层并保留原裁切路径；不得反复把简化结果作为下一次源。此轮 26 条素材共 31,563 → 3,043 条路径，少量细线与色阶会变化，编号、配对和设计尺寸不变。
-- **按目标像素直接栅格化**：`vector.rasterize_svg` 把 SVG 直接渲染到目标像素尺寸。skia 的 SVGDOM 在**缩放容器**时会把 clipPath 算错（实测左移/裁掉一部分），所以容器尺寸始终保持 SVG 固有尺寸（设计 × 4），只对画布做缩放——矢量路径（含裁切）按目标分辨率重新光栅化。解析结果录为 Skia Picture，在不同输出倍率之间共享；内置素材随包预制指令，源摘要或 Skia 版本不符、文件缺失时从 SVG 重建。绘图指令与栅格像素各有独立的有界缓存；Skia 直接导出连续 RGBA，不再由 NumPy 重排并复制通道。这样 scale 超过 4 时仍是真矢量细节，而不是把 4× 位图放大。
+- **按目标像素直接栅格化**：`vector.rasterize_svg` 把 SVG 直接渲染到目标像素尺寸。skia 的 SVGDOM 在**缩放容器**时会把 clipPath 算错（实测左移/裁掉一部分），所以容器尺寸始终保持 SVG 固有尺寸（设计尺寸），只对画布做缩放——矢量路径（含裁切）按目标分辨率重新光栅化。解析结果录为 Skia Picture，在不同输出倍率之间共享；内置素材随包预制指令，源摘要或 Skia 版本不符、文件缺失时从 SVG 重建。绘图指令与栅格像素各有独立的有界缓存；Skia 直接导出连续 RGBA，不再由 NumPy 重排并复制通道。这样 scale 超过 4 时仍是真矢量细节，而不是把 4× 位图放大。
 - **母图贴边的腿**：母图左右边缘可能把腿截断（当前 pair_04、pair_08）；同一对一起回退到 720p 行图重新追踪，其余来自 AI 母图。母图相对设计尺寸有轻微漂移，每条腿都拉伸到设计尺寸 × 4；master 来源的墨量约为旧 720p 素材的 80%–91%，720p 兜底来源为 93%–97%。
 - **为什么不再从 720p 追踪**：1–2px 细线与抗锯齿灰阶在原分辨率下会被追踪器量化成几块平色、相邻笔画还会被最小特征阈值粘连（实测墨量偏大 20%–55%、褶皱糊成块）。母图本身已放大 4 倍，直接追踪即可；不再保留位图高密度管线。
-- 外部自定义素材（`load_leg`）仍按 1:1 设计像素对待（`pixels_per_unit=1`，`svg=None`）；需要更高密度时再给它加密度参数。
+- 外部素材通过 `load_leg` 导入 PNG/SVG，设计尺寸来自 PNG 大小或 SVG 视口；不裁切归一化或检测方向。足底锚点可显式指定，省略时按底部 alpha 质心估算。`LegLibrary([...])` 可混用外部腿与内置腿，L3/L4 可注入库；普通布局使用全部腿，成对布局仅使用完整配对。`DEFAULT_LEG_LIBRARY` 是默认内置库。
 
 ## 公开 API 分层
 
 分五层，完整签名与语义见 [API 参考](api.zh-CN/index.md)：
 
-- L0 素材：`Leg`、`LegLibrary`、`load_leg()`
+- L0 素材：`Leg`、`LegRender`、`DEFAULT_LEG_LIBRARY`、`LegLibrary`、`load_leg()`
 - L1 渲染原语：`render_stocking()`、`StockingStyle` / `STYLES`、`draw_text()`、`measure_text()` / `measure_text_height()` / `wrap_text()`、`sketch_line()`、`sketch_axis()`
 - L2 自由柱状图：`BarPlot`、`Scale`、`Canvas`
 - L3 布局封装：`BarPlot.add_bars / add_grouped_bars / add_paired_bars`
@@ -160,7 +160,7 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 3. ✅ `render_stocking`：5 种 Fabric × 4 种 TopEdge × Shading，19 个预设，用户评审通过（评审图脚本 `tools/render_*_review.py`，产物在 `out/`，不入库）；
 4. ✅ L1 文字与线条（`Canvas`/`draw_text`/`measure_text`/`measure_text_height`/`wrap_text`/`sketch_line`/`sketch_axis`）；
 5. ✅ L2–L4（`Scale`/`BarPlot`/`add_bars` 系列/`bar`/`mirror_bar`），评审图 `tools/render_plot_review.py`；间距、字号、图例尺寸、刻度密度、数值标签对齐等已按评审反馈调整并通过；
-6. ✅ 渲染倍率原生（`render_stocking(scale=)` + `Leg.pixels_per_unit`）与透明 SVG 素材（`tools/split_master.py`：超分母图切分 → 追踪 → clipPath → SVG）；
+6. ✅ 渲染倍率原生（`render_stocking(scale=)` + `LegRender.scale`）与透明 SVG 素材（`tools/split_master.py`：超分母图切分 → 追踪 → clipPath → SVG）；
 7. ✅ 绘制细节：坐标轴默认直线（手绘风可选）、x 标签过长自动倾斜、图例长标签自动折行、默认组间距调大；
 8. ✅ 公开 API 整理：`normalize_data`（`singledispatch`）支持 pandas 等数据格式、L4 透传参数收进 `ChartOptions`、标题默认居中与 x / y 轴名、文档同步；
 9. ✅ 文字引擎重写：改用 skia.textlayout 段级整形（kerning、连字、段内 RTL 正确），`font` 参数透传到全图与各元素，数值标签与刻度统一按 6 位有效数字有界格式化。

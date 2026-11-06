@@ -3,16 +3,19 @@
 """素材预制数据、缺失回退与跨库共享缓存的功能测试。"""
 
 from dataclasses import replace
+from io import BytesIO
 
 import numpy as np
 import pytest
 import skia
+from PIL import Image
 
 from stockchart import (
     STYLES,
     Fishnet,
     Leg,
     LegLibrary,
+    LegRender,
     Plain,
     StockingStyle,
     render_stocking,
@@ -24,7 +27,8 @@ from stockchart.stocking.styles import Lace, Shading, Welt
 
 
 def test_bundled_ink_matches_live_extraction() -> None:
-    leg = LegLibrary(seed=0).get("leg_01").at_density(2)
+    source = LegLibrary().get("leg_01")
+    leg = LegRender(source, source.raster_at(2), 2)
     digest = preprocess._source_key(leg)
     packed = preprocess._bundled_ink("leg_01", digest)
     assert packed is not None
@@ -38,7 +42,9 @@ def test_missing_data_is_extracted_once(monkeypatch: pytest.MonkeyPatch) -> None
     image = np.empty((120, 40, 4), dtype=np.uint8)
     image[:] = [253, 234, 228, 255]
     image[65:68, 15:25, :3] = 120
-    leg = Leg(image, 40, 120, 20)
+    buffer = BytesIO()
+    Image.fromarray(image).save(buffer, format="PNG")
+    leg = Leg(buffer.getvalue(), "png", 40, 120, 20)
     unchanged = image.copy()
     calls = 0
     original = preprocess.extract_ink
@@ -52,21 +58,24 @@ def test_missing_data_is_extracted_once(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(preprocess, "extract_ink", counted)
     first = render_stocking(leg, STYLES["black_sheer"], 80, seed=2)
     render_stocking(leg, STYLES["white_sheer"], 90, seed=3)
+    render_stocking(leg, STYLES["black_sheer"], 80, seed=2, scale=2)
     assert calls == 1
-    assert np.array_equal(unchanged, leg.image)
+    assert np.array_equal(unchanged, leg.raster_at())
     assert not np.array_equal(first.image, image)
 
     changed = image.copy()
     changed[60:62, 15:25, :3] = 100
-    render_stocking(replace(leg, image=changed), STYLES["black_sheer"], 80, seed=2)
+    buffer = BytesIO()
+    Image.fromarray(changed).save(buffer, format="PNG")
+    render_stocking(replace(leg, source=buffer.getvalue()), STYLES["black_sheer"], 80, seed=2)
     assert calls == 2
 
 
 def test_separate_libraries_share_readonly_raster() -> None:
-    left = LegLibrary().get("leg_02").at_density(2)
-    right = LegLibrary().get("leg_02").at_density(2)
-    assert left.image is right.image
-    assert not left.image.flags.writeable
+    left = LegLibrary().get("leg_02").raster_at(2)
+    right = LegLibrary().get("leg_02").raster_at(2)
+    assert left is right
+    assert not left.flags.writeable
 
 
 def test_vector_commands_reused_across_densities(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,7 +89,7 @@ def test_vector_commands_reused_across_densities(monkeypatch: pytest.MonkeyPatch
     calls = 0
     record = vector._record_svg
 
-    def counted(source: bytes, width: int, height: int) -> skia.Picture:
+    def counted(source: bytes, width: float, height: float) -> skia.Picture:
         nonlocal calls
         calls += 1
         return record(source, width, height)
@@ -110,18 +119,18 @@ def test_vector_commands_reused_across_densities(monkeypatch: pytest.MonkeyPatch
 
 def test_bundled_vector_falls_back_after_skia_upgrade(monkeypatch: pytest.MonkeyPatch) -> None:
     leg = LegLibrary().get("leg_01")
-    assert leg.svg is not None
+    assert leg.source_type == "svg"
     manifest = vector._bundled_sources()
     digest = preprocess._source_key(leg).hex()
     assert digest in manifest
-    bundled = vector.rasterize_svg(leg.svg, leg.width * 2, leg.height * 2)
+    bundled = vector.rasterize_svg(leg.source, round(leg.width * 2), round(leg.height * 2))
     monkeypatch.setattr(vector.skia, "__version__", "different-skia-version")
     vector._bundled_sources.cache_clear()
     try:
         assert not vector._bundled_sources()
         monkeypatch.setattr(vector, "_picture_cache", ByteCache[vector._SvgPicture](1024 * 1024))
         monkeypatch.setattr(vector, "_raster_cache", ByteCache[np.ndarray](8 * 1024 * 1024))
-        rebuilt = vector.rasterize_svg(leg.svg, leg.width * 2, leg.height * 2)
+        rebuilt = vector.rasterize_svg(leg.source, round(leg.width * 2), round(leg.height * 2))
         np.testing.assert_array_equal(bundled, rebuilt)
     finally:
         vector._bundled_sources.cache_clear()
@@ -131,7 +140,9 @@ def test_ink_boost_covers_top_material_independently_of_body() -> None:
     image = np.full((120, 40, 4), (253, 234, 228, 255), dtype=np.uint8)
     for row in (30, 62, 90):
         image[row : row + 3, 12:28, :3] = 100
-    leg = Leg(image, 40, 120, 20)
+    buffer = BytesIO()
+    Image.fromarray(image).save(buffer, format="PNG")
+    leg = Leg(buffer.getvalue(), "png", 40, 120, 20)
     shading = Shading(curve=0, wobble=0, rim_shadow=0, highlight=0, skin=0, ink=0)
 
     for fabric in (Plain(color=(255, 255, 255)), Fishnet(color=(255, 255, 255))):

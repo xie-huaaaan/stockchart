@@ -15,7 +15,7 @@ def add_bars(
     legs: Sequence[Leg] | None = None,
     seed: int | None = None,
 ) -> BarPlot:
-    """Single series: laid out from left to right with uniform spacing, automatically alternating the leg selection.
+    """Single series: laid out from left to right with uniform spacing, selecting legs according to the pairing policy.
 
     legs may explicitly specify the asset of every bar (its length must
     match heights_px, it does not participate in the cycling, and paired is
@@ -57,8 +57,8 @@ def add_grouped_bars(
 ) -> BarPlot:
     """Lay out a grouped bar plot from pixel heights given as (group count, series count).
 
-    Within a group use bar_gap, between groups use group_gap; across the
-    columns the legs alternate left, right, left, right ...
+    Within a group use bar_gap, between groups use group_gap; ordinary layouts
+    select from all legs, while paired layouts use complete left-right pairs.
 
     Args:
         heights_px: a 2D height table; every row is a group and every column

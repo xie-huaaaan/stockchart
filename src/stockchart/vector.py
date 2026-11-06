@@ -9,11 +9,14 @@ SVG 的容器尺寸必须保持固有尺寸，`clipPath` 才能正确应用；�
 from __future__ import annotations
 
 import json
+import math
 import re
+from contextlib import suppress
 from dataclasses import dataclass
 from functools import lru_cache
 from hashlib import sha256
 from importlib.resources import files
+from xml.etree import ElementTree
 
 import numpy as np
 import skia
@@ -22,7 +25,6 @@ from numpy.typing import NDArray
 from stockchart._cache import ByteCache
 from stockchart.defaults import DEFAULT_PICTURE_CACHE_BYTES, DEFAULT_RASTER_CACHE_BYTES
 
-_SVG_SIZE = re.compile(rb'<svg[^>]*\bwidth="([0-9.]+)"[^>]*\bheight="([0-9.]+)"')
 _raster_cache = ByteCache[NDArray[np.uint8]](DEFAULT_RASTER_CACHE_BYTES)
 
 
@@ -31,8 +33,8 @@ class _SvgPicture:
     """固有尺寸下的矢量绘图指令；同一份可在任意输出倍率重放。"""
 
     picture: skia.Picture
-    width: int
-    height: int
+    width: float
+    height: float
 
 
 _picture_cache = ByteCache[_SvgPicture](DEFAULT_PICTURE_CACHE_BYTES)
@@ -49,7 +51,42 @@ def _bundled_sources() -> dict[str, str]:
     return manifest["sources"] if manifest["skia"] == skia.__version__ else {}
 
 
-def _record_svg(svg: bytes, width: int, height: int) -> skia.Picture:
+def svg_dimensions(svg: bytes) -> tuple[float, float]:
+    """读取 SVG 固有像素尺寸，缺少绝对尺寸时以 viewBox 补足。"""
+    try:
+        root = ElementTree.fromstring(svg)
+    except ElementTree.ParseError as exc:
+        raise ValueError(f"无法解析 SVG：{exc}") from exc
+    if root.tag.rsplit("}", 1)[-1] != "svg":
+        raise ValueError("SVG 根节点须为 <svg>")
+
+    def parse_length(value: str | None) -> float | None:
+        if value is None:
+            return None
+        match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]*)?|\.[0-9]+)\s*(?:px)?\s*", value)
+        return float(match.group(1)) if match else None
+
+    width, height = parse_length(root.attrib.get("width")), parse_length(root.attrib.get("height"))
+    view_box = root.attrib.get("viewBox", "").replace(",", " ").split()
+    vb_width = vb_height = None
+    if len(view_box) == 4:
+        with suppress(ValueError):
+            vb_width, vb_height = float(view_box[2]), float(view_box[3])
+    if vb_width is not None and vb_height is not None and vb_width > 0 and vb_height > 0:
+        if width is None and height is None:
+            width, height = vb_width, vb_height
+        elif width is None and height is not None:
+            width = height * vb_width / vb_height
+        elif height is None and width is not None:
+            height = width * vb_height / vb_width
+    if width is None or height is None or not math.isfinite(width) or not math.isfinite(height):
+        raise ValueError("SVG 须提供有效的绝对 width/height 或 viewBox 尺寸")
+    if width <= 0 or height <= 0:
+        raise ValueError(f"SVG 固有尺寸须为正数，得到 {width}×{height}")
+    return width, height
+
+
+def _record_svg(svg: bytes, width: float, height: float) -> skia.Picture:
     """解析一次 SVG，在固有尺寸录制裁切和矢量路径，不产生位图。"""
     dom = skia.SVGDOM.MakeFromStream(skia.MemoryStream(svg))
     if dom is None:
@@ -66,12 +103,7 @@ def _prepare_svg(svg: bytes, digest: bytes) -> _SvgPicture:
     cached = _picture_cache.get(digest)
     if cached is not None:
         return cached
-    m = _SVG_SIZE.search(svg)
-    if m is None:
-        raise ValueError("SVG 根节点缺少 width/height")
-    width, height = round(float(m.group(1))), round(float(m.group(2)))
-    if width <= 0 or height <= 0:
-        raise ValueError(f"SVG 固有尺寸须为正数，得到 {width}×{height}")
+    width, height = svg_dimensions(svg)
     picture = None
     leg_id = _bundled_sources().get(digest.hex())
     if leg_id is not None:
@@ -97,7 +129,7 @@ def rasterize_svg(svg: bytes, width: int, height: int) -> NDArray[np.uint8]:
     `clipPath` 计算错误；缓存的矢量绘图指令按目标分辨率重新光栅化。
 
     Args:
-        svg: SVG 文本字节；根节点须带 width/height。
+        svg: SVG 文本字节；尺寸取绝对像素 width/height 或 viewBox。
         width: 目标像素宽，须为正数。
         height: 目标像素高，须为正数。
 
@@ -105,8 +137,7 @@ def rasterize_svg(svg: bytes, width: int, height: int) -> NDArray[np.uint8]:
         (height, width, 4) uint8 RGBA；透明区域 alpha 为 0，脚在图像底端。
 
     Raises:
-        ValueError: 目标尺寸非正数、SVG 无法解析，或根节点缺少有效的
-            width/height。
+        ValueError: 目标尺寸非正数、SVG 无法解析，或无法确定有效的固有尺寸。
     """
     if width <= 0 or height <= 0:
         raise ValueError(f"目标尺寸须为正数，得到 {width}×{height}")

@@ -78,6 +78,7 @@ class BarPlot:
         font: 全图默认字体（家族名、字体文件路径或候选列表）；各 add_*
             方法与数值标签不另指定 font 时使用，None 用平台默认链。
         seed: 随机源；影响默认的柱纹理、基线与手绘抖动，不传则每次随机。
+        library: L3 自动选腿使用的素材库；显式 legs/pairs 优先。
 
     腿高于 extent_up / extent_down 时，柱区会自动向上/向下扩张；轴、标题、
     标签与图例另占空间，不计入这两个值。
@@ -99,6 +100,7 @@ class BarPlot:
         axis_style: Literal["clean", "handdrawn"] = "clean",
         font: FontSpec | None = None,
         seed: int | None = None,
+        library: LegLibrary = DEFAULT_LEG_LIBRARY,
     ) -> None: ...
 
     @property
