@@ -249,3 +249,76 @@ library = LegLibrary([leg, custom])
 rendered = render_stocking(custom, STYLES["black_sheer"], 200, scale=2, seed=0)
 print(rendered.source.height, rendered.image.shape, rendered.scale)
 ```
+
+## Practical advice for external assets
+
+### Preparing assets
+
+- **Match heights and margins**: use the same design height, crop range, and top/bottom margins for assets in a chart. L4 maps all data using the shortest selected asset. Mixing heights does not resize the legs automatically and can produce inconsistent body proportions, stocking coverage, and visual comparisons.
+- **Prefer a 720px design height**: built-in style lengths and layout gaps currently use a height of 720 as their reference and do not normalize to external asset heights. Resize PNGs proportionally to height 720 before importing. For SVG, set the viewport `width` / `height` proportionally to height 720 while retaining the original `viewBox` and paths.
+- **Keep backgrounds transparent**: use transparent PNGs or SVGs with transparent backgrounds, removing backgrounds and stray graphics outside the leg. The renderer uses alpha to identify the silhouette; white or other opaque backgrounds are treated as part of the leg.
+- **Prepare orientation and bounds yourself**: place the foot at the bottom, close to the image edge. Importing does not flip, crop, or normalize assets. Coverage is measured from the bottom of the image, so excess transparent bottom padding affects alignment and coverage. Anchor estimation examines at most the bottom 20 design pixels. Pass `foot_center_x` explicitly for precise alignment, using the imported asset's design coordinates.
+- **Distinguish design size from output scale**: PNG DPI metadata and names such as “@2x” do not determine density; a 1440px-high image becomes a 1440-high asset. `scale=2` doubles output pixels while preserving design sizes for layout and patterns. Setting that PNG's `scale` to 0.5 only shrinks the output; it does not change its design height to 720. A 720-high SVG rendered at `scale=2` preserves vector detail; a 720-high PNG at 2x still resamples its source outline.
+- **Add pairing only when needed**: import assets directly and use `paired="none"` for multiple series without pairs. For paired layouts, give left and right assets the same `pair_id` and their respective `side`; each nonempty `leg_id` must be unique.
+
+For example, prepare a PNG at height 720 before importing it into a library. This reduces the source resolution of larger bitmaps and leaves the original file intact:
+
+```python
+from PIL import Image
+from stockchart import LegLibrary, bar, load_leg
+
+with Image.open("source.png") as source:
+    rgba = source.convert("RGBA")
+    width = max(1, round(rgba.width * 720 / rgba.height))
+    rgba.resize((width, 720), Image.Resampling.LANCZOS).save("leg_720.png")
+
+leg = load_leg("leg_720.png")
+library = LegLibrary([leg])
+bar([3, 5, 4], library=library, paired="none", seed=2).save("custom.png", scale=2)
+```
+
+To retain a high-resolution PNG's source pixels while using a design height of 720, set the `Leg` geometry explicitly. The example below creates a new asset with `dataclasses.replace()` and leaves the PNG bytes unchanged. You must convert the width and anchor yourself; `load_leg()` does not infer this mapping:
+
+```python
+from dataclasses import replace
+from stockchart import load_leg
+
+high_res = load_leg("leg_1440.png")
+factor = 720 / high_res.height
+leg = replace(
+    high_res,
+    width=high_res.width * factor,
+    height=720,
+    foot_center_x=high_res.foot_center_x * factor,
+)
+```
+
+Now `leg.height` is 720 while the PNG source remains 1440px high. Rendering at `scale=2` can use that resolution directly, and built-in style lengths retain their original design proportions.
+
+### Keeping another design height
+
+To retain assets at height `H`, use `H / 720` as a starting point for length adjustments, then refine visually. These parameters use absolute design pixels; their defaults do not change with leg height:
+
+| Part | Lengths to consider scaling |
+| --- | --- |
+| Top edge | `Welt.height`, `Lace.height` / `scallop`, `Fade.length` |
+| Fabric | `Stripe.width`, `Striped.offset`, `Ribbed.rib_width` |
+| Mesh and prints | `Fishnet.cell` / `line_width`, `Dotted.size` / `spacing`, and lengths in nested underlays |
+| Hand-drawn wobble | `Shading.wobble` |
+| Layout | `bar_gap`, `group_gap`, font sizes, and manually specified plot dimensions; L3's `extent_up` still defaults to 792, while L4 derives its default plot height from the tallest leg |
+
+Colors, opacity, angles, perspective strength, and other ratios or dimensionless parameters do not need proportional scaling. For example, configure a 1440-high asset with pattern proportions similar to the built-in fishnet preset:
+
+```python
+from stockchart import Fishnet, StockingStyle, Welt, load_leg, render_stocking
+
+leg = load_leg("leg_1440.png")
+factor = leg.height / 720
+style = StockingStyle(
+    fabric=Fishnet(color=(20, 18, 22), cell=14 * factor, line_width=1.6 * factor),
+    top=Welt(height=20 * factor, color=(20, 18, 22)),
+)
+rendered = render_stocking(leg, style, height_px=leg.height * 0.85, scale=1, seed=2)
+```
+
+A few details, including edge softening, pinch offsets, and lace dots, use fixed output pixels to control fine lines and antialiasing and currently have no public adjustment parameters. Even proportional changes to all public lengths therefore do not guarantee identical details across combinations of design height and output scale.

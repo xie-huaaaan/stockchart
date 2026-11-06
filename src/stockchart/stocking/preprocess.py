@@ -150,7 +150,8 @@ def _source_ink(source: Leg) -> tuple[NDArray[np.uint8], NDArray[np.uint8]]:
 def ink_pixels(leg: LegRender) -> InkPixels:
     """返回目标密度下的稀疏墨线，只保留增强阶段实际需要的像素。"""
     digest = _source_key(leg)
-    key = (digest, leg.image.shape)
+    # 同一 PNG 可显式指定不同设计尺寸；源墨线提取尺度随之变化，不能只看输出尺寸。
+    key = (digest, leg.source.width, leg.source.height, leg.image.shape, INK_DATA_VERSION)
     cached = _ink_cache.get(key)
     if cached is not None:
         return cached

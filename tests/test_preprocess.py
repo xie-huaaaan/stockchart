@@ -71,6 +71,24 @@ def test_missing_data_is_extracted_once(monkeypatch: pytest.MonkeyPatch) -> None
     assert calls == 2
 
 
+def test_design_size_ink_is_independent_of_render_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    image = np.full((120, 40, 4), (253, 234, 228, 255), dtype=np.uint8)
+    image[65:68, 12:28, :3] = 100
+    image[90, 14:26, :3] = 80
+    buffer = BytesIO()
+    Image.fromarray(image).save(buffer, format="PNG")
+    original = Leg(buffer.getvalue(), "png", 40, 120, 20)
+    compact = replace(original, width=20, height=60, foot_center_x=10)
+    style = STYLES["black_sheer"]
+
+    monkeypatch.setattr(preprocess, "_ink_cache", ByteCache[preprocess.InkPixels](1024 * 1024))
+    render_stocking(original, style, 80, seed=2)
+    after_original = render_stocking(compact, style, 40, seed=2, scale=2)
+    monkeypatch.setattr(preprocess, "_ink_cache", ByteCache[preprocess.InkPixels](1024 * 1024))
+    independently = render_stocking(compact, style, 40, seed=2, scale=2)
+    np.testing.assert_array_equal(after_original.image, independently.image)
+
+
 def test_separate_libraries_share_readonly_raster() -> None:
     left = LegLibrary().get("leg_02").raster_at(2)
     right = LegLibrary().get("leg_02").raster_at(2)

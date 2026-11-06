@@ -144,6 +144,19 @@ bar(
 
 19 个预设覆盖透肉丝袜、厚袜、条纹、针织、网袜、波点、爱心、蕾丝边等。需要更细的控制时，可以直接构造 `StockingStyle`：袜身用 `Plain` / `Striped` / `Ribbed` / `Fishnet` / `Dotted`，上沿用 `Bare` / `Welt` / `Lace` / `Fade`。完整样式表见 [渲染原语参考](docs/api.zh-CN/rendering.md)。
 
+## 使用外部素材
+
+用 `load_leg()` 导入透明 PNG 或 SVG，再通过 `LegLibrary([...])` 和 `library=` 传给图表；也可以混入 `DEFAULT_LEG_LIBRARY` 中的内置腿。
+
+```python
+from stockchart import LegLibrary, bar, load_leg
+
+library = LegLibrary([load_leg("left.png"), load_leg("right.svg")])
+bar([3, 5, 4], library=library, paired="none", seed=2).save("custom.png")
+```
+
+建议同一库中的素材使用相同设计高度，并优先准备为 **720px 高**，以适配内置样式与布局默认值。PNG 的像素尺寸就是设计尺寸；1440px 高的 PNG 导入后是 1440 个设计像素，不会被自动视为“720px 素材的 2x 版本”。要提高输出分辨率，请用 `.save(..., scale=2)`；保留其他设计高度时，需要自行调整袜口、条纹、网眼等长度和布局间距。素材应有透明背景、脚端朝下并贴近图片底部。完整的准备建议、尺寸换算和样式示例见[外部素材实操建议](docs/api.zh-CN/leg-assets.md#外部素材实操建议)。
+
 ## 标题、轴名与选项
 
 ```python

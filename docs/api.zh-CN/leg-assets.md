@@ -249,3 +249,76 @@ library = LegLibrary([leg, custom])
 rendered = render_stocking(custom, STYLES["black_sheer"], 200, scale=2, seed=0)
 print(rendered.source.height, rendered.image.shape, rendered.scale)
 ```
+
+## 外部素材实操建议
+
+### 准备素材
+
+- **统一高度与留白**：同一张图使用的素材建议具有相同的设计高度，尽量采用一致的裁切范围与上下留白。L4 使用本次选中素材的最小高度映射所有数据；混用不同高度不会自动缩放腿，容易使人物比例、袜子覆盖比例和视觉比较不一致。
+- **优先使用 720px 设计高度**：目前内置样式的默认长度与布局默认间距以高 720 的素材为参考，未按外部素材高度归一化。PNG 可在导入前按比例缩放到高 720；SVG 将视口 `width` / `height` 按比例设为高 720，并保留原有 `viewBox` 与路径即可。
+- **保留透明背景**：使用透明 PNG 或带透明背景的 SVG，移除不属于腿的背景和零散图形。渲染器用 alpha 识别轮廓，白色或其他不透明背景会被当成腿的一部分。
+- **自行准备方向和边界**：脚端朝下并贴近图片底部；导入时不自动翻转、裁切或归一化。覆盖高度从图片底部计算，过多底部透明留白会影响对齐与覆盖；锚点估算只看底部最多 20 个设计像素。需要精确对齐时显式传入 `foot_center_x`，坐标也以导入后的设计像素计。
+- **分清设计尺寸和输出倍率**：PNG 不读取 DPI 或“@2x”文件名来推断密度，1440px 高的图片会成为高 1440 的素材。`scale=2` 只让输出像素加倍，保持布局和纹理的设计大小；将这张 PNG 的 `scale` 设为 0.5 只会缩小输出，不会把其设计高度改成 720。SVG 高 720、输出 `scale=2` 可保留矢量细节；PNG 高 720 再以 2x 输出时，其源轮廓仍来自位图重采样。
+- **按需设置配对**：不需要配对时直接导入，并在多系列图中传 `paired="none"`；需要成对布局时，为左右素材提供相同 `pair_id` 和各自的 `side`，每条腿的非空 `leg_id` 须唯一。
+
+例如先将 PNG 准备为 720px 高，再导入素材库；此操作会降低较大位图的源分辨率，原文件保留不变：
+
+```python
+from PIL import Image
+from stockchart import LegLibrary, bar, load_leg
+
+with Image.open("source.png") as source:
+    rgba = source.convert("RGBA")
+    width = max(1, round(rgba.width * 720 / rgba.height))
+    rgba.resize((width, 720), Image.Resampling.LANCZOS).save("leg_720.png")
+
+leg = load_leg("leg_720.png")
+library = LegLibrary([leg])
+bar([3, 5, 4], library=library, paired="none", seed=2).save("custom.png", scale=2)
+```
+
+如果需要保留高分辨率 PNG 的源像素，又想沿用 720 的设计尺寸，可以显式指定 `Leg` 的几何元数据。下面用 `dataclasses.replace()` 创建新素材，源 PNG 字节不变；这一步需要自己换算宽度和锚点，`load_leg()` 不会自动推断：
+
+```python
+from dataclasses import replace
+from stockchart import load_leg
+
+high_res = load_leg("leg_1440.png")
+factor = 720 / high_res.height
+leg = replace(
+    high_res,
+    width=high_res.width * factor,
+    height=720,
+    foot_center_x=high_res.foot_center_x * factor,
+)
+```
+
+此时 `leg.height` 为 720，源 PNG 仍高 1440；以 `scale=2` 绘制时可直接使用该分辨率，内置样式的设计长度也保持原有比例。
+
+### 保留其他设计高度
+
+若希望保留高 `H` 的素材，可用 `H / 720` 作为调整长度的起点，并根据观感微调。这些参数是绝对设计像素，默认值不会随腿高自动变化：
+
+| 部位 | 需要按比例考虑的长度 |
+| --- | --- |
+| 上沿 | `Welt.height`、`Lace.height` / `scallop`、`Fade.length` |
+| 袜身 | `Stripe.width`、`Striped.offset`、`Ribbed.rib_width` |
+| 网眼与印花 | `Fishnet.cell` / `line_width`、`Dotted.size` / `spacing`，以及嵌套底袜中的长度 |
+| 手绘抖动 | `Shading.wobble` |
+| 布局 | `bar_gap`、`group_gap`、字号，以及手动指定的柱区宽高；L3 的 `extent_up` 默认仍为 792，L4 缺省柱区高度会按最高腿自动计算 |
+
+颜色、不透明度、角度、透视强度等比例或无量纲参数无需同比放大。例如为高 1440 的素材配置与内置网袜相近的图案比例：
+
+```python
+from stockchart import Fishnet, StockingStyle, Welt, load_leg, render_stocking
+
+leg = load_leg("leg_1440.png")
+factor = leg.height / 720
+style = StockingStyle(
+    fabric=Fishnet(color=(20, 18, 22), cell=14 * factor, line_width=1.6 * factor),
+    top=Welt(height=20 * factor, color=(20, 18, 22)),
+)
+rendered = render_stocking(leg, style, height_px=leg.height * 0.85, scale=1, seed=2)
+```
+
+少量边线软化、勒痕偏移和蕾丝孔点细节使用固定输出像素，目的是控制细线与抗锯齿，目前没有公开调整参数。因此，即使同比调整全部公开长度，不同设计高度与输出倍率组合的细节也不保证完全一致。

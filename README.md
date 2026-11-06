@@ -144,6 +144,19 @@ bar(
 
 The 19 presets cover sheer stockings, opaque tights, stripes, ribbed knit, fishnet, polka dots, hearts, lace trims, and more. For direct control, pass a `StockingStyle` built from `Plain`, `Striped`, `Ribbed`, `Fishnet`, or `Dotted` fabrics with a `Bare`, `Welt`, `Lace`, or `Fade` top edge. The full style table is in the [rendering reference](docs/api/rendering.md).
 
+## Using external assets
+
+Load transparent PNG or SVG files with `load_leg()`, collect them in `LegLibrary([...])`, and pass `library=` to a chart. You may also include built-in legs from `DEFAULT_LEG_LIBRARY`.
+
+```python
+from stockchart import LegLibrary, bar, load_leg
+
+library = LegLibrary([load_leg("left.png"), load_leg("right.svg")])
+bar([3, 5, 4], library=library, paired="none", seed=2).save("custom.png")
+```
+
+Use the same design height for assets in a library, preferably **720px high** to match the built-in style and layout defaults. A PNG's pixel dimensions become its design dimensions: a 1440px-high PNG is imported as 1440 design pixels, not automatically treated as a 2x version of a 720px asset. Use `.save(..., scale=2)` for higher output resolution. Other design heights require adjusting lengths such as welts, stripes, mesh cells, and layout gaps. Prepare assets with transparent backgrounds and the foot at the bottom, close to the image edge. See [practical advice for external assets](docs/api/leg-assets.md#practical-advice-for-external-assets) for preparation, sizing, and style examples.
+
 ## Titles, axis names, and options
 
 ```python
