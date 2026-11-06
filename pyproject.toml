@@ -1,7 +1,7 @@
 [project]
 name = "stockchart"
 dynamic = ["version"]
-description = "A creative plotting library that draws data as stockings pulled up over legs."
+description = "A creative plotting library that draws data as stockings pulled up over legs. 一个用丝袜与腿表示数据的创意绘图库。"
 readme = "README.md"
 license = "MPL-2.0 AND LicenseRef-ARR"
 license-files = ["LICENSE", "ASSETS-LICENSE"]

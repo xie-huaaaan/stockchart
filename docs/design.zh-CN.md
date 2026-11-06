@@ -8,7 +8,7 @@ L0–L4 全部实现，渲染观感已评审通过；本文件记录设计取舍
 
 ## 名称
 
-- 项目名与包名：`stockchart`（`import stockchart`）。已发布于 PyPI（当前版本 0.1.1）。同名的 `stockplot`、`stockings` 是另一个包，与本项目无关。
+- 项目名与包名：`stockchart`（`import stockchart`）。已发布于 PyPI。同名的 `stockplot`、`stockings` 是另一个包，与本项目无关。
 
 ## 素材
 

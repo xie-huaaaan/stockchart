@@ -8,7 +8,7 @@ The original hand-made reference image (skin-toned legs with dark-gray stockings
 
 ## Name
 
-- Project and package name: `stockchart` (`import stockchart`). Published on PyPI (currently 0.1.1). `stockplot` and `stockings` are unrelated packages that happen to share the theme.
+- Project and package name: `stockchart` (`import stockchart`). Published on PyPI. `stockplot` and `stockings` are unrelated packages that happen to share the theme.
 
 ## Assets
 

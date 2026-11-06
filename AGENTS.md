@@ -1,57 +1,34 @@
 # AGENTS.md
 
-stockchart 是一个创意绘图库：用丝袜被拉起的高度表示数据大小。设计见 [docs/design.zh-CN.md](docs/design.zh-CN.md)，公开 API 以 `docs/api.zh-CN/`（英文版 `docs/api/`）为准，中英文需同步修改。
+stockchart 用丝袜被拉起的高度表示数据大小。设计见 [docs/design.zh-CN.md](docs/design.zh-CN.md)，公开 API 见 `docs/api.zh-CN/` 与 `docs/api/`。开发早期允许破坏性变更，无需兼容旧接口或保持像素一致。
 
-## 现状
+## 开发与验证
 
-大部分功能已实现，但部分缺陷有待优化。仍处于开发早期，允许破坏性变更，可不考虑向后兼容性与行为一致性。新会话先看 `git log --oneline`，再读本文件与 `docs/`。
+- 中文交流。开始前看 `git log --oneline`、工作区状态和相关文档，保留用户已有修改。
+- Python 3.12 + uv，`uv sync` 安装依赖；修改 `pyproject.toml` 后由 uv 更新锁文件，不手改 `uv.lock`。
+- 提交前运行 `uv run python -m pytest`、`uv run ruff check .`、`uv run ruff format .`、`uv run python -m pyright`；开发中不必反复全量测试。
+- 文档改动运行 `uv run python tools/check_docs.py` 和 `uv run python tools/check_docstrings.py`。
+- 渲染或布局改动运行 `tools/render_plot_review.py` 与 `tools/render_golden.py`（均用 `uv run python`）；黄金图重生成后用 `--check` 核对，不入库。
+- 每个可运行功能点提交一次，提交说明用中文。可自行提交到开发分支，提交到 `main` 须用户同意；发布、推送按用户指令执行。
 
-## 环境
+## 代码与文档
 
-- Python 3.12 + uv；依赖写进 `pyproject.toml`，不手改 `uv.lock`。
-- `uv sync`
-- `uv run python -m pytest`
-- `uv run ruff check . && uv run ruff format .`
-- `uv run python -m pyright`
-- `uv run python tools/render_plot_review.py`：重出评审图到 `out/plots/`
-- `uv run python tools/render_golden.py`：生成黄金图基线到 `out/golden/`；`--check` 重新渲染并逐字节比对。改动渲染或布局后必跑，基线不入库（PNG 字节依赖 skia 版本与系统字体）。
-- `uv run python tools/render_leg_catalog.py`：重出素材目录图到 `docs/images/`
-- `uv run python tools/check_docs.py`：校验文档结构、相对链接与中英分册的章节对应
-- `uv run python tools/check_docstrings.py`：校验 API 文档代码块里的 docstring 与源码一致
-- 素材管线：`uv run python tools/split_master.py dist/all_up_1.png`；改动素材后重出 `out/preview_svg.png` 并核对配对与左右。
+- 代码在 `src/stockchart/`，按职责拆分模块；`tools/` 为开发脚本，`dist/`、`out/` 不供运行时引用或打包。
+- 运行时依赖仅限 `skia-python`、`numpy`、`pillow`，新增须先问；开发脚本可用额外依赖。pandas 仅按结构识别，不导入、不加入运行时依赖。
+- 全部代码带类型标注，公开 API 不用 `Any`；使用现代 Python 类型语法和 dataclass。中文注释、英文标识符，注释说明原因与隐含约束。
+- Docstring 遵循 PEP 257 + Google 风格；公开接口完整说明，私有接口至少说明用途。构造参数、约束、字段集中在类说明中。
+- 公开 API 的源码 docstring 是事实来源，改动时同步中英文 API 文档；中文代码块中的 docstring 须与源码逐字一致，英文为翻译。
+- L4 透传选项同步 `ChartOptions`、`_OPTION_KEYS` 及中英文 `charts.md` 选项表。
+- Markdown 段落和列表项各占一行，不硬折行；中文正文用全角引号，代码与 HTML 属性用 ASCII 引号。
 
-## 目录
+## 绘图约定
 
-- `src/stockchart/`：库源码；`assets/` 只放 `leg_XX.svg` 与 `legs.json`。`plot/`、`stocking/`、`topline/` 是子包，按职责分模块（数据形状 / 计算 / 绘制），不要把文件重新堆回一个大文件。
-- `tests/`、`docs/`；素材栅格与预处理缓存已在生产代码中跨实例共享，测试不再额外替换栅格化函数。
-- `src/stockchart/_precomputed/` 存放随包分发的内置素材墨线数据（NPZ）与矢量绘图指令（SKP），由 `uv run python tools/prepare_asset_data.py` 生成；修改 SVG、墨线提取算法或 Skia 版本后重生成，数据沿用素材 ARR 许可。墨线缺失或过期时从素材提取一次；指令按源摘要与 Skia 版本校验，不匹配时从 SVG 录制一次，均缓存在内存中。
-- `tools/simplify_assets.py 原始SVG目录` 用中等追踪参数重建 SVG 色层并保留裁切路径，源目录须与输出不同，避免反复简化造成累积损失；常规母图生成仍走 `split_master.py`，两者共用追踪参数。
-- `tools/`：开发脚本，不属于公开 API，可依赖 scipy / vtracer（可引入其他库，要求没运行时依赖那么严格）。
-- `dist/`、`out/`：开发素材与评审产物，不打包、运行时不引用。
+- 图表、丝袜和素材元数据使用设计像素（内置腿高 720）；Canvas 与低层原语使用输出像素。输出格式仅 PNG。
+- `extent_up` / `extent_down`、L4 `height_px` / `width_px` 仅描述柱区，标题、标签、图例等空间另算；`max_fill` / `max_abs_fill` 相对素材设计高度。
+- 默认值集中在 `defaults.py`（样式字段默认值在其 dataclass）；随机行为由 `seed` 控制，相同 seed 可复现，不传则每次随机。
 
-## 必须遵守
+## 素材与许可
 
-- 运行时依赖只允许 `skia-python`、`numpy`、`pillow`；新增前先问。
-- 坐标单位是设计像素（腿高 720）；输出只有 PNG，不做 SVG/PDF。
-- 内置腿素材是透明 SVG，`render_stocking(scale=)` 按目标倍率栅格化；腿编号与配对一经发布不得变动。代码为 MPL-2.0，腿素材为 ARR，不得单独再分发或改作独立素材；改许可声明须同步 `LICENSE`、`ASSETS-LICENSE` 与两份 README。
-- 默认值集中在 `defaults.py`；随机行为由 `seed` 控制，同一 seed 可复现；不传 seed 则每次随机。
-- `BarPlot.extent_up` / `extent_down` 只表示基线上下给柱子（腿）预留的高度，不含标题、轴名称、刻度数字、x 标签、图例等边缘区域；这些空间由布局另行计算。L4 的 `height_px`（`ChartOptions`）同样只描述柱区高度，`width_px` 只描述绘图区宽度；`max_fill` / `max_abs_fill` 则相对素材设计高度，不与柱区尺寸混用。
-- pandas 只按 `index` / `columns` / `to_numpy()` 结构识别，不 import、不进依赖。
-- 公开 API 的 docstring 与 `docs/api.zh-CN/`（及英文版 `docs/api/`）同步；改签名先改文档。
-- API 文档代码块里的 docstring 必须是源码的真实 docstring（中文版逐字一致，英文版为其翻译）；源码 docstring 是唯一事实来源，先改源码再同步文档。
-- 新增 L4 透传参数时同步 `ChartOptions`、`_OPTION_KEYS` 与 `docs/api.zh-CN/charts.md` 的选项表。
-- 文档正文按普通 Markdown 写：段落、列表项各占一行，不按列硬折行；代码块与表格除外。中文正文用全角引号“”，行内代码与字符串字面量保持 ASCII，HTML 属性一律用 ASCII 引号。改完跑 `tools/check_docs.py`。
-- `ruff format` 会一并格式化 `.md` 里的 Python 代码块，示例代码因此被自动排版，不必手写对齐。
-
-## 风格与提交
-
-- 现代 Python：`type` 别名、`X | None`、`dataclass(slots=True, frozen=True)`。
-- 全部代码带类型标注；公开 API 不用 `Any`。
-- 中文文档/注释，英文标识符。
-- Docstring 一律遵循 PEP 257 + Google 风格：摘要行单独成行，空一行后按需使用 `Args:` / `Returns:` / `Raises:` / `Attributes:` / `Example:`。公开模块、类、函数、方法必须完整；私有类与函数至少写清用途，参数或返回值不直观时同样列出。参数说明不重复签名里的类型，只写含义、单位、默认值或边界条件。
-- 类的说明以类 docstring 为主：构造参数写在类的 `Args:`，校验约束写在 `Raises:`，数据字段写在 `Attributes:`。`__init__` / `__post_init__` 一般不再重复写 docstring，只有初始化过程本身的特殊行为才单独说明。
-- 注释解释“为什么”和隐含约束（单位、坐标系、边界条件、随机性），不复述代码。
-- 每完成一个可运行的功能点提交一次，中文一句话概述；提交前跑测试 / ruff / pyright。
-- 需求不明确先问用户；用中文交流；外网站点打不开时提醒开 VPN。
-- 修改后可不跑全量 pytest；commit 到 main 分支前必须跑全量测试。
-- 你可以自行在有需要的节点向 dex 提交，但向 main 提交必须经过我的同意。
+- 内置素材在 `assets/`，发布后的腿编号与配对不变；代码为 MPL-2.0，素材及派生数据为 ARR。许可改动同步 `LICENSE`、`ASSETS-LICENSE` 与两份 README。
+- SVG、墨线算法或 Skia 版本变化后，运行 `uv run python tools/prepare_asset_data.py` 重生成 `_precomputed/` 的 NPZ/SKP；缺失或失配时运行时会重建。
+- 修改素材后用 `tools/render_leg_catalog.py` 重出目录图，并核对左右与配对；素材生成和简化工具见 `tools/`，禁止对同一批素材反复有损简化。
